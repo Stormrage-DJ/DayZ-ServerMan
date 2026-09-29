@@ -1,0 +1,41 @@
+# Local Python environments
+.venv/
+**/.venv/
+.vigil/
+
+# Python caches and test output
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build and packaging output
+build/
+dist/
+*.egg-info/
+
+# IDE and operating-system state
+.idea/
+.vscode/
+*.user
+*.suo
+.DS_Store
+Thumbs.db
+
+# Local runnable configuration and generated state
+runnable/config/*
+!runnable/config/.gitkeep
+!runnable/config/manager.example.json
+runnable/data/*
+!runnable/data/.gitkeep
+runnable/backups/*
+!runnable/backups/.gitkeep
+
+# Local logs, journals, and temporary files anywhere
+*.log
+*.jsonl
+*.tmp
+*.bak
+

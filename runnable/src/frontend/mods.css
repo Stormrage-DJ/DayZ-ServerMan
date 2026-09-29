@@ -1,0 +1,32 @@
+/* Styles for the mods inventory panel and access fields */
+.mods-panel, .mods-inventory-panel { box-shadow: none; }
+.mods-selected-server, .mods-count { color: var(--color-text-muted); font-size: .82rem; }
+/* Access row for the selected server and mod source */
+.mods-access-row { display: grid; grid-template-columns: minmax(11rem, .7fr) minmax(16rem, 1fr); gap: var(--primitive-space-3); }
+.mods-access-row .mods-field { padding: 0; border: 0; background: transparent; }
+.mods-access-row input, .mods-access-row select { width: 100%; min-height: 38px; padding: 0 var(--primitive-space-3); border: 1px solid var(--control-border); border-radius: var(--radius-control); background: var(--control-background); color: var(--color-text); }
+.mods-panel > .notice { padding: var(--primitive-space-3); margin: var(--primitive-space-4) 0 0; }
+.mods-panel > .notice strong, .mods-panel > .notice p { display: inline; }
+.mods-panel > .notice p { margin-left: var(--primitive-space-2); }
+.mods-actions { margin-top: var(--primitive-space-4); }
+/* Inventory table layout and status colors */
+.mods-table-scroll { overflow-x: auto; border: 1px solid var(--color-border); border-radius: var(--radius-control); }
+.mods-table { width: 100%; min-width: 720px; border-collapse: collapse; }
+.mods-table th, .mods-table td { padding: .58rem .7rem; border-bottom: 1px solid var(--color-border); text-align: left; vertical-align: middle; }
+.mods-table th { color: var(--color-text-subtle); background: var(--color-surface-raised); font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; }
+.mods-table tbody tr:last-child td { border-bottom: 0; }
+.mods-table tbody tr:hover { background: color-mix(in srgb, var(--color-action) 6%, transparent); }
+.mods-order { width: 2.5rem; color: var(--color-text-subtle); font-variant-numeric: tabular-nums; }
+.mods-name strong, .mods-name small { display: block; }
+.mods-name small { margin-top: 2px; color: var(--color-text-subtle); font-size: .72rem; }
+.mods-directory { font-family: Consolas, "Cascadia Mono", monospace; font-size: .82rem; }
+.mods-status { font-weight: 700; white-space: nowrap; }
+.mods-status-current, .mods-status-installed, .mods-status-local { color: var(--color-status-success); }
+.mods-status-update_available { color: var(--color-status-warning); }
+.mods-status-not_downloaded { color: var(--color-text-subtle); }
+/* Narrow layout: stack the access row and full-width actions */
+@media (max-width: 760px) {
+  .mods-access-row { grid-template-columns: 1fr; }
+  .mods-actions, .mods-action-group { align-items: stretch; flex-direction: column; }
+  .mods-actions .button { width: 100%; }
+}

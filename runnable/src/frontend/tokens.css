@@ -1,0 +1,83 @@
+/* Design tokens: layered custom properties for the operator console */
+/* Layer 1: primitive tokens */
+:root {
+  /* Neutral slate scale shared by every surface */
+  --primitive-slate-950: #0d1117;
+  --primitive-slate-900: #111820;
+  --primitive-slate-850: #161e28;
+  --primitive-slate-800: #1c2632;
+  --primitive-slate-750: #223043;
+  --primitive-slate-700: #2c3948;
+  --primitive-slate-500: #8794a3;
+  --primitive-slate-300: #aeb9c6;
+  --primitive-slate-100: #f3f6fa;
+  --primitive-white: #ffffff;
+  /* Accent hues for actions and statuses */
+  --primitive-blue-500: #4f8cff;
+  --primitive-blue-300: #8cb8ff;
+  --primitive-green-500: #4cc38a;
+  --primitive-amber-500: #f2b84b;
+  --primitive-red-500: #f07070;
+  --primitive-violet-500: #b39dff;
+  --primitive-sky-500: #66b3ff;
+  /* Spacing steps used by layout and padding */
+  --primitive-space-1: 4px;
+  --primitive-space-2: 8px;
+  --primitive-space-3: 12px;
+  --primitive-space-4: 16px;
+  --primitive-space-5: 20px;
+  --primitive-space-6: 24px;
+  --primitive-space-8: 32px;
+  /* Corner radii, elevation shadow, and motion timing */
+  --primitive-radius-sm: 6px;
+  --primitive-radius-md: 10px;
+  --primitive-radius-lg: 14px;
+  --primitive-shadow: 0 14px 34px rgb(0 0 0 / 24%);
+  --primitive-duration: 160ms;
+}
+
+/* Layer 2: semantic tokens */
+:root {
+  color-scheme: dark;
+  --color-canvas: var(--primitive-slate-950);
+  --color-sidebar: var(--primitive-slate-900);
+  --color-surface: var(--primitive-slate-850);
+  --color-surface-raised: var(--primitive-slate-800);
+  --color-surface-hover: var(--primitive-slate-750);
+  --color-border: var(--primitive-slate-700);
+  --color-text: var(--primitive-slate-100);
+  --color-text-muted: var(--primitive-slate-300);
+  --color-text-subtle: var(--primitive-slate-500);
+  --color-action: var(--primitive-blue-500);
+  --color-action-strong: var(--primitive-blue-300);
+  --color-focus: var(--primitive-blue-300);
+  --color-status-success: var(--primitive-green-500);
+  --color-status-warning: var(--primitive-amber-500);
+  --color-status-error: var(--primitive-red-500);
+  --color-status-recovery: var(--primitive-violet-500);
+  --color-info: var(--primitive-sky-500);
+  --color-scrim: rgb(0 0 0 / 55%);
+  /* Spacing and radii for controls, panels, and pages */
+  --space-control: var(--primitive-space-3);
+  --space-panel: var(--primitive-space-5);
+  --space-page: var(--primitive-space-6);
+  --radius-control: var(--primitive-radius-sm);
+  --radius-panel: var(--primitive-radius-md);
+}
+
+/* Layer 3: component tokens */
+:root {
+  /* Shell layout and navigation chrome */
+  --sidebar-width: 232px;
+  --brand-height: 68px;
+  --nav-background-hover: var(--color-surface-hover);
+  --nav-background-current: color-mix(in srgb, var(--color-action) 18%, transparent);
+  --nav-current-border: var(--color-action);
+  /* Panel and control surfaces */
+  --panel-background: var(--color-surface);
+  --panel-border: var(--color-border);
+  --panel-shadow: var(--primitive-shadow);
+  --control-background: var(--color-surface-raised);
+  --control-border: var(--color-border);
+  --focus-outline: 2px solid var(--color-focus);
+}

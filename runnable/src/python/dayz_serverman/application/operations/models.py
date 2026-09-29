@@ -1,0 +1,180 @@
+"""Operation records, events, and stable control failures."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from enum import Enum
+from threading import Event
+from typing import Any, Mapping
+
+
+def utc_now() -> str:
+    """Return the current UTC time as a millisecond-precision ISO string."""
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
+
+
+class OperationState(str, Enum):
+    """Lifecycle states an operation passes through on the lane."""
+    ACCEPTED = "ACCEPTED"
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
+    CANCELLING = "CANCELLING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+    RECOVERY_REQUIRED = "RECOVERY_REQUIRED"
+
+
+# States from which the operation can never transition again
+TERMINAL_STATES = frozenset(
+    (
+        OperationState.SUCCEEDED,
+        OperationState.FAILED,
+        OperationState.CANCELLED,
+        OperationState.RECOVERY_REQUIRED,
+    )
+)
+
+
+@dataclass(frozen=True)
+class OperationError:
+    """Safe failure information exposed to callers."""
+    code: str
+    message: str
+    retryable: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the wire representation of the error."""
+        return {"code": self.code, "message": self.message, "retryable": self.retryable}
+
+
+@dataclass
+class OperationRecord:
+    """Mutable lifecycle record for one submitted operation."""
+    operation_id: str
+    kind: str
+    state: OperationState
+    accepted_at: str
+    revision: int = 0
+    started_at: str | None = None
+    finished_at: str | None = None
+    cancellation_requested: bool = False
+    progress_percent: int = 0
+    progress_phase: str = "accepted"
+    result: Mapping[str, Any] | None = None
+    terminal_error: OperationError | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the schema-versioned wire representation of the record."""
+        return {
+            "schema_version": 1,
+            "revision": self.revision,
+            "operation_id": self.operation_id,
+            "kind": self.kind,
+            "state": self.state.value,
+            "accepted_at": self.accepted_at,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "cancellation_requested": self.cancellation_requested,
+            "progress_percent": self.progress_percent,
+            "progress_phase": self.progress_phase,
+            "result": dict(self.result) if self.result is not None else None,
+            "terminal_error": (
+                self.terminal_error.to_dict() if self.terminal_error is not None else None
+            ),
+        }
+
+    def snapshot(self) -> OperationRecord:
+        """Return a detached copy that readers may keep outside the lock."""
+        return OperationRecord(
+            operation_id=self.operation_id,
+            kind=self.kind,
+            state=self.state,
+            accepted_at=self.accepted_at,
+            revision=self.revision,
+            started_at=self.started_at,
+            finished_at=self.finished_at,
+            cancellation_requested=self.cancellation_requested,
+            progress_percent=self.progress_percent,
+            progress_phase=self.progress_phase,
+            result=dict(self.result) if self.result is not None else None,
+            terminal_error=self.terminal_error,
+        )
+
+
+@dataclass(frozen=True)
+class OperationEvent:
+    """Immutable event recorded for one operation-lane occurrence."""
+    session_id: str
+    sequence: int
+    operation_id: str
+    occurred_at: str
+    kind: str
+    payload: Mapping[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the schema-versioned wire representation of the event."""
+        return {
+            "schema_version": 1,
+            "session_id": self.session_id,
+            "sequence": self.sequence,
+            "operation_id": self.operation_id,
+            "occurred_at": self.occurred_at,
+            "kind": self.kind,
+            "payload": dict(self.payload),
+        }
+
+
+class QueueUnavailable(RuntimeError):
+    """Raised when the operation lane cannot accept new work."""
+    pass
+
+
+class OperationNotFound(RuntimeError):
+    """Raised when an operation identifier is unknown to the manager."""
+    pass
+
+
+class OperationNotCancellable(RuntimeError):
+    """Raised when the operation cannot be cancelled in its current state."""
+    pass
+
+
+class EventCursorExpired(RuntimeError):
+    """Raised when an event cursor fell out of the retained history."""
+    pass
+
+
+class OperationCancelled(RuntimeError):
+    """Raised inside operation work at a safe point after cancellation."""
+    pass
+
+
+class OperationFailure(RuntimeError):
+    """Report a safe, categorized failure raised by operation work."""
+    def __init__(
+        self,
+        code: str,
+        safe_message: str,
+        *,
+        retryable: bool = False,
+        recovery_required: bool = False,
+    ) -> None:
+        """Store the failure code, safe message, and retry or recovery flags."""
+        self.code = code
+        self.safe_message = safe_message
+        self.retryable = retryable
+        self.recovery_required = recovery_required
+        super().__init__(safe_message)
+
+
+@dataclass
+class PendingOperation:
+    """One submitted operation: record, work, cancellation, and logging state."""
+    record: OperationRecord
+    work: Any
+    safe_points: frozenset[str]
+    correlation_id: str | None = None
+    log_fields: Mapping[str, Any] = field(default_factory=dict)
+    cancellation: Event = field(default_factory=Event)

@@ -1,0 +1,14 @@
+{
+  "custom_backup_root": null,
+  "dayz_executable": null,
+  "dayz_root": null,
+  "last_validated_paths": {},
+  "revision": 0,
+  "schema_version": 1,
+  "steam_account_name": null,
+  "steam_authentication_mode": null,
+  "steamcmd_executable": null,
+  "steamcmd_root": null,
+  "workshop_content_root": null
+}
+

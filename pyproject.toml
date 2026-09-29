@@ -1,0 +1,16 @@
+[project]
+name = "dayz-serverman"
+version = "0.1.0"
+description = "Portable Windows DayZ server manager"
+license = { file = "LICENSE" }
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "pywebview==6.2.1",
+]
+
+[tool.setuptools]
+package-dir = {"" = "runnable/src/python"}
+
+[tool.setuptools.packages.find]
+where = ["runnable/src/python"]
+

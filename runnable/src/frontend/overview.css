@@ -1,0 +1,43 @@
+/* Styles for the overview controls and server schedule row */
+.overview-controls { display: grid; grid-template-columns: auto minmax(0, 1fr); }
+.overview-controls > .panel-heading { align-self: center; }
+.overview-controls > .action-row { align-self: center; }
+/* Schedule row: description, time fields, choices, and status */
+.server-schedule-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(12rem, 1fr) auto auto auto;
+  gap: var(--primitive-space-3) var(--primitive-space-4);
+  align-items: end;
+  padding-top: var(--primitive-space-4);
+  border-top: 1px solid var(--color-border);
+}
+.schedule-copy { display: grid; align-self: center; gap: 2px; }
+.schedule-copy small, .schedule-status { color: var(--color-text-subtle); }
+.schedule-time { display: flex; gap: var(--primitive-space-2); }
+.schedule-time-field { display: grid; gap: var(--primitive-space-1); font-size: 12px; }
+.schedule-time-field input {
+  width: 72px;
+  min-height: 38px;
+  padding: 0 var(--primitive-space-3);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  background: var(--control-background);
+  color: var(--color-text);
+}
+.schedule-choices { display: flex; min-width: 0; gap: var(--primitive-space-3); border: 0; margin: 0; padding: 0 0 8px; }
+.schedule-choice { white-space: nowrap; }
+.schedule-status { grid-column: 1 / -1; }
+/* Medium layout: keep the schedule row on two columns */
+@media (max-width: 979px) {
+  .server-schedule-row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+  .schedule-copy, .schedule-status { grid-column: 1 / -1; }
+  .schedule-choices { padding-bottom: 0; }
+}
+/* Phone layout: stack schedule controls in one column */
+@media (max-width: 659px) {
+  .overview-controls { grid-template-columns: 1fr; }
+  .server-schedule-row { grid-template-columns: 1fr; }
+  .schedule-time, .schedule-choices { grid-column: 1; }
+  .server-schedule-row > .button { justify-self: start; }
+}

@@ -1,0 +1,8 @@
+pywebview==6.2.1
+pythonnet==3.1.0
+clr-loader==0.3.1
+cffi==2.1.1
+pycparser==3.0
+proxy-tools==0.1.0
+bottle==0.13.4
+typing-extensions==4.16.0

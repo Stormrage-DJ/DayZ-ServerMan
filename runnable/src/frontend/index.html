@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <!-- Shell document: styling and scripting are inlined for offline use -->
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'">
+  <title>DayZ-ServerMan</title>
+  <!-- INLINE_STYLES -->
+</head>
+<body data-shell-ready="false">
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <div class="app-shell">
+    <!-- Sidebar: brand, server selector, navigation, and status -->
+    <aside class="sidebar" id="sidebar" aria-label="Primary navigation">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">D</span>
+        <span><strong>DayZ-ServerMan</strong><small>Operator console</small></span>
+      </div>
+      <label class="sidebar-profile" for="global-profile">
+        <span>Server</span>
+        <select id="global-profile" disabled><option>Loading profiles…</option></select>
+      </label>
+      <nav class="nav-list">
+        <button class="nav-item" type="button" data-section="overview" aria-current="page"><span aria-hidden="true">O</span>Overview</button>
+        <button class="nav-item" type="button" data-section="profiles"><span aria-hidden="true">P</span>Profiles</button>
+        <button class="nav-item" type="button" data-section="configuration"><span aria-hidden="true">C</span>Configuration</button>
+        <button class="nav-item" type="button" data-section="tweaks"><span aria-hidden="true">T</span>Tweaks</button>
+        <button class="nav-item" type="button" data-section="mods"><span aria-hidden="true">M</span>Mods</button>
+        <button class="nav-item" type="button" data-section="backups"><span aria-hidden="true">B</span>Backups</button>
+        <button class="nav-item" type="button" data-section="logs"><span aria-hidden="true">L</span>Logs</button>
+        <button class="nav-item" type="button" data-section="settings"><span aria-hidden="true">S</span>Settings</button>
+      </nav>
+      <div class="sidebar-foot" id="application-status" role="status" aria-live="polite" aria-atomic="true">
+        <span class="status-dot is-busy" aria-hidden="true"></span>
+        <span class="sidebar-status-copy"><strong>Application status</strong><small id="application-status-text">Connecting…</small></span>
+      </div>
+    </aside>
+
+    <!-- Workspace: page heading and live content region -->
+    <div class="workspace">
+      <main id="main-content" tabindex="-1">
+        <div class="page-heading">
+          <button class="menu-button" id="menu-button" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Open navigation">
+            <span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span>
+          </button>
+          <div>
+            <h1 id="page-title">Overview</h1>
+            <p id="page-description">A calm summary of server health and the next safe operator action.</p>
+          </div>
+        </div>
+
+        <section class="content-region" id="content-region" aria-live="polite" aria-busy="true">
+          <!-- Loading skeleton replaced once the first snapshot arrives -->
+          <div class="panel skeleton-panel">
+            <div class="panel-heading">
+              <div><span class="section-label">Local manager</span><h2>Loading workspace</h2></div>
+            </div>
+            <div class="skeleton skeleton-title"></div>
+            <div class="skeleton-grid" aria-hidden="true">
+              <div class="skeleton skeleton-card"></div>
+              <div class="skeleton skeleton-card"></div>
+              <div class="skeleton skeleton-card"></div>
+            </div>
+            <span class="sr-only">Loading the application state.</span>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+  <!-- Scrim shown behind the open mobile sidebar drawer -->
+  <div class="drawer-scrim" id="drawer-scrim" hidden></div>
+  <!-- INLINE_SCRIPT -->
+</body>
+</html>
