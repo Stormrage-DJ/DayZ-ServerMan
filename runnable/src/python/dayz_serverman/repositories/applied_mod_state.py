@@ -86,6 +86,17 @@ class AppliedModStateRepository:
         raw["profiles"][intent.profile_id] = {"mods": mods}
         self._write(raw)
 
+    def delete_profile(self, profile_id: str) -> None:
+        """Remove cached evidence that belongs only to a deleted profile."""
+        try:
+            raw = self._load()
+        except (OSError, ValueError) as error:
+            raise OSError("applied mod state cannot be cleaned safely") from error
+        profiles = raw["profiles"]
+        if profile_id in profiles:
+            del profiles[profile_id]
+            self._write(raw)
+
     def _load(self) -> dict[str, object]:
         """Return the stored state document, or an empty document when none exists."""
         # Return an empty document before the first evidence write

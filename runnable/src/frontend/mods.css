@@ -4,7 +4,7 @@
 /* Access row for the selected server and mod source */
 .mods-access-row { display: grid; grid-template-columns: minmax(11rem, .7fr) minmax(16rem, 1fr); gap: var(--primitive-space-3); }
 .mods-access-row .mods-field { padding: 0; border: 0; background: transparent; }
-.mods-access-row input, .mods-access-row select { width: 100%; min-height: 38px; padding: 0 var(--primitive-space-3); border: 1px solid var(--control-border); border-radius: var(--radius-control); background: var(--control-background); color: var(--color-text); }
+.mods-access-row input, .mods-access-row select { width: 100%; }
 .mods-panel > .notice { padding: var(--primitive-space-3); margin: var(--primitive-space-4) 0 0; }
 .mods-panel > .notice strong, .mods-panel > .notice p { display: inline; }
 .mods-panel > .notice p { margin-left: var(--primitive-space-2); }

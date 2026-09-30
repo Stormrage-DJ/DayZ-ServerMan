@@ -178,6 +178,9 @@ class BackupOperationSafetyTests(unittest.TestCase):
         server.parent.mkdir(parents=True)
         server.write_text("fixture", encoding="utf-8")
         create_runtime_profile(self.dayz)
+        mission = self.dayz / "mpmissions" / "dayzOffline.chernarusplus"
+        (mission / "storage_3").mkdir(parents=True)
+        (mission / "storage_3" / "players.db").write_bytes(b"world")
 
     def tearDown(self) -> None:
         """Remove the temporary backup tree."""
@@ -189,7 +192,7 @@ class BackupOperationSafetyTests(unittest.TestCase):
             entered.set(), release.wait(2)
         ) if current == phase else None)
         service = BackupService(
-            FakeProfiles(record(mission=False)),  # type: ignore[arg-type]
+            FakeProfiles(record()),  # type: ignore[arg-type]
             FakeSettings(self.dayz, self.backups),  # type: ignore[arg-type]
             storage,
             clock=lambda: datetime(2026, 9, 25, tzinfo=UTC),
@@ -254,7 +257,7 @@ class BackupOperationSafetyTests(unittest.TestCase):
         ) if phase == "STAGE" and not release.is_set() else None)
         identifiers = iter(("first", "second"))
         service = BackupService(
-            FakeProfiles(record(mission=False)),  # type: ignore[arg-type]
+            FakeProfiles(record()),  # type: ignore[arg-type]
             FakeSettings(self.dayz, self.backups),  # type: ignore[arg-type]
             storage,
             clock=lambda: datetime(2026, 9, 25, tzinfo=UTC),

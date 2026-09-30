@@ -96,28 +96,34 @@ function chooseProfile(profileId) {
   );
 }
 
+// Drop profile draft state without rendering during an in-flight page transition.
+function discardProfileChanges() {
+  profileState.contextGeneration += 1; profileState.editGeneration += 1;
+  profileState.loadGeneration += 1; profileState.pending = null; profileState.dirty = false;
+  window.ServerManTransitions.setDirty("profiles", false);
+}
+
 // Render the create or edit form for one profile.
 function renderProfileForm(record) {
+  if (!record) { void openProfileCreation(); return; }
   // Reset per-open state and clear the content region.
   profileState.contextGeneration += 1; profileState.editGeneration += 1;
   profileState.selected = record; profileState.pending = null;
   const region = document.getElementById("content-region"); region.textContent = "";
   const panel = profileNode("section", "panel profile-panel");
   const heading = profileNode("div", "panel-heading");
-  const title = profileNode("h2", "", record ? "Edit profile" : "Create profile"); heading.append(title);
+  const title = profileNode("h2", "", "Edit profile"); heading.append(title);
   // Offer a selector to switch between existing profiles.
   const chooser = document.createElement("select"); chooser.id = "profile-workspace-selector";
   chooser.setAttribute("aria-label", "Selected profile");
-  const createOption = profileNode("option", "", "Create new profile"); createOption.value = "";
-  chooser.append(createOption);
   profileState.records.forEach((item) => { const option = profileNode("option", "", item.display_name);
     option.value = item.profile_id; option.selected = item.profile_id === record?.profile_id;
     chooser.append(option); });
   chooser.addEventListener("change", () => { const requested = chooser.value;
     if (requested) window.ServerManProfileContext.select(requested);
-    else chooseProfile(requested);
     chooser.value = profileState.selected?.profile_id || ""; });
-  heading.append(chooser);
+  const create = profileNode("button", "button button-primary", "New profile"); create.type = "button";
+  create.addEventListener("click", openProfileCreation); heading.append(chooser, create);
   const form = document.createElement("form"); form.id = "profile-form"; form.noValidate = true;
   const value = record || { mods: [], extra_arguments: [], runtime_profile: null };
   // Compose the basic profile fields.
@@ -128,6 +134,7 @@ function renderProfileForm(record) {
     profileField("Server executable", "server_executable", value.server_executable, "text", true),
     profileField("Server config", "server_config", value.server_config, "text", true),
     profileField("Mission root (optional)", "mission_root", value.mission_root));
+  fields.querySelector('[name="profile_id"]').readOnly = true;
   // Offer an optional explicit runtime profile directory.
   const runtime = profileNode("fieldset", "profile-runtime");
   runtime.append(profileNode("legend", "", "Runtime profile"));
@@ -153,13 +160,8 @@ function renderProfileForm(record) {
   const modRows = profileNode("div", "profile-mod-list"); modRows.setAttribute("role", "rowgroup");
   value.mods.forEach((mod) => modRows.append(renderMod(mod)));
   table.append(header, modRows); mods.append(table); refreshModRows(modRows);
-  // Allow adding mod entries and keep the table current.
-  const toolbar = profileNode("div", "profile-mod-toolbar");
-  const add = profileNode("button", "button", "Add mod"); add.type = "button";
-  add.addEventListener("click", () => {
-    const row = renderMod(); modRows.append(row); refreshModRows(modRows);
-    setProfileDirty(); row.querySelector("[data-mod-directory]").focus();
-  }); toolbar.append(add); mods.append(toolbar);
+  // Keep list-level mod actions together below the ordered editor.
+  mods.append(renderProfileModTools(modRows));
   const extras = profileNode("label", "configuration-field", "Extra direct-process arguments, one per line");
   const textarea = document.createElement("textarea"); textarea.name = "extra_arguments";
   textarea.value = value.extra_arguments.join("\n"); extras.append(textarea);
@@ -237,6 +239,7 @@ async function openProfilesWorkspace(
   if (requirePreferred && retained !== null && selected === null) {
     window.ServerManUi.setHostStatus("Saved profile was not returned by storage", "is-error", "workspace"); return;
   }
+  window.ServerManUi.clearHostStatus("workspace");
   renderProfileForm(selected || (retained === null ? result.value[0] || null : null));
 }
 
@@ -248,21 +251,44 @@ function profileOperationFinished(operation) {
   // Consume the pending entry on every terminal state.
   profileState.pending = null;
   if (!profileContextActive(pending.context)) return true;
-  if (operation.state !== "SUCCEEDED") { window.ServerManUi.renderOperation(operation); return true; }
+  if (operation.state !== "SUCCEEDED") {
+    if (pending.kind === "provision") {
+      const form = document.getElementById("profile-form");
+      [...(form?.elements || [])].forEach((element) => { element.disabled = false; });
+      const feedback = document.getElementById("profile-feedback");
+      const message = operation.terminal_error?.message || "Profile creation failed.";
+      if (feedback) { feedback.textContent = message; feedback.classList.add("notice", "notice-error"); }
+      window.ServerManUi.setHostStatus("Profile creation needs attention", "is-error", "operation");
+      return true;
+    }
+    window.ServerManUi.renderOperation(operation); return true;
+  }
+  if (pending.kind === "provision") { void finishProfileProvision(pending, operation); return true; }
   // Explain when newer edits blocked the automatic reload.
   if (pending.editGeneration !== profileState.editGeneration) {
     document.getElementById("profile-feedback").textContent =
       "The operation succeeded. Newer profile edits were preserved; reload before another save.";
     return true;
   }
-  // Reopen the workspace at the saved profile.
-  openProfilesWorkspace(
-    pending.preferredProfileId, pending.kind === "save", pending.editGeneration,
-  ); return true;
+  // Reconcile the authoritative catalog before reopening saved or deleted profiles.
+  void finishStoredProfileMutation(pending); return true;
+}
+
+// Refresh shared profile state after an ordinary save or delete operation.
+async function finishStoredProfileMutation(pending) {
+  profileState.dirty = false; window.ServerManTransitions.setDirty("profiles", false);
+  const refreshed = await window.ServerManProfileContext.refreshAndSelect(
+    pending.preferredProfileId,
+  );
+  if (!refreshed.success) return window.ServerManUi.renderHostError(refreshed);
+  return openProfilesWorkspace(
+    refreshed.value.selected_profile_id,
+    pending.kind === "save",
+  );
 }
 
 // Register the profile workspace with the shared transition guard.
-window.ServerManTransitions.registerOwner("profiles", () => renderProfileForm(profileState.selected),
+window.ServerManTransitions.registerOwner("profiles", discardProfileChanges,
   () => document.querySelector("#profile-form input")?.focus());
 // Publish the profile workspace entry points.
 window.ServerManProfiles = Object.freeze({ open: openProfilesWorkspace,

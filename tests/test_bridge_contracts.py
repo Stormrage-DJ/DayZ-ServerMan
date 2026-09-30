@@ -85,6 +85,8 @@ class BridgeContractTests(unittest.TestCase):
                 "apply_restore",
                 "inspect_restore_recovery",
                 "preview_profile_command",
+                "list_profile_missions",
+                "provision_profile",
                 "read_profile",
                 "read_operation_events",
                 "request_operation_cancellation",

@@ -282,6 +282,7 @@ class OperationManager:
                 "operation.progress",
                 pending,
                 {"phase": phase, "progress_percent": percent},
+                level="DEBUG",
             )
 
     def _evidence(self, pending: PendingOperation, evidence: Mapping[str, object]) -> None:
@@ -315,7 +316,12 @@ class OperationManager:
         # Persist and publish the new state before logging it
         self._persist_and_emit(pending, "state", {"state": state.value})
         # Failures and recovery blocks are the only error-level transitions
-        level = "ERROR" if state in {OperationState.FAILED, OperationState.RECOVERY_REQUIRED} else "INFO"
+        if state in {OperationState.FAILED, OperationState.RECOVERY_REQUIRED}:
+            level = "ERROR"
+        elif state in TERMINAL_STATES:
+            level = "INFO"
+        else:
+            level = "DEBUG"
         fields: dict[str, Any] = {
             **pending.log_fields,
             "kind": record.kind,
@@ -327,6 +333,7 @@ class OperationManager:
             fields["child_process_id"] = record.result["process_id"]
         if record.terminal_error is not None:
             fields["error_code"] = record.terminal_error.code
+            fields["error_message"] = record.terminal_error.message
         self._log.emit("operation.state", pending, fields, level=level)
 
     def _persist_and_emit(

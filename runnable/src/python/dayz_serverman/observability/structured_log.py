@@ -17,6 +17,8 @@ from ..security.sensitive import is_sensitive_name, redact_argument_tokens, reda
 _CORRELATION_ID: ContextVar[str | None] = ContextVar("correlation_id", default=None)
 # Event names must stay lowercase joins and dot paths for stable filtering
 _EVENT_NAME = re.compile(r"[a-z][a-z0-9_.-]{0,95}")
+_LEVEL_VALUES = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
+DEFAULT_MAX_BYTES = 5 * 1024 * 1024
 
 
 def _utc_now() -> str:
@@ -49,9 +51,18 @@ def current_correlation_id() -> str | None:
 
 class StructuredLogger:
     """Append redacted structured records to a JSON-lines log file."""
-    def __init__(self, path: Path) -> None:
-        """Resolve the log path and prepare the append lock."""
+    def __init__(
+        self, path: Path, *, minimum_level: str = "INFO",
+        maximum_bytes: int = DEFAULT_MAX_BYTES,
+    ) -> None:
+        """Resolve the log path and configure filtering plus bounded retention."""
+        if minimum_level not in _LEVEL_VALUES:
+            raise ValueError("minimum log level is invalid")
+        if not isinstance(maximum_bytes, int) or isinstance(maximum_bytes, bool) or maximum_bytes < 1:
+            raise ValueError("maximum log size is invalid")
         self.path = path.resolve(strict=False)
+        self._minimum_level = _LEVEL_VALUES[minimum_level]
+        self._maximum_bytes = maximum_bytes
         # Serialize appends so concurrent writers never interleave records
         self._lock = threading.Lock()
 
@@ -68,6 +79,10 @@ class StructuredLogger:
         # Reject event names that would break stable log filtering
         if _EVENT_NAME.fullmatch(event) is None:
             raise ValueError("log event name is invalid")
+        if level not in _LEVEL_VALUES:
+            raise ValueError("log level is invalid")
+        if _LEVEL_VALUES[level] < self._minimum_level:
+            return
         # Redact field values and fall back to the ambient correlation identifier
         record = {
             "schema_version": 1,
@@ -78,25 +93,35 @@ class StructuredLogger:
             "operation_id": operation_id,
             "fields": _redact(dict(fields or {})),
         }
-        payload = json.dumps(
+        payload = (json.dumps(
             record,
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
             allow_nan=False,
-        ) + "\n"
+        ) + "\n").encode("utf-8")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         # Append under the lock so records from concurrent threads stay whole
-        with self._lock, self.path.open("a", encoding="utf-8", newline="\n") as stream:
-            stream.write(payload)
-            stream.flush()
-            # Flush each record to disk before returning
-            os.fsync(stream.fileno())
+        with self._lock:
+            self._rotate_if_needed(len(payload))
+            with self.path.open("ab") as stream:
+                stream.write(payload)
+                stream.flush()
+                # Flush each record to disk before returning
+                os.fsync(stream.fileno())
 
     def flush(self) -> None:
         """Records are flushed on every append; acquire the lock as a barrier."""
         with self._lock:
             return
+
+    def _rotate_if_needed(self, incoming_bytes: int) -> None:
+        """Keep the active log bounded while retaining one previous file."""
+        if not self.path.is_file() or self.path.stat().st_size + incoming_bytes <= self._maximum_bytes:
+            return
+        previous = self.path.with_name(f"{self.path.name}.1")
+        previous.unlink(missing_ok=True)
+        os.replace(self.path, previous)
 
 
 def _redact(value: Any, key: str = "") -> Any:

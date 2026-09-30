@@ -11,6 +11,7 @@ const serverGroups = [
     configurationField("password", "Server password", "Leave empty for a public server. Players must enter this value when set."),
     configurationField("passwordAdmin", "Admin password", "Used by in-game administration tools. This is separate from the player password."),
     configurationField("maxPlayers", "Maximum players", "The highest number of simultaneous player connections."),
+    configurationField("steamQueryPort", "Steam query port", "UDP port used by the Steam server browser. Allow this port through the host firewall and router."),
     configurationField("instanceId", "Instance ID", "Separates persistence when multiple servers share one installation. Keep it stable after a server goes live."),
   ]},
   { title: "Rules & visibility", hint: "Player access and client-side assistance permitted by the server.", fields: [

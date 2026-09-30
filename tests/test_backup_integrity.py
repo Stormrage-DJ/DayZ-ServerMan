@@ -39,11 +39,14 @@ class BackupIntegrityTests(unittest.TestCase):
         config.parent.mkdir(parents=True)
         config.write_text("hostname = Test;\n", encoding="utf-8")
         create_runtime_profile(self.dayz)
+        mission = self.dayz / "mpmissions" / "dayzOffline.chernarusplus"
+        mission.mkdir(parents=True)
+        (mission / "init.c").write_text("fixture", encoding="utf-8")
         self.backups = self.root / "backups"
         self.backups.mkdir()
         self.settings = FakeSettings(self.dayz, self.backups)
         self.service = BackupService(
-            FakeProfiles(record(False)), self.settings, BackupStorage(),
+            FakeProfiles(record()), self.settings, BackupStorage(),
             clock=lambda: datetime(2026, 9, 25, tzinfo=UTC),
             identifier=lambda: "integrity",
         )
@@ -83,7 +86,7 @@ class BackupIntegrityTests(unittest.TestCase):
 
         # Tamper the staged manifest before the storage re-reads it
         staging_service = BackupService(
-            FakeProfiles(record(False)), self.settings, BackupStorage(phase_hook=tamper_staging),
+            FakeProfiles(record()), self.settings, BackupStorage(phase_hook=tamper_staging),
             clock=lambda: datetime(2026, 9, 25, tzinfo=UTC), identifier=lambda: "stage-tamper",
         )
         with self.assertRaisesRegex(BackupStorageError, "staged backup") as staging_error:

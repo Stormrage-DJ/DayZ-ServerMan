@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ..domain.backups import SHA256
-from ..domain.backup_inventory import accepted_payload_entries
+from ..domain.backup_inventory import mission_payload_prefix, server_config_entry
 from ..domain.lifecycle import LifecycleFailure, ServerState
 from ..domain.models import RecordUnavailable, RevisionConflict
 from ..domain.restores import RestorePreview
@@ -191,13 +191,28 @@ class RestoreService:
 
     @staticmethod
     def _require_supported_inventory(profile: Any, manifest: Any) -> None:
-        """Reject backups whose payload inventory differs from the profile inventory."""
-        expected = accepted_payload_entries(profile.values)
+        """Reject payload files outside the selected config and complete mission tree."""
         actual = tuple(entry.path for entry in manifest.entries if entry.path.startswith("payload/"))
-        if actual != expected:
+        config = server_config_entry(profile.values)
+        mission_root = profile.values.mission_root
+        if mission_root is None:
+            # Profile context is digest-bound; infer the mission prefix from the payload paths.
+            candidates = {
+                "/".join(path.split("/")[:3]) + "/"
+                for path in actual if path.startswith("payload/mpmissions/")
+            }
+            prefix = next(iter(candidates)) if len(candidates) == 1 else ""
+        else:
+            prefix = mission_payload_prefix(mission_root)
+        mission_entries = tuple(path for path in actual if prefix and path.startswith(prefix))
+        if (
+            config not in actual
+            or not mission_entries
+            or any(path != config and not (prefix and path.startswith(prefix)) for path in actual)
+        ):
             raise BackupStorageError(
                 "UNSUPPORTED_SNAPSHOT_CONTENT",
-                "Backup configuration content does not match the selected profile inventory.",
+                "Backup content is outside the selected server configuration or mission tree.",
             )
 
     def _require_stopped(self) -> None:

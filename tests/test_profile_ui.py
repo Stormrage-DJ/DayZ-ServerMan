@@ -20,7 +20,8 @@ def scripts() -> str:
     return "\n".join(
         (FRONTEND / name).read_text(encoding="utf-8")
         for name in (
-            "workspace_context.js", "transition_guard.js", "profiles_mods.js", "profiles.js", "profile_delete.js",
+            "workspace_context.js", "transition_guard.js", "profiles_mods.js",
+            "profile_copy_mods.js", "profiles.js", "profile_delete.js",
         )
     )
 
@@ -31,6 +32,7 @@ class ProfileUiStaticTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         """Load the frontend sources shared by the static checks."""
         cls.source = scripts()
+        cls.create = (FRONTEND / "profile_create.js").read_text(encoding="utf-8")
         cls.app = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
     def test_named_api_v2_context_and_safe_rendering(self) -> None:
@@ -60,6 +62,7 @@ class ProfileUiStaticTests(unittest.TestCase):
             'event.key === "Escape"', 'event.key !== "Tab"', "element.inert = true",
             "returnFocus?.isConnected", "Object.freeze", "replacementAfterDelete",
             "expectedEditGeneration", "Unsaved profile edits preserved",
+            "exclusive world storage", "Delete profile and all data",
         ):
             self.assertIn(value, self.source)
         # The app router must consult the central unsaved-changes guard
@@ -75,33 +78,91 @@ class ProfileUiStaticTests(unittest.TestCase):
 
     def test_mod_editor_is_a_compact_ordered_grid(self) -> None:
         """Render the mod editor as a compact ordered grid."""
-        styles = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+        styles = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in (
+            "controls.css", "styles.css", "profiles.css",
+        ))
         # The accessible grid markers live across the sources and styles
         for value in (
             'setAttribute("role", "table")', 'setAttribute("role", "row")',
             'setAttribute("role", "columnheader")', "profile-mod-header",
             "profile-mod-list", "profile-mod-order", "profile-mod-action",
             'dataset.modMove = "up"', 'dataset.modMove = "down"', "refreshModRows",
+            ".profile-mod-toolbar { gap: 8px; }",
         ):
             self.assertIn(value, self.source + styles)
         # The old three-column layout must be gone
         self.assertIn("grid-template-columns: 32px", styles)
         self.assertNotIn(".profile-mod { display: grid; grid-template-columns: repeat(3", styles)
 
+    def test_mods_can_be_copied_from_another_profile_into_the_draft(self) -> None:
+        """Copying mods offers safe merge and explicit replacement without an immediate save."""
+        for value in (
+            '"Copy mods"', '"Copy from profile"', '"Add missing mods"',
+            '"Replace current list"', "profileModAlreadyListed", "copyProfileMods",
+            "source.mods.filter", "modRows.replaceChildren()", "setProfileDirty()",
+            "Save the profile to keep this change.",
+        ):
+            self.assertIn(value, self.source)
+
     def test_profile_basics_and_runtime_are_compact_responsive_controls(self) -> None:
         """Keep profile basics and runtime as compact responsive controls."""
-        styles = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+        styles = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in (
+            "controls.css", "styles.css", "profiles.css",
+        ))
         # Profile basics and runtime styles must stay compact and responsive
         for value in (
             "configuration-fields profile-basics", "profile-runtime-toggle",
-            'profileNode("h2", "", record ? "Edit profile" : "Create profile")',
+            'profileNode("h2", "", "Edit profile")',
             ".profile-basics { grid-template-columns: repeat(3",
-            ".profile-runtime { display: grid", ".profile-runtime-toggle input",
+            ".profile-runtime { display: grid", 'input[type="checkbox"]',
             ".profile-basics, .profile-runtime { grid-template-columns: 1fr; }",
         ):
             self.assertIn(value, self.source + styles)
         # The outdated schema label must not appear
         self.assertNotIn("Profile schema v2", self.source)
+
+    def test_guided_creation_has_explicit_action_mission_choice_and_generated_paths(self) -> None:
+        """Create mode is discoverable and explains every generated input."""
+        combined = self.source + self.create
+        for marker in (
+            '"New profile"', '"New server profile"', "list_profile_missions",
+            '"Custom mission…"', "custom_mission", "profileIdFromName",
+            "DayZServer_x64.exe", "data-generated-config", "provision_profile",
+            "refreshAndSelect", '"Go to Overview"',
+        ):
+            self.assertIn(marker, combined)
+        self.assertIn("readOnly = true", self.source)
+
+    def test_creation_discard_is_non_rendering_and_async_load_is_context_guarded(self) -> None:
+        """Leaving a dirty creation draft must not reopen it or let its load finish later."""
+        styles = (FRONTEND / "profiles.css").read_text(encoding="utf-8")
+        self.assertIn('registerOwner("profiles", discardProfileChanges', self.source)
+        self.assertIn("function discardProfileChanges()", self.source)
+        discard = self.source.split("function discardProfileChanges()", 1)[1].split("\n}", 1)[0]
+        self.assertNotIn("renderProfileForm", discard)
+        for marker in (
+            'ServerManWorkspace.capture("profiles")',
+            "ServerManWorkspace.isActive(workspace)",
+            'shellState.section !== "profiles"',
+            "loadGeneration !== profileState.loadGeneration",
+            "editGeneration !== profileState.editGeneration",
+        ):
+            self.assertIn(marker, self.create)
+        self.assertIn(".profile-create-custom-mission[hidden] { display: none; }", styles)
+        self.assertNotIn("cancelTop", self.create)
+
+    def test_creation_form_uses_aligned_rows_and_keeps_failures_in_context(self) -> None:
+        """Keep guided fields aligned and actionable provisioning errors on the form."""
+        styles = (FRONTEND / "profiles.css").read_text(encoding="utf-8")
+        for marker in (
+            "function profileCreateRow", "profile-create-copy", "profile-create-label",
+            "Compatible files left by a deleted profile are reused",
+        ):
+            self.assertIn(marker, self.create)
+        self.assertIn(".profile-create-row {", styles)
+        provision_failure = self.source.split('if (pending.kind === "provision")', 1)[1]
+        provision_failure = provision_failure.split("window.ServerManUi.renderOperation", 1)[0]
+        self.assertIn("return true", provision_failure)
 
 
 @unittest.skipUnless(EDGE.is_file(), "Microsoft Edge is unavailable")
@@ -128,7 +189,8 @@ window.pywebview = { api: {
   delete_profile: () => host.remove.promise, preview_profile_command: () => host.preview.promise,
 } };
 window.ServerManUi = { renderHostError: () => {}, renderOperation: () => {},
-  setHostStatus: (text) => { document.getElementById("host").textContent = text; } };
+  setHostStatus: (text) => { document.getElementById("host").textContent = text; },
+  clearHostStatus: () => { document.getElementById("host").textContent = ""; } };
 window.shellState = { section: "profiles" };
 (async () => {
   window.ServerManWorkspace.activate("profiles"); host.list = deferred();

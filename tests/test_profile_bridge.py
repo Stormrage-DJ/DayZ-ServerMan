@@ -74,11 +74,11 @@ class ProfileBridgeTests(unittest.TestCase):
         """Dispatch the named method through the host bridge."""
         return self.composition.bridge.dispatch(request(method, parameters))
 
-    def save_profile(self) -> object:
+    def save_profile(self, **overrides: object) -> object:
         """Save the fixture profile and return its terminal operation record."""
         accepted = self.dispatch(
             "save_profile",
-            {"profile": profile_payload(), "expected_revision": None},
+            {"profile": profile_payload(**overrides), "expected_revision": None},
         )
         self.assertTrue(accepted["success"])
         return self.wait_terminal(accepted["value"]["operation_id"])
@@ -86,7 +86,16 @@ class ProfileBridgeTests(unittest.TestCase):
     def test_profile_crud_uses_named_bridge_methods_and_mutation_lane(self) -> None:
         """Create, list, read, and delete profiles through named bridge methods."""
         # Create a profile and confirm the queued operation succeeded
-        saved = self.save_profile()
+        generated = self.dayz_root / "serverman" / "livonia-main"
+        (generated / "profile").mkdir(parents=True)
+        (generated / "serverDZ.cfg").write_text("instanceId = 17;\n", encoding="utf-8")
+        storage = self.dayz_root / "mpmissions" / "dayzOffline.enoch" / "storage_17"
+        storage.mkdir(parents=True)
+        (storage / "players.db").write_bytes(b"world")
+        saved = self.save_profile(
+            server_config=r"serverman\livonia-main\serverDZ.cfg",
+            runtime_profile=r"serverman\livonia-main\profile",
+        )
         self.assertEqual(saved.state, OperationState.SUCCEEDED)
         self.assertEqual(saved.result["revision"], 0)
 
@@ -104,6 +113,8 @@ class ProfileBridgeTests(unittest.TestCase):
         deleted_record = self.wait_terminal(deleted["value"]["operation_id"])
         self.assertEqual(deleted_record.state, OperationState.SUCCEEDED)
         self.assertEqual(self.dispatch("list_profiles", {})["value"], [])
+        self.assertFalse(generated.exists())
+        self.assertFalse(storage.exists())
 
     def test_preview_returns_exact_vector_without_starting_a_process(self) -> None:
         """Return the exact preview vector without launching any process."""
@@ -124,6 +135,33 @@ class ProfileBridgeTests(unittest.TestCase):
             "-mod=@Community Framework",
             "-serverMod=@Server Tools",
         ])
+
+    def test_delete_preserves_shared_world_storage_while_removing_profile(self) -> None:
+        """A shared instance preserves its world while exclusive profile data is removed."""
+        for profile_id in ("first", "second"):
+            generated = self.dayz_root / "serverman" / profile_id
+            (generated / "profile").mkdir(parents=True)
+            (generated / "serverDZ.cfg").write_text("instanceId = 9;\n", encoding="utf-8")
+            saved = self.save_profile(
+                profile_id=profile_id, display_name=profile_id.title(),
+                server_config=fr"serverman\{profile_id}\serverDZ.cfg",
+                runtime_profile=fr"serverman\{profile_id}\profile",
+            )
+            self.assertEqual(saved.state, OperationState.SUCCEEDED)
+        storage = self.dayz_root / "mpmissions" / "dayzOffline.enoch" / "storage_9"
+        storage.mkdir(parents=True)
+        (storage / "players.db").write_bytes(b"shared")
+
+        accepted = self.dispatch(
+            "delete_profile", {"profile_id": "first", "expected_revision": 0},
+        )
+        deleted = self.wait_terminal(accepted["value"]["operation_id"])
+        self.assertEqual(deleted.state, OperationState.SUCCEEDED)
+        self.assertTrue(deleted.result["preserved_shared_mission_storage"])
+        self.assertFalse((self.dayz_root / "serverman" / "first").exists())
+        self.assertTrue(storage.is_dir())
+        self.assertFalse(self.dispatch("read_profile", {"profile_id": "first"})["success"])
+        self.assertTrue(self.dispatch("read_profile", {"profile_id": "second"})["success"])
 
     def test_invalid_input_is_rejected_before_queue_and_stale_write_fails(self) -> None:
         """Reject invalid input before queuing and fail stale writes."""
@@ -148,6 +186,34 @@ class ProfileBridgeTests(unittest.TestCase):
         stale_record = self.wait_terminal(stale["value"]["operation_id"])
         self.assertEqual(stale_record.state, OperationState.FAILED)
         self.assertEqual(stale_record.terminal_error.code, "REVISION_CONFLICT")
+
+    def test_guided_creation_discovers_mission_and_provisions_ready_profile(self) -> None:
+        """Create the config, runtime folder, and selectable profile through the bridge."""
+        mission = self.dayz_root / "mpmissions" / "Pripyat.Custom"
+        mission.mkdir(parents=True)
+        executable = self.dayz_root / "DayZServer_x64.exe"
+        executable.write_bytes(b"fixture")
+        missions = self.dispatch("list_profile_missions", {})
+        self.assertTrue(missions["success"])
+        self.assertIn(
+            r"mpmissions\Pripyat.Custom",
+            [item["relative_path"] for item in missions["value"]["missions"]],
+        )
+        accepted = self.dispatch("provision_profile", {
+            "profile": {
+                "profile_id": "pripyat", "display_name": "Pripyat",
+                "server_executable": "DayZServer_x64.exe",
+                "mission_root": r"mpmissions\Pripyat.Custom", "game_port": 2302,
+                "mods": [], "extra_arguments": [],
+            },
+            "expected_settings_revision": missions["value"]["settings_revision"],
+        })
+        completed = self.wait_terminal(accepted["value"]["operation_id"])
+        self.assertEqual(completed.state, OperationState.SUCCEEDED)
+        self.assertTrue(completed.result["readiness"]["ready"])
+        self.assertEqual(self.dispatch("read_profile", {"profile_id": "pripyat"})["value"][
+            "mission_root"
+        ], r"mpmissions\Pripyat.Custom")
 
     def test_corrupt_record_translates_to_recovery_required(self) -> None:
         """Translate a corrupt profile record into a recovery-required response."""
@@ -176,6 +242,8 @@ class ProfileBridgeTests(unittest.TestCase):
                 "list_profiles",
                 "read_profile",
                 "preview_profile_command",
+                "list_profile_missions",
+                "provision_profile",
                 "save_profile",
                 "delete_profile",
                 "list_backups",

@@ -57,7 +57,9 @@ function announceProfileSelection() {
 // Remember the chosen profile and persist it through the host service.
 async function commitProfileSelection(profileId) {
   // Ignore identifiers that are not in the known profile list.
-  if (!profileContextState.profiles.some((profile) => profile.profile_id === profileId)) return;
+  if (!profileContextState.profiles.some((profile) => profile.profile_id === profileId)) {
+    return { success: false, error: { message: "The selected profile is unavailable." } };
+  }
   profileContextState.selectedId = profileId; renderGlobalProfileSelector(); announceProfileSelection();
   // Ask the host to persist the choice for the next session.
   const result = await window.pywebview.api.save_selected_profile(profileId);
@@ -66,6 +68,37 @@ async function commitProfileSelection(profileId) {
   } else {
     window.ServerManUi.clearHostStatus("preferences");
   }
+  return result;
+}
+
+// Reload the authoritative catalog, choose one valid profile, and persist it.
+async function refreshAndSelectProfile(preferredProfileId = null) {
+  const result = await window.pywebview.api.list_profiles();
+  if (!result.success) return result;
+  profileContextState.profiles = result.value;
+  // Remove safety preferences for profiles that no longer exist.
+  const known = new Set(result.value.map((profile) => profile.profile_id));
+  profileContextState.backupAfterStopProfiles = new Set(
+    [...profileContextState.backupAfterStopProfiles].filter((profileId) => known.has(profileId)),
+  );
+  const preferred = known.has(preferredProfileId) ? preferredProfileId : null;
+  const retained = known.has(profileContextState.selectedId) ? profileContextState.selectedId : null;
+  profileContextState.selectedId = preferred || retained || result.value[0]?.profile_id || null;
+  profileContextState.initialized = true; renderGlobalProfileSelector(); announceProfileSelection();
+  // Persist the final choice so a create or delete survives application restart.
+  if (profileContextState.selectedId !== null) {
+    const saved = await window.pywebview.api.save_selected_profile(profileContextState.selectedId);
+    if (!saved.success) {
+      window.ServerManUi.setHostStatus(
+        "Profile selection could not be remembered", "is-warning", "preferences",
+      );
+      return saved;
+    }
+    window.ServerManUi.clearHostStatus("preferences");
+  }
+  return { success: true, value: {
+    profiles: [...profileContextState.profiles], selected_profile_id: profileContextState.selectedId,
+  } };
 }
 
 // Switch profiles through the transition guard so unsaved edits are handled.
@@ -129,6 +162,7 @@ window.ServerManProfileContext = Object.freeze({
   selectedId: () => profileContextState.selectedId,
   profiles: () => [...profileContextState.profiles],
   select: selectGlobalProfile,
+  refreshAndSelect: refreshAndSelectProfile,
   backupAfterStop: (profileId) => profileContextState.backupAfterStopProfiles.has(profileId),
   setBackupAfterStop,
 });

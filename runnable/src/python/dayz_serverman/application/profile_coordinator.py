@@ -13,6 +13,7 @@ from ..repositories.profiles import ProfileNotFound, ProfileStorageError
 from .operations.manager import OperationManager
 from .operations.models import OperationFailure, QueueUnavailable
 from .profiles import ProfileService
+from .profile_deletion import ProfileDeletionError, ProfileDeletionService
 from .settings import SettingsValidationError
 
 
@@ -27,10 +28,14 @@ def _exact_fields(parameters: Mapping[str, Any], allowed: set[str]) -> None:
 class ProfileCoordinator:
     """Serve profile queries and queue profile mutations."""
 
-    def __init__(self, profiles: ProfileService, operations: OperationManager) -> None:
+    def __init__(
+        self, profiles: ProfileService, operations: OperationManager,
+        deletion: ProfileDeletionService,
+    ) -> None:
         """Store the profile service and the shared operation manager."""
         self._profiles = profiles
         self._operations = operations
+        self._deletion = deletion
 
     def handlers(self) -> dict[str, Callable[[Mapping[str, Any]], Any]]:
         """Return the bridge handler table for profile calls."""
@@ -99,7 +104,7 @@ class ProfileCoordinator:
             raise ApplicationCallError(ErrorCode.INVALID_REQUEST, str(error)) from error
         return self._submit(
             "DELETE_PROFILE",
-            lambda: {"profile_id": self._profiles.delete(profile_id, expected)},
+            lambda: self._deletion.delete(profile_id, expected),
         )
 
     def _submit(self, kind: str, action: Callable[[], dict[str, Any]]) -> dict[str, str]:
@@ -115,6 +120,8 @@ class ProfileCoordinator:
                 raise OperationFailure("NOT_FOUND", str(error)) from error
             except ProfileValidationError as error:
                 raise OperationFailure("INVALID_REQUEST", str(error)) from error
+            except ProfileDeletionError as error:
+                raise OperationFailure("DELETION_BLOCKED", str(error)) from error
             except ProfileStorageError as error:
                 code = "RECOVERY_REQUIRED" if error.recovery_required else "STORAGE_FAILURE"
                 raise OperationFailure(

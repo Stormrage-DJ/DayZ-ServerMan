@@ -115,6 +115,16 @@ class ScheduleCoordinator:
         })
         return requested.to_view(next_run)
 
+    def delete_profile(self, profile_id: str) -> None:
+        """Remove the schedule and pending wakeup for a deleted profile."""
+        with self._lock:
+            schedules, revision = self._load_locked()
+            if profile_id in schedules:
+                del schedules[profile_id]
+                self._save_locked(schedules, revision)
+            self._next_runs.pop(profile_id, None)
+        self._wake.set()
+
     def start(self) -> None:
         """Start the background scheduler thread once, if it is not running."""
         with self._lock:

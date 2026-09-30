@@ -157,8 +157,9 @@ function renderOperation(operation) {
   progress.append(bar);
   panel.append(progress, element("p", "", `${phase} — ${percent}%`));
   // Show the error message when the host provided one.
-  if (operation.error && typeof operation.error.message === "string") {
-    panel.append(element("p", "operation-error", operation.error.message));
+  const terminalMessage = operation.error?.message || operation.terminal_error?.message;
+  if (typeof terminalMessage === "string") {
+    panel.append(element("p", "operation-error", terminalMessage));
   }
   // Offer cancellation only when the operation allows it.
   if (operation.cancellable === true) {

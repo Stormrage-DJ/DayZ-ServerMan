@@ -61,11 +61,13 @@ class BridgeFacade:
         """Parse, dispatch, and serialize one request without raising."""
         # Extract a safe id up front so even malformed requests get an answer
         request_id = self._safe_request_id(raw_request)
+        method: str | None = None
         try:
             request = BridgeRequest.parse(raw_request)
+            method = request.method
             # Correlate every log line with the parsed request id
             with CorrelationScope(request.request_id):
-                self._log("bridge.request", request.request_id, {"method": request.method})
+                self._log("bridge.request", request.request_id, {"method": request.method}, "DEBUG")
                 handler = self._handlers.get(request.method)
                 # Unknown methods are rejected instead of reflected
                 if handler is None:
@@ -74,15 +76,19 @@ class BridgeFacade:
                         "bridge method is not allowed",
                     )
                 value = handler(request.parameters)
-                self._log("bridge.success", request.request_id, {"method": request.method})
+                self._log("bridge.success", request.request_id, {"method": request.method}, "DEBUG")
                 return BridgeResult.ok(request.request_id, value).to_dict()
         except BridgeContractError as error:
             # Contract failures are safe to return verbatim
-            self._log("bridge.failure", request_id, {"error_code": error.code.value}, "WARNING")
+            self._log("bridge.failure", request_id, {
+                "method": method, "error_code": error.code.value, "message": error.safe_message,
+            }, "WARNING")
             return BridgeResult.failed(request_id, error.code, error.safe_message).to_dict()
         except ApplicationCallError as error:
             # Application failures map to their declared code and retryable flag
-            self._log("bridge.failure", request_id, {"error_code": error.code.value}, "WARNING")
+            self._log("bridge.failure", request_id, {
+                "method": method, "error_code": error.code.value, "message": error.safe_message,
+            }, "WARNING")
             return BridgeResult.failed(
                 request_id,
                 error.code,
@@ -92,7 +98,10 @@ class BridgeFacade:
             ).to_dict()
         except Exception:
             # Unexpected failures are hidden behind a generic internal error
-            self._log("bridge.failure", request_id, {"error_code": "INTERNAL_FAILURE"}, "ERROR")
+            self._log("bridge.failure", request_id, {
+                "method": method, "error_code": "INTERNAL_FAILURE",
+                "message": "The request could not be completed.",
+            }, "ERROR")
             return BridgeResult.failed(
                 request_id,
                 ErrorCode.INTERNAL_FAILURE,

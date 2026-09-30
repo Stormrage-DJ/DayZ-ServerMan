@@ -23,10 +23,55 @@ the last selected profile.
 Profiles contain DayZ-relative paths, launch arguments, runtime profile data,
 and ordered mod entries. They do not contain Steam passwords.
 
+## Profile provisioning
+
+**New profile** discovers installed missions from `<DayZ root>/mpmissions` and
+also accepts an existing custom DayZ-relative mission directory. Creation is a
+managed operation that publishes the profile record together with:
+
+```text
+<DayZ root>/serverman/<profile-id>/serverDZ.cfg
+<DayZ root>/serverman/<profile-id>/profile/
+```
+
+The `serverman` directory contains DayZ operational data only. The movable
+manager application remains outside the DayZ installation.
+
+Creation reuses a pre-existing target only when it is an unambiguous generated
+profile folder containing `serverDZ.cfg` and a `profile` directory. It never
+overwrites those reused files. Other pre-existing targets are rejected with an
+actionable error. New content is staged with a recovery journal under
+`data/operations/profile-provisioning/`, and rollback removes only directories
+carrying that operation's ownership marker. If ownership is ambiguous after an
+interruption, the manager preserves the files and blocks mutations for review.
+
+Deleting a manager-created profile permanently removes its generated
+configuration and runtime folder, exclusive `storage_<instanceId>` world data,
+profile backups, schedule, and saved preferences. The manager blocks deletion
+when DayZ is active or generated-folder ownership is ambiguous. Mission storage
+that is shared with, or may belong to, another profile is preserved while the
+rest of the selected profile is deleted. Imported profiles outside the generated
+layout are preserved.
+
+After success, the manager refreshes the shared profile catalog, selects the
+new profile, and stores that selection. Existing profiles are not moved into
+the generated layout.
+
 ## Lifecycle safety
 
-DayZ-ServerMan reconciles the configured executable with running Windows
+DayZ-ServerMan compares the configured executable with running Windows
 processes before it enables lifecycle actions.
+
+Overview reports process control and server readiness separately:
+
+- **Starting** means that the managed DayZ process exists, but its local Steam
+  query endpoint does not answer yet.
+- **Ready** means that the managed process answers a valid Steam server query.
+- **Not responding** means that the process still exists, but the query
+  endpoint did not answer within the two-minute startup grace period.
+
+The readiness warning does not remove process ownership. **Save & Stop** and
+**Save & Restart** remain available so the operator can recover safely.
 
 - **Start server** starts the selected profile only from a proven stopped state.
 - **Save & Stop** requests a graceful close and waits for the managed process.
@@ -82,8 +127,10 @@ Backups are ZIP archives named with the profile ID and local creation time:
 <profile>_YYYY-MM-DD_HH-MM-SS.zip
 ```
 
-Each archive contains a manifest and the selected profile's managed data. The
-manager verifies the published archive before it reports success.
+Each archive contains a manifest, the server configuration, the complete
+mission directory (including `storage_<instanceId>` world and mod persistence),
+and the runtime profile directory. The manager verifies the published archive
+before it reports success.
 
 The portable destination is `runnable/backups/`. A custom local destination can
 be selected in Settings. Existing backup files remain external user data and
@@ -101,12 +148,18 @@ until recovery is resolved.
 
 ## Logs and operation records
 
-- `data/logs/manager.jsonl` contains structured manager events.
+- `data/logs/manager.jsonl` contains structured manager events. Routine bridge
+  polling and successful read-only requests are not stored.
+- `data/logs/manager.jsonl.1` is the single retained previous manager-log
+  segment. The active manager log rotates at 5 MiB.
 - `data/logs/dayz-server.log` contains captured DayZ output.
 - `data/operations/` contains durable operation state and recovery journals.
 
-The Logs page refreshes periodically. It preserves the reader's scroll position
-unless the view already follows the end of the log.
+The Logs page opens on **Manager activity**, which summarizes completed
+operations, warnings, errors, and scheduled actions. **Manager diagnostics**
+exposes raw structured records when troubleshooting requires them. The page
+checks periodically, replaces content only after the selected log changes, and
+preserves the reader's scroll position unless the view already follows the end.
 
 ## Controlled adoption
 

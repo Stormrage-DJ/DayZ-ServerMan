@@ -45,6 +45,13 @@ class ConfigurationFileTests(unittest.TestCase):
             "maxPlayers = 60;\r\n"
             "disableVoN = 0;\r\n"
             "customSetting = 77; // preserve\r\n"
+            "class Missions\r\n"
+            "{\r\n"
+            "    class DayZ\r\n"
+            "    {\r\n"
+            '        template = "dayzOffline.chernarusplus";\r\n'
+            "    };\r\n"
+            "};\r\n"
         )
         path.write_bytes(UTF8_BOM + original.encode("utf-8"))
         snapshot = load_configuration_file(path, "server")
@@ -52,7 +59,8 @@ class ConfigurationFileTests(unittest.TestCase):
         # Patch the accepted fields and keep the unknown custom line intact
         proposed = transform_configuration(
             snapshot,
-            {"hostname": "Közösségi; Szerver", "maxPlayers": 80, "disableVoN": True},
+            {"hostname": "Közösségi; Szerver", "maxPlayers": 80,
+             "steamQueryPort": 2405, "disableVoN": True},
         )
 
         # Verify preserved bytes and reload the published file
@@ -60,8 +68,10 @@ class ConfigurationFileTests(unittest.TestCase):
         text = proposed[len(UTF8_BOM):].decode("utf-8")
         self.assertIn('hostname = "Közösségi; Szerver"; // visible', text)
         self.assertIn("maxPlayers = 80;", text)
+        self.assertIn("steamQueryPort = 2405;", text)
         self.assertIn("disableVoN = 1;", text)
         self.assertIn("customSetting = 77; // preserve", text)
+        self.assertIn('template = "dayzOffline.chernarusplus";', text)
         self.assertNotIn("\n", text.replace("\r\n", ""))
         path.write_bytes(proposed)
         self.assertEqual(load_configuration_file(path, "server").values["hostname"], "Közösségi; Szerver")

@@ -6,10 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .adapters.windows.diagnostics import WindowsPathDiagnostics
-from .adapters.windows.graceful_stop import WindowsGracefulStop
-from .adapters.windows.launcher import WindowsProcessLauncher
-from .adapters.windows.mutex import WindowsInstallationMutex
-from .adapters.windows.processes import WindowsProcessInventory
 from .adapters.windows.steamcmd import SteamCmdPreflight, WindowsSteamCmdAdapter
 from .adapters.windows.process_tree import WindowsChildProbe
 from .application.coordinator import ApplicationCoordinator
@@ -17,8 +13,8 @@ from .application.backup_coordinator import BackupCoordinator
 from .application.backups import BackupService
 from .application.configuration import ConfigurationService
 from .application.configuration_coordinator import ConfigurationCoordinator
-from .application.lifecycle import ServerLifecycleService
 from .application.lifecycle_coordinator import LifecycleCoordinator
+from .application.server_readiness import ReadinessLifecycleService
 from .application.logs import LogQueryService
 from .application.mission_configuration import MissionConfigurationService
 from .application.mission_configuration_coordinator import MissionConfigurationCoordinator
@@ -35,6 +31,7 @@ from .application.legacy_backups import LegacyBackupService
 from .application.operations.manager import OperationManager
 from .application.operations.store import OperationStore
 from .application.profile_coordinator import ProfileCoordinator
+from .application.profile_deletion import ProfileDeletionService
 from .application.preferences import PreferenceCoordinator
 from .application.profiles import ProfileService
 from .application.restore_coordinator import RestoreCoordinator
@@ -47,7 +44,6 @@ from .application.workshop_updates import WorkshopUpdateService
 from .bridge.facade import BridgeFacade
 from .observability.structured_log import StructuredLogger
 from .repositories.json_store import VersionedJsonRepository
-from .repositories.lifecycle_state import LifecycleStateRepository
 from .repositories.migrations import MigrationStorage
 from .repositories.legacy_backup_index import LegacyBackupIndexRepository
 from .repositories.migration_journal import MigrationJournalRepository
@@ -63,6 +59,8 @@ from .repositories.paths import PortablePaths
 from .repositories.profiles import ProfileRepository
 from .repositories.workshop_recovery import inspect_workshop_recovery
 from .repositories.applied_mod_state import AppliedModStateRepository
+from .profile_provisioning_composition import build_profile_provisioning
+from .lifecycle_composition import build_lifecycle
 
 
 @dataclass(frozen=True)
@@ -94,7 +92,7 @@ class ApplicationComposition:
     migration_coordinator: MigrationCoordinator
     legacy_backups: LegacyBackupService
     legacy_backup_coordinator: LegacyBackupCoordinator
-    lifecycle: ServerLifecycleService
+    lifecycle: ReadinessLifecycleService
     lifecycle_coordinator: LifecycleCoordinator
     schedules: ScheduleCoordinator
     logs: LogQueryService
@@ -151,7 +149,7 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
     state_repository = VersionedJsonRepository(paths.state_file)
     profile_repository = ProfileRepository(paths.profiles)
     profiles = ProfileService(profile_repository, settings)
-    profile_coordinator = ProfileCoordinator(profiles, operations)
+    profile_provisioning_coordinator = build_profile_provisioning(profiles, settings, operations, paths.operations)
     preferences = PreferenceCoordinator(
         VersionedJsonRepository(paths.ui_preferences), profiles,
     )
@@ -184,19 +182,9 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
     migration_coordinator = MigrationCoordinator(migrations, operations)
     legacy_backups = LegacyBackupService(legacy_backup_repository)
     legacy_backup_coordinator = LegacyBackupCoordinator(legacy_backups, operations)
-    # Build lifecycle services over the Windows process adapters
-    launcher = WindowsProcessLauncher()
-    process_inventory = WindowsProcessInventory()
-    mutex = WindowsInstallationMutex()
-    lifecycle = ServerLifecycleService(
-        settings,
-        profiles,
-        process_inventory,
-        launcher,
-        WindowsGracefulStop(process_inventory),
-        mutex,
-        LifecycleStateRepository(state_repository, operations.session_id),
-        paths.logs,
+    # Build process control together with its independent readiness signal
+    lifecycle, mutex = build_lifecycle(
+        settings, profiles, state_repository, operations, paths.logs,
     )
     # Build restore services and gate mutations on pending recovery
     restore_journals = RestoreJournalRepository(paths.operations / "restore-journals")
@@ -218,6 +206,11 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
     # Build SteamCMD update, inventory, and publication services
     steamcmd_preflight = SteamCmdPreflight()
     applied_mod_state = AppliedModStateRepository(paths.applied_mod_state)
+    profile_deletion = ProfileDeletionService(
+        profiles, settings, lifecycle, backup_storage, preferences, schedules,
+        applied_mod_state,
+    )
+    profile_coordinator = ProfileCoordinator(profiles, operations, profile_deletion)
     workshop_updates = WorkshopUpdateService(
         profiles, settings, steamcmd_preflight, WindowsSteamCmdAdapter(steamcmd_preflight),
         applied_state=applied_mod_state,
@@ -237,6 +230,7 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
     handlers = {
         **coordinator.handlers(),
         **profile_coordinator.handlers(),
+        **profile_provisioning_coordinator.handlers(),
         **preferences.handlers(),
         **backup_coordinator.handlers(),
         **restore_coordinator.handlers(),

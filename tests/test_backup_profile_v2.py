@@ -42,6 +42,9 @@ class BackupProfileV2Tests(unittest.TestCase):
         config.parent.mkdir(parents=True)
         config.write_text("hostname = fixture;\n", encoding="utf-8")
         self.runtime = create_runtime_profile(self.dayz)
+        mission = self.dayz / "mpmissions" / "dayzOffline.chernarusplus"
+        mission.mkdir(parents=True)
+        (mission / "init.c").write_text("fixture", encoding="utf-8")
         self.backups = self.root / "backups"
         self.backups.mkdir()
         self.settings = FakeSettings(self.dayz, self.backups)
@@ -53,7 +56,7 @@ class BackupProfileV2Tests(unittest.TestCase):
     def service(self, profile=None, storage=None) -> BackupService:
         """Build a backup service over the test settings and clock."""
         return BackupService(
-            FakeProfiles(profile or record(False)),  # type: ignore[arg-type]
+            FakeProfiles(profile or record()),  # type: ignore[arg-type]
             self.settings,  # type: ignore[arg-type]
             storage or BackupStorage(),
             clock=lambda: datetime(2026, 9, 25, 18, 0, tzinfo=UTC),
@@ -122,7 +125,7 @@ class BackupProfileV2Tests(unittest.TestCase):
         paths = [entry["path"] for entry in manifest["entries"]]
         self.assertTrue(any(path.startswith("runtime-profile/") for path in paths))
         self.assertFalse(any("Never Copy" in path for path in paths))
-        self.assertEqual(manifest["semantic_profile_digest"], record(False).semantic_digest)
+        self.assertEqual(manifest["semantic_profile_digest"], record().semantic_digest)
         history = self.service().history("main")
         summary = history["backups"][0]
         self.assertEqual(summary["status"], "USABLE")
@@ -149,7 +152,7 @@ class BackupProfileV2Tests(unittest.TestCase):
 
     def test_missing_runtime_and_windows_case_collision_fail_before_destination(self) -> None:
         """Missing runtime paths and Windows case collisions fail before the destination."""
-        missing = record(False, "profiles\\missing")
+        missing = record(True, "profiles\\missing")
         with self.assertRaises(BackupStorageError) as raised:
             self.service(missing).create("main", 3, 4, lambda *_: None)
         self.assertEqual(raised.exception.code, "BACKUP_SOURCE_INVALID")
@@ -193,7 +196,7 @@ class BackupProfileV2Tests(unittest.TestCase):
             self.skipTest("directory symlink creation is unavailable")
         linked_settings = FakeSettings(linked_root, self.backups)
         service = BackupService(
-            FakeProfiles(record(False)), linked_settings, BackupStorage(),  # type: ignore[arg-type]
+            FakeProfiles(record()), linked_settings, BackupStorage(),  # type: ignore[arg-type]
         )
         with self.assertRaises(BackupStorageError) as raised:
             service.create("main", 3, 4, lambda *_: None)

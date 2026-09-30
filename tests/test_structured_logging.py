@@ -103,8 +103,8 @@ class StructuredLoggingTests(unittest.TestCase):
             "API key rotation uses a token bucket and secret sharing.",
         )
 
-    def test_bridge_request_correlates_with_durable_operation_events(self) -> None:
-        """One bridge request correlates with its durable operation events."""
+    def test_only_terminal_operation_event_is_durable_by_default(self) -> None:
+        """Routine bridge traffic and progress do not flood the durable log."""
         # Wire an operation manager and a bridge method that submits one operation
         manager = OperationManager(OperationStore(self.root / "operations"), logger=self.logger)
 
@@ -135,17 +135,52 @@ class StructuredLoggingTests(unittest.TestCase):
             time.sleep(0.01)
         manager.shutdown(2)
 
-        # Confirm bridge and operation events share the request correlation
+        # Confirm only the meaningful terminal event remains at the default level
         related = [entry for entry in self.entries() if entry["correlation_id"] == "correlation-7"]
-        self.assertTrue(any(entry["event"] == "bridge.request" for entry in related))
+        self.assertFalse(any(entry["event"] == "bridge.request" for entry in related))
+        self.assertFalse(any(entry["event"] == "bridge.success" for entry in related))
         operation_entries = [entry for entry in related if entry["operation_id"] == operation_id]
-        self.assertTrue(any(entry["event"] == "operation.progress" for entry in operation_entries))
+        self.assertFalse(any(entry["event"] == "operation.progress" for entry in operation_entries))
         self.assertTrue(any(entry["fields"].get("state") == "SUCCEEDED" for entry in operation_entries))
         # Confirm the completion event carries the submitted log fields
         completed = next(entry for entry in operation_entries if entry["fields"].get("state") == "SUCCEEDED")
         self.assertEqual(completed["fields"]["profile_id"], "livonia-main")
         self.assertEqual(completed["fields"]["target_role"], "dayz_server")
         self.assertEqual(completed["fields"]["child_process_id"], 700)
+
+    def test_debug_level_explicitly_keeps_bridge_trace(self) -> None:
+        """Troubleshooting can opt into request and success diagnostics."""
+        debug_path = self.root / "debug.jsonl"
+        logger = StructuredLogger(debug_path, minimum_level="DEBUG")
+        facade = BridgeFacade({"ping": lambda _parameters: {"ready": True}}, logger)
+
+        facade.dispatch({
+            "contract_version": 1,
+            "request_id": "debug-request",
+            "method": "ping",
+            "parameters": {},
+        })
+
+        events = [
+            json.loads(line)["event"]
+            for line in debug_path.read_text(encoding="utf-8").splitlines()
+        ]
+        self.assertEqual(events, ["bridge.request", "bridge.success"])
+
+    def test_log_rotation_keeps_one_previous_file(self) -> None:
+        """The active structured log is bounded and retains one prior segment."""
+        bounded_path = self.root / "bounded.jsonl"
+        logger = StructuredLogger(bounded_path, maximum_bytes=500)
+
+        for index in range(12):
+            logger.emit("fixture.event", fields={"index": index, "message": "x" * 80})
+
+        previous = bounded_path.with_name("bounded.jsonl.1")
+        self.assertTrue(previous.is_file())
+        self.assertTrue(bounded_path.is_file())
+        for path in (previous, bounded_path):
+            for line in path.read_text(encoding="utf-8").splitlines():
+                self.assertIsInstance(json.loads(line), dict)
 
 
 def _completed(context) -> dict[str, object]:

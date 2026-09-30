@@ -53,6 +53,8 @@ class HostApiTests(unittest.TestCase):
                 "list_mod_inventory",
                 "read_profile",
                 "preview_profile_command",
+                "list_profile_missions",
+                "provision_profile",
                 "save_profile",
                 "delete_profile",
                 "list_backups",
@@ -109,6 +111,8 @@ class HostApiTests(unittest.TestCase):
         api.list_mod_inventory("main")
         api.read_profile("main")
         api.preview_profile_command("main")
+        api.list_profile_missions()
+        api.provision_profile({"profile_id": "new"}, 4)
         api.save_profile({"profile_id": "main"}, 3)
         api.delete_profile("main", 3)
         api.list_backups("main")
@@ -158,6 +162,8 @@ class HostApiTests(unittest.TestCase):
                 "list_mod_inventory",
                 "read_profile",
                 "preview_profile_command",
+                "list_profile_missions",
+                "provision_profile",
                 "save_profile",
                 "delete_profile",
                 "list_backups",

@@ -9,12 +9,13 @@ from .medical_feature_api import MedicalFeatureHostMethods
 from .mod_inventory_api import ModInventoryHostMethods
 from .operational_api import OperationalHostMethods
 from .preference_api import PreferenceHostMethods
+from .profile_provisioning_api import ProfileProvisioningHostMethods
 from .schedule_api import ScheduleHostMethods
 from .settings_api import SettingsHostMethods
 
 class HostApi(MedicalFeatureHostMethods, SettingsHostMethods, ModInventoryHostMethods,
               ModPublicationHostMethods, OperationalHostMethods, PreferenceHostMethods,
-              ScheduleHostMethods):
+              ProfileProvisioningHostMethods, ScheduleHostMethods):
     """Translate approved browser calls into strict bridge requests."""
     def __init__(self, bridge: BridgeFacade) -> None:
         """Store the bridge and prepare request tracking and selection hooks."""

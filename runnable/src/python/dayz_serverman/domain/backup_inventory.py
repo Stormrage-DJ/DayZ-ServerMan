@@ -38,6 +38,16 @@ def accepted_payload_entries(profile: ProfileInput) -> tuple[str, ...]:
     return tuple(_archive_path(path) for path in accepted_payload_sources(profile))
 
 
+def server_config_entry(profile: ProfileInput) -> str:
+    """Return the required server-configuration archive entry."""
+    return _archive_path(profile.server_config)
+
+
+def mission_payload_prefix(mission_root: str) -> str:
+    """Return the archive prefix reserved for one complete mission tree."""
+    return _archive_path(mission_root).rstrip("/") + "/"
+
+
 def _archive_path(relative: str) -> str:
     """Return the archive payload path for a Windows relative path."""
     return "payload/" + "/".join(PureWindowsPath(relative).parts)

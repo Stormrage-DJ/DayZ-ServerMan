@@ -38,7 +38,7 @@ becomes damaged. The next launch creates it again.
 6. Create or import a server profile.
 
 <!-- shot:readme-02 -->
-![Settings showing the saved DayZ, SteamCMD, and backup locations with their status](img/readme-02.png)
+![Settings showing the saved DayZ and SteamCMD folders with their status](img/readme-02.png)
 
 The manager derives these paths from the selected folders:
 
@@ -49,12 +49,48 @@ The manager derives these paths from the selected folders:
 The DayZ server, SteamCMD, backup folder, and manager can be in unrelated
 locations.
 
+## Create a server profile
+
+Open **Profiles** and select **New profile**. Enter a display name, game port,
+and mission. The profile ID is generated from the display name and can be
+changed before creation.
+
+The mission list comes from the configured DayZ installation's `mpmissions`
+directory. Select **Custom mission…** to enter an installed custom mission such
+as `mpmissions\Pripyat`. The directory must already exist inside the configured
+DayZ installation. Profile creation does not download mission files or install
+required mods.
+
+DayZ-ServerMan creates these operational files inside the DayZ installation:
+
+```text
+serverman\<profile-id>\serverDZ.cfg
+serverman\<profile-id>\profile\
+```
+
+Application source, Python packages, settings, and backups are not placed in
+that directory. The generated configuration uses safe initial values and can
+be adjusted from **Configuration** after creation.
+
+Deleting a profile removes it from DayZ-ServerMan but keeps these operational
+files. Creating the same profile ID again safely reuses a compatible
+`serverDZ.cfg` and `profile` directory without overwriting either one.
+
+When creation succeeds, the new profile is selected and remembered. Select
+**Go to Overview**, then **Start server**. A “ready to start” result confirms
+that the manager can resolve the executable, config, runtime directory,
+mission, and configured mod paths. It cannot guarantee that a custom mission's
+internal files or mod dependencies are correct.
+
 <!-- shot:readme-03 -->
-![Profiles workspace with the create and import actions](img/readme-03.png)
+![Profiles workspace showing profile details and the ordered mod list](img/readme-03.png)
 
 ## Main workspaces
 
-- **Overview** selects the active profile and controls the DayZ process.
+- **Overview** selects the active profile and controls the DayZ process. It
+  shows **Starting** until the local Steam query endpoint answers, then shows
+  **Ready**. A live process that does not answer after two minutes shows
+  **Not responding** while safe stop and restart controls remain available.
 - **Profiles** defines the launch command, runtime profile, and ordered mods.
 - **Configuration** edits the selected server's core configuration.
 - **Tweaks** edits gameplay, economy, weather, events, spawn, and population data.
@@ -63,7 +99,9 @@ locations.
 <!-- shot:readme-04 -->
 ![Sidebar workspace list with the remembered profile selector](img/readme-04.png)
 
-- **Logs** shows manager activity and captured DayZ server output.
+- **Logs** shows concise manager activity and captured DayZ server output.
+  Routine interface polling is excluded. Select **Manager diagnostics** only when
+  you need the underlying structured troubleshooting records.
 - **Settings** configures external locations and SteamCMD sign-in settings.
 
 The profile selector in the sidebar changes the active server without changing
@@ -98,16 +136,16 @@ waits until the next day. If the selected server is not running under this
 manager at the scheduled time, the manager records a skipped run.
 
 <!-- shot:readme-06 -->
-![Overview schedule row with time fields, one selected action, and Save schedule](img/readme-06.png)
+![Overview schedule row with time fields, timed actions, and Save schedule](img/readme-06.png)
 
 ## Mods and SteamCMD
 
 The Mods page shows each configured Workshop item, its local version, and its
-<!-- shot:readme-07 -->
-![Mods workspace listing configured Workshop items with local version and state](img/readme-07.png)
-
 current state. **Download / update mods** asks SteamCMD to update the selected
 profile's Workshop items.
+
+<!-- shot:readme-07 -->
+![Mods workspace listing configured Workshop items with local version and state](img/readme-07.png)
 
 DayZ-ServerMan then verifies SteamCMD evidence and applies only content whose
 recorded source state or destination state changed. Passwords and Steam Guard
@@ -128,7 +166,9 @@ pripyat_2026-09-28_16-21-51.zip
 ![Backups workspace with a verified backup ready to restore and the review step](img/readme-08.png)
 
 The manager verifies a backup before it lists the file as ready to restore.
-Restores require a review step before files are changed.
+Every new backup includes the server configuration, complete mission directory
+(including `storage_<instanceId>` world and mod persistence), and runtime
+profile. Restores require a review step before files are changed.
 
 ## Local application data
 
@@ -149,7 +189,8 @@ A clean repository checkout contains only safe placeholders and
 - If setup fails, confirm that Python can run `-m venv` and `-m pip`.
 - Confirm that PyPI is reachable during dependency installation.
 - If the window cannot open, install or repair Microsoft Edge WebView2 Runtime.
-- Review `data/logs/manager.jsonl` when an operation fails.
+- Review **Manager activity** on the Logs page when an operation fails. Use
+  **Manager diagnostics** or `data/logs/manager.jsonl` only for technical detail.
 - Do not delete `config`, `data`, or `backups` when preserving an installation.
 
 ## Before using a production server

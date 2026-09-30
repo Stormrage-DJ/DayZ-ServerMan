@@ -36,11 +36,14 @@ class RestoreProfileV2Tests(unittest.TestCase):
         self.target.parent.mkdir(parents=True)
         self.target.write_text("snapshot config", encoding="utf-8")
         (self.dayz / "profiles" / "main").mkdir(parents=True)
+        mission = self.dayz / "mpmissions" / "dayzOffline.chernarusplus"
+        mission.mkdir(parents=True)
+        (mission / "init.c").write_text("fixture", encoding="utf-8")
         self.backups = self.root / "manager" / "backups"
         self.backups.mkdir(parents=True)
         self.recovery = self.backups / "recovery"
         self.recovery.mkdir()
-        self.profiles = FakeProfiles(record(False))
+        self.profiles = FakeProfiles(record())
         self.settings = FakeSettings(self.dayz, self.backups)
 
     def tearDown(self) -> None:
@@ -133,7 +136,7 @@ class RestoreProfileV2Tests(unittest.TestCase):
 
         def fault(phase: str, index: int) -> None:
             """Fail while creating the second runtime ancestor."""
-            if phase == "AFTER_CREATE_ANCESTOR" and index == 1:
+            if phase == "AFTER_CREATE_ANCESTOR" and index >= 2:
                 raise OSError("synthetic runtime ancestor fault")
 
         service = self.service(RestoreStorage(fault_hook=fault))
@@ -232,7 +235,7 @@ class RestoreProfileV2Tests(unittest.TestCase):
 
         def interrupt(phase: str, index: int) -> None:
             """Interrupt publication and compensation to force reconciliation."""
-            if (phase == "AFTER_CREATE_ANCESTOR" and index == 1) or phase == "BEFORE_COMPENSATE":
+            if (phase == "AFTER_CREATE_ANCESTOR" and index >= 2) or phase == "BEFORE_COMPENSATE":
                 raise OSError("synthetic interrupted runtime compensation")
 
         storage = RestoreStorage(fault_hook=interrupt)

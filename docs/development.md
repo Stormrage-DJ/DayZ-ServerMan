@@ -83,6 +83,31 @@ The frontend uses small page-specific JavaScript files and shared context
 modules. Python remains authoritative for filesystem access, process control,
 validation, and persistent mutations.
 
+### Frontend control styling
+
+`frontend/tokens.css` is the canonical source for form-control colors, borders,
+height, padding, choice size, disabled opacity, and focus color.
+`frontend/styles.css` applies that contract to text inputs, number inputs,
+selects, text areas, checkboxes, and radio buttons. Page-specific style files
+may change layout, width, or an explicitly compact height, but must not redefine
+the control surface, border, text color, or interaction states.
+
+### Guided profile provisioning
+
+- `application/mission_catalog.py` discovers and validates installed missions.
+- `application/profile_provisioning.py` owns preflight, staging, publication,
+  rollback, recovery, and launch-readiness verification.
+- `repositories/provisioning_journal.py` stores durable operation evidence.
+- `profile_provisioning_composition.py` keeps provisioning wiring out of the
+  main composition root.
+- `frontend/profile_create.js` and `frontend/profiles.css` own the guided form.
+- `frontend/profile_context.js` remains the sole owner of the active profile
+  catalog and persisted selection.
+
+Profile creation uses `provision_profile`; `save_profile` remains the edit path
+for existing profiles. Do not add filesystem side effects to ordinary profile
+save.
+
 ## Change checklist
 
 1. Preserve the movable `runnable/` boundary.

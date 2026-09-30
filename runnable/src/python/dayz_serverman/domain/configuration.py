@@ -28,6 +28,7 @@ SERVER_FIELDS: Mapping[str, FieldSpec] = {
     "password": FieldSpec("string", secret=True),
     "passwordAdmin": FieldSpec("string", secret=True),
     "maxPlayers": FieldSpec("integer", 1, 2_147_483_647),
+    "steamQueryPort": FieldSpec("integer", 1, 65_535),
     "enableWhitelist": FieldSpec("boolean"),
     "disableVoN": FieldSpec("boolean"),
     "disable3rdPerson": FieldSpec("boolean"),

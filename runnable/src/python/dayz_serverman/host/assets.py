@@ -39,9 +39,11 @@ def compose_shell_html(frontend_root: Path) -> str:
         raise ValueError("frontend document must contain one style and script marker")
     # Read every stylesheet that the composed shell inlines
     tokens = (root / "tokens.css").read_text(encoding="utf-8")
+    controls = (root / "controls.css").read_text(encoding="utf-8")
     styles = (root / "styles.css").read_text(encoding="utf-8")
     mods_styles = (root / "mods.css").read_text(encoding="utf-8")
     overview_styles = (root / "overview.css").read_text(encoding="utf-8")
+    profiles_styles = (root / "profiles.css").read_text(encoding="utf-8")
     # Read every script in the order the shell expects
     shell_ui_script = (root / "shell_ui.js").read_text(encoding="utf-8")
     workspace_script = (root / "workspace_context.js").read_text(encoding="utf-8")
@@ -58,7 +60,9 @@ def compose_shell_html(frontend_root: Path) -> str:
     backup_script = (root / "backups.js").read_text(encoding="utf-8")
     restore_script = (root / "restore.js").read_text(encoding="utf-8")
     profiles_script = (root / "profiles.js").read_text(encoding="utf-8")
+    profile_create_script = (root / "profile_create.js").read_text(encoding="utf-8")
     profiles_mods_script = (root / "profiles_mods.js").read_text(encoding="utf-8")
+    profile_copy_mods_script = (root / "profile_copy_mods.js").read_text(encoding="utf-8")
     profile_delete_script = (root / "profile_delete.js").read_text(encoding="utf-8")
     migration_script = (root / "migration.js").read_text(encoding="utf-8")
     settings_script = (root / "settings.js").read_text(encoding="utf-8")
@@ -67,14 +71,17 @@ def compose_shell_html(frontend_root: Path) -> str:
     mod_publication_script = (root / "mod-publication.js").read_text(encoding="utf-8")
     overview_backup_script = (root / "overview_backup.js").read_text(encoding="utf-8")
     overview_schedule_script = (root / "overview_schedule.js").read_text(encoding="utf-8")
+    overview_readiness_script = (root / "overview_readiness.js").read_text(encoding="utf-8")
+    overview_dialog_script = (root / "overview_lifecycle_dialog.js").read_text(encoding="utf-8")
     overview_script = (root / "overview.js").read_text(encoding="utf-8")
+    overview_status_script = (root / "overview_status.js").read_text(encoding="utf-8")
     logs_script = (root / "logs.js").read_text(encoding="utf-8")
     app_script = (root / "app.js").read_text(encoding="utf-8")
     # Substitute the style marker with the concatenated stylesheets
     document = document.replace(
         STYLE_MARKER,
-        f"<style>\n{tokens}\n{styles}\n{mods_styles}\n{overview_styles}\n</style>",
+        f"<style>\n{tokens}\n{controls}\n{styles}\n{mods_styles}\n{overview_styles}\n{profiles_styles}\n</style>",
     )
-    script = f"{shell_ui_script}\n{workspace_script}\n{transition_script}\n{profile_context_script}\n{configuration_catalog_script}\n{tweaks_catalog_script}\n{tweaks_render_script}\n{tweaks_script}\n{configuration_edit_script}\n{configuration_context_script}\n{configuration_script}\n{backup_display_script}\n{backup_script}\n{restore_script}\n{profiles_mods_script}\n{profiles_script}\n{profile_delete_script}\n{migration_script}\n{settings_script}\n{mods_script}\n{mods_display_script}\n{mod_publication_script}\n{overview_backup_script}\n{overview_schedule_script}\n{overview_script}\n{logs_script}\n{app_script}"
+    script = f"{shell_ui_script}\n{workspace_script}\n{transition_script}\n{profile_context_script}\n{configuration_catalog_script}\n{tweaks_catalog_script}\n{tweaks_render_script}\n{tweaks_script}\n{configuration_edit_script}\n{configuration_context_script}\n{configuration_script}\n{backup_display_script}\n{backup_script}\n{restore_script}\n{profiles_mods_script}\n{profile_copy_mods_script}\n{profile_create_script}\n{profiles_script}\n{profile_delete_script}\n{migration_script}\n{settings_script}\n{mods_script}\n{mods_display_script}\n{mod_publication_script}\n{overview_backup_script}\n{overview_schedule_script}\n{overview_readiness_script}\n{overview_dialog_script}\n{overview_script}\n{overview_status_script}\n{logs_script}\n{app_script}"
     # Substitute the script marker and return the composed document
     return document.replace(SCRIPT_MARKER, f"<script>\n{script}\n</script>")

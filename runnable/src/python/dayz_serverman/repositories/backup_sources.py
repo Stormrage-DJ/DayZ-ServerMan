@@ -65,30 +65,31 @@ def single_source(dayz_root: Path, relative: str) -> BackupSource:
     return _source(resolved, "payload/" + "/".join(windows.parts))
 
 
-def runtime_sources(dayz_root: Path, relative: str) -> tuple[BackupSource, ...]:
-    """Return verified source records for every file under the runtime profile tree."""
+def directory_sources(
+    dayz_root: Path, relative: str, entry_prefix: str,
+) -> tuple[BackupSource, ...]:
+    """Return verified source records for every file in one contained directory tree."""
     # Resolve the read-only DayZ root and the runtime profile directory
     root = safe_directory(dayz_root, "DayZ root", writable=False)
     windows = _relative(relative)
-    runtime = _contained(root, root.joinpath(*windows.parts), file=False)
+    directory = _contained(root, root.joinpath(*windows.parts), file=False)
+    prefix = normalized_entry_path(entry_prefix).rstrip("/")
     sources: list[BackupSource] = []
     # Walk without following links and capture every regular file
     try:
-        for parent, directories, files in os.walk(runtime, followlinks=False):
+        for parent, directories, files in os.walk(directory, followlinks=False):
             parent_path = Path(parent)
             for name in directories:
                 _reject_node(parent_path / name)
             for name in files:
                 path = parent_path / name
                 _reject_node(path)
-                relative_path = path.relative_to(runtime)
-                entry = normalized_entry_path(
-                    "runtime-profile/" + "/".join(relative_path.parts)
-                )
+                relative_path = path.relative_to(directory)
+                entry = normalized_entry_path(prefix + "/" + "/".join(relative_path.parts))
                 sources.append(_source(path.resolve(strict=True), entry))
     except OSError as error:
         raise BackupSourceError(
-            "BACKUP_SOURCE_INVALID", "The runtime profile tree is missing or inaccessible."
+            "BACKUP_SOURCE_INVALID", "The backup source tree is missing or inaccessible."
         ) from error
     # Order entries canonically and reject Windows case collisions
     sources.sort(key=lambda item: entry_path_key(item.entry_path))
@@ -96,9 +97,14 @@ def runtime_sources(dayz_root: Path, relative: str) -> tuple[BackupSource, ...]:
     if len(folded) != len(set(folded)):
         raise BackupSourceError(
             "BACKUP_SOURCE_COLLISION",
-            "The runtime profile contains names that collide on Windows.",
+            "The backup source tree contains names that collide on Windows.",
         )
     return tuple(sources)
+
+
+def runtime_sources(dayz_root: Path, relative: str) -> tuple[BackupSource, ...]:
+    """Return verified source records for every file under the runtime profile tree."""
+    return directory_sources(dayz_root, relative, "runtime-profile")
 
 
 def copy_verified(source: BackupSource, target: Path) -> None:

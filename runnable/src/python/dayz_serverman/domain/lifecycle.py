@@ -21,6 +21,14 @@ class ServerState(str, Enum):
     AMBIGUOUS = "AMBIGUOUS"
 
 
+class ServerReadiness(str, Enum):
+    """Application readiness of a verified manager-owned DayZ process."""
+
+    STARTING = "STARTING"
+    READY = "READY"
+    UNRESPONSIVE = "UNRESPONSIVE"
+
+
 def canonical_process_path(path: str | os.PathLike[str]) -> str:
     """Return the canonical comparison form of a process path."""
     # Resolve and case-fold so Windows path spellings compare equal
@@ -101,6 +109,8 @@ class LifecycleSnapshot:
     state: ServerState
     process_id: int | None = None
     diagnostic_code: str | None = None
+    readiness: ServerReadiness | None = None
+    query_port: int | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Return the snapshot as its persisted object."""
@@ -108,6 +118,8 @@ class LifecycleSnapshot:
             "state": self.state.value,
             "process_id": self.process_id,
             "diagnostic_code": self.diagnostic_code,
+            "readiness": self.readiness.value if self.readiness is not None else None,
+            "query_port": self.query_port,
         }
 
 
@@ -128,4 +140,3 @@ class LifecycleFailure(RuntimeError):
         self.recovery_required = recovery_required
         self.retryable = retryable
         super().__init__(safe_message)
-

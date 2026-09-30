@@ -18,12 +18,6 @@
 .schedule-time-field { display: grid; gap: var(--primitive-space-1); font-size: 12px; }
 .schedule-time-field input {
   width: 72px;
-  min-height: 38px;
-  padding: 0 var(--primitive-space-3);
-  border: 1px solid var(--control-border);
-  border-radius: var(--radius-control);
-  background: var(--control-background);
-  color: var(--color-text);
 }
 .schedule-choices { display: flex; min-width: 0; gap: var(--primitive-space-3); border: 0; margin: 0; padding: 0 0 8px; }
 .schedule-choice { white-space: nowrap; }

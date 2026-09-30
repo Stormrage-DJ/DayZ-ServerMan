@@ -119,6 +119,8 @@ async function pollEvents() {
         window.ServerManUi.renderOperation(operation.value);
       }
     }
+    // Refresh externally changed server state while Overview is visible.
+    if (shellState.section === "overview") await window.ServerManOverviewStatus.refresh();
     // Keep the log view current while it is open.
     if (shellState.section === "logs") window.ServerManLogs.refresh(false);
   } catch (_error) {

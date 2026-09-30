@@ -51,6 +51,9 @@ class BackupErrorClassificationTests(unittest.TestCase):
         config.parent.mkdir(parents=True)
         config.write_text("fixture", encoding="utf-8")
         create_runtime_profile(self.dayz)
+        mission = self.dayz / "mpmissions" / "dayzOffline.chernarusplus"
+        mission.mkdir(parents=True)
+        (mission / "init.c").write_text("fixture", encoding="utf-8")
         self.backups = self.root / "backups"
         self.backups.mkdir()
         self.operations: list[OperationManager] = []
@@ -64,7 +67,7 @@ class BackupErrorClassificationTests(unittest.TestCase):
     def coordinator(self, storage: BackupStorage) -> BackupCoordinator:
         """Build a coordinator with its own operation manager and store."""
         service = BackupService(
-            ValidatingProfiles(record(False)),  # type: ignore[arg-type]
+            ValidatingProfiles(record()),  # type: ignore[arg-type]
             FakeSettings(self.dayz, self.backups),  # type: ignore[arg-type]
             storage,
             clock=lambda: datetime(2026, 9, 25, tzinfo=UTC),

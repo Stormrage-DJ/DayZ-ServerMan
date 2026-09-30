@@ -16,21 +16,6 @@ function overviewNode(tag, className = "", text = "") {
   return window.ServerManUi.element(tag, className, text);
 }
 
-// Map one server status into a label, style class, and explanation.
-function statusPresentation(status) {
-  const values = {
-    STOPPED: ["Stopped", "status-normal", "The configured server process is not running."],
-    RUNNING_MANAGED: ["Running", "status-normal", "DayZ is running under this manager's verified control."],
-    RUNNING_EXTERNAL: ["External process", "status-warning", "DayZ is running, but this manager does not own it."],
-    STARTING: ["Starting", "status-busy", "The manager is starting DayZ."],
-    STOPPING: ["Stopping", "status-busy", "DayZ is saving and closing."],
-    AMBIGUOUS: ["Ambiguous", "status-error", "More than one matching DayZ process was found."],
-    UNKNOWN: ["Unknown", "status-error", "The DayZ process state could not be proven."],
-  };
-  // Fall back to an explicit unknown state when no mapping exists.
-  return values[status?.state] || ["Unknown", "status-error", "No authoritative state is available."];
-}
-
 // Return the profile that matches the overview selection, or null.
 function selectedOverviewProfile() {
   return overviewState.profiles.find(
@@ -58,7 +43,9 @@ function overviewNotice(title, message, kind = "warning") {
 function renderOverview() {
   const region = document.getElementById("content-region");
   region.textContent = "";
-  const [stateLabel, stateClass, stateDetail] = statusPresentation(overviewState.status);
+  const [stateLabel, stateClass, stateDetail] = window.ServerManOverviewReadiness.presentation(
+    overviewState.status,
+  );
   const profile = selectedOverviewProfile();
   const settings = overviewState.snapshot.settings;
   const configured = Boolean(settings.dayz_root && settings.dayz_executable);
@@ -119,7 +106,7 @@ function renderOverview() {
     overviewMetric(
       "Managed process",
       overviewState.status.process_id ? `PID ${overviewState.status.process_id}` : "None",
-      overviewState.status.diagnostic_code || "No process diagnostic is active.",
+      window.ServerManOverviewReadiness.processDetail(overviewState.status),
     ),
     overviewMetric(
       "Recent operations",
@@ -171,67 +158,12 @@ function overviewAction(label, action, className) {
   return button;
 }
 
-// Ask for confirmation of a lifecycle action and resolve to the choice.
-function lifecycleConfirmation(action, backupAfterStop) {
-  const labels = {
-    start: ["Start DayZ server?", "Start the selected profile now.", "Start server"],
-    stop: ["Save and stop DayZ?", "Request a graceful save and wait for DayZ to close.", "Save & Stop"],
-    restart: ["Save and restart DayZ?", "Save and stop the managed process, then start the selected profile.", "Save & Restart"],
-  };
-  return new Promise((resolve) => {
-    const returnFocus = document.activeElement;
-    // Describe the action, its consequence, and the confirm label.
-    const [title, baseMessage, confirmText] = labels[action];
-    const message = backupAfterStop && action !== "start"
-      ? `${baseMessage} A verified backup will be created after DayZ stops.` : baseMessage;
-    // Build the dialog and its focus-trapping controls.
-    const dialog = overviewNode("section", "panel lifecycle-confirmation");
-    dialog.id = "lifecycle-confirmation";
-    dialog.setAttribute("role", "alertdialog");
-    dialog.setAttribute("aria-modal", "true");
-    dialog.setAttribute("aria-labelledby", "lifecycle-confirmation-title");
-    const heading = overviewNode("h2", "", title);
-    heading.id = "lifecycle-confirmation-title";
-    const actions = overviewNode("div", "action-row");
-    const cancel = overviewNode("button", "button", "Cancel");
-    const confirm = overviewNode("button", "button button-primary", confirmText);
-    // Make the rest of the page inert while the dialog is open.
-    const inerted = [...document.body.children]
-      .filter((element) => element !== dialog)
-      .map((element) => ({ element, inert: element.inert }));
-    // Restore the page and resolve the promise when the dialog closes.
-    const finish = (accepted) => {
-      inerted.forEach(({ element, inert }) => { element.inert = inert; });
-      dialog.remove();
-      if (returnFocus?.isConnected) returnFocus.focus();
-      resolve(accepted);
-    };
-    cancel.type = "button"; confirm.type = "button";
-    cancel.addEventListener("click", () => finish(false));
-    confirm.addEventListener("click", () => finish(true));
-    dialog.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") { event.preventDefault(); finish(false); }
-      if (event.key !== "Tab") return;
-      if (event.shiftKey && document.activeElement === cancel) {
-        event.preventDefault(); confirm.focus();
-      } else if (!event.shiftKey && document.activeElement === confirm) {
-        event.preventDefault(); cancel.focus();
-      }
-    });
-    actions.append(cancel, confirm);
-    dialog.append(heading, overviewNode("p", "", message), actions);
-    document.body.append(dialog);
-    inerted.forEach(({ element }) => { element.inert = true; });
-    cancel.focus();
-  });
-}
-
 // Confirm and submit the requested lifecycle action for the selected profile.
 async function confirmLifecycleAction(action) {
   const profile = selectedOverviewProfile();
   const backupAfterStop = window.ServerManOverviewBackup.enabled(profile);
   // Stop when the confirmation dialog is declined.
-  if (!await lifecycleConfirmation(action, backupAfterStop)) return;
+  if (!await window.ServerManLifecycleDialog.confirm(action, backupAfterStop)) return;
   const settingsRevision = overviewState.snapshot.settings.revision;
   let result;
   // Submit the revision-bound request for the chosen action.

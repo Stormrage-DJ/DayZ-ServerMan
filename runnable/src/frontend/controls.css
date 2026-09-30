@@ -1,0 +1,95 @@
+/* Shared interactive controls and their accessible state treatments */
+button, input, select, textarea { font: inherit; }
+button, input, select, textarea, [tabindex] { outline: none; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+
+/* Text inputs, selectors, and text areas */
+:where(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  min-height: var(--control-height);
+  padding: 0 var(--control-padding-inline);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  background: var(--control-background);
+  color: var(--control-text);
+  transition: border-color var(--primitive-duration) ease;
+}
+:where(input:not([type="checkbox"]):not([type="radio"]), select, textarea):hover:not(:disabled):not([readonly]) {
+  border-color: var(--control-border-hover);
+}
+:where(input:not([type="checkbox"]):not([type="radio"]), select, textarea):disabled {
+  cursor: not-allowed;
+  opacity: var(--control-disabled-opacity);
+}
+:where(input, textarea)::placeholder { color: var(--control-placeholder); }
+textarea { padding-top: var(--primitive-space-2); padding-bottom: var(--primitive-space-2); }
+
+/* Themed checkbox component shared by every workspace */
+input[type="checkbox"] {
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: var(--control-choice-size);
+  height: var(--control-choice-size);
+  margin: 0;
+  appearance: none;
+  place-content: center;
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius);
+  background: var(--choice-background);
+  color: var(--choice-mark);
+  cursor: pointer;
+  transition: background-color var(--primitive-duration) ease,
+    border-color var(--primitive-duration) ease;
+}
+input[type="checkbox"]::before {
+  width: 9px;
+  height: 5px;
+  transform: rotate(-45deg) scale(0);
+  transform-origin: center;
+  border: solid currentColor;
+  border-width: 0 0 2px 2px;
+  content: "";
+  transition: transform var(--primitive-duration) ease;
+}
+input[type="checkbox"]:hover:not(:disabled) { border-color: var(--choice-border-hover); }
+input[type="checkbox"]:checked {
+  border-color: var(--choice-border-checked);
+  background: var(--choice-background-checked);
+}
+input[type="checkbox"]:checked::before { transform: rotate(-45deg) scale(1); }
+input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: var(--control-disabled-opacity);
+}
+
+/* Native radio geometry retains its platform semantics with the shared accent */
+input[type="radio"] {
+  width: var(--control-choice-size);
+  height: var(--control-choice-size);
+  margin: 0;
+  accent-color: var(--color-action);
+}
+
+/* Shared buttons, tabs, and compact navigation controls */
+.action-row { display: flex; flex-wrap: wrap; gap: var(--primitive-space-3); margin-top: var(--primitive-space-5); }
+.button { min-height: 38px; padding: 0 var(--primitive-space-4); border: 1px solid var(--control-border); border-radius: var(--radius-control); background: var(--control-background); color: var(--color-text); }
+.button-primary { border-color: var(--color-action); background: var(--color-action); color: var(--primitive-slate-950); font-weight: 700; }
+.button-danger { border-color: var(--color-status-error); color: var(--color-status-error); }
+.button-danger:hover { background: color-mix(in srgb, var(--color-status-error) 12%, transparent); }
+.button[disabled] { color: var(--color-text-subtle); cursor: not-allowed; opacity: .72; }
+.tab-button { border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface-raised); color: var(--color-text-muted); padding: .55rem .8rem; cursor: pointer; }
+.tab-button:hover, .tab-button.is-active { color: var(--color-text); border-color: var(--color-action); background: var(--nav-background-current); }
+.menu-button { display: none; width: 40px; height: 40px; padding: 10px; border: 1px solid var(--control-border); border-radius: var(--radius-control); background: var(--control-background); }
+.menu-button span { display: block; height: 2px; margin: 3px 0; background: var(--color-text); }
+
+/* Keyboard-only skip link that slides in while focused */
+.skip-link { position: fixed; z-index: 100; left: var(--primitive-space-4); top: -60px; padding: var(--primitive-space-3) var(--primitive-space-4); border-radius: var(--radius-control); background: var(--color-action); color: var(--primitive-slate-950); font-weight: 700; }
+.skip-link:focus { top: var(--primitive-space-3); }
+
+/* Let the operating system provide the strongest high-contrast checkbox */
+@media (forced-colors: active) {
+  input[type="checkbox"] { appearance: auto; accent-color: auto; }
+  input[type="checkbox"]::before { content: none; }
+}

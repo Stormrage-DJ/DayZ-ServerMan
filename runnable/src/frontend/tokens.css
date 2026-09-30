@@ -79,5 +79,19 @@
   --panel-shadow: var(--primitive-shadow);
   --control-background: var(--color-surface-raised);
   --control-border: var(--color-border);
+  --control-border-hover: var(--color-text-subtle);
+  --control-text: var(--color-text);
+  --control-placeholder: var(--color-text-subtle);
+  --control-height: 38px;
+  --control-padding-inline: var(--primitive-space-3);
+  --control-choice-size: 17px;
+  --choice-background: var(--color-surface-raised);
+  --choice-border: var(--color-text-subtle);
+  --choice-border-hover: var(--color-action-strong);
+  --choice-background-checked: var(--color-action);
+  --choice-border-checked: var(--color-action);
+  --choice-mark: var(--primitive-slate-950);
+  --choice-radius: 4px;
+  --control-disabled-opacity: .65;
   --focus-outline: 2px solid var(--color-focus);
 }

@@ -99,6 +99,24 @@ class PreferenceCoordinator:
         # Fail closed when storage is stale or the profile is not enabled
         return view.get("storage_status") == "VALID" and profile_id in profiles
 
+    def delete_profile(self, profile_id: str) -> None:
+        """Remove every preference that refers to a deleted profile."""
+        inspection = self._writable_inspection()
+        if inspection.document is None:
+            return
+        fields = dict(inspection.document.fields)
+        changed = False
+        if fields.get("selected_profile_id") == profile_id:
+            fields["selected_profile_id"] = None
+            changed = True
+        raw = fields.get("backup_after_stop_profiles", [])
+        if isinstance(raw, list) and profile_id in raw:
+            fields["backup_after_stop_profiles"] = [item for item in raw if item != profile_id]
+            changed = True
+        if changed:
+            expected = inspection.document.revision
+            self._repository.save(fields, expected)
+
     def _save(self, changes: dict[str, object], *, inspection=None) -> None:
         """Write preference changes under the inspected revision."""
         inspection = inspection or self._writable_inspection()

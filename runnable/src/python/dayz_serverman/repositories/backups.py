@@ -21,7 +21,7 @@ from .backup_archives import (
     verify_archive, write_archive,
 )
 from .backup_sources import (
-    BackupSource, BackupSourceError, copy_verified, runtime_sources,
+    BackupSource, BackupSourceError, copy_verified, directory_sources, runtime_sources,
     safe_directory, single_source,
 )
 from .backup_verification import (
@@ -62,6 +62,15 @@ class BackupStorage:
         # Preserve the source error code in the storage error
         try:
             return runtime_sources(dayz_root, relative)
+        except BackupSourceError as error:
+            raise BackupStorageError(error.code, str(error)) from error
+
+    def directory_sources(
+        self, dayz_root: Path, relative: str, entry_prefix: str,
+    ) -> tuple[BackupSource, ...]:
+        """Return verified sources for one contained recursive payload tree."""
+        try:
+            return directory_sources(dayz_root, relative, entry_prefix)
         except BackupSourceError as error:
             raise BackupStorageError(error.code, str(error)) from error
 
@@ -163,6 +172,19 @@ class BackupStorage:
         # List the newest usable backups first
         usable.sort(key=lambda item: (str(item["created_at"]), str(item["backup_id"])), reverse=True)
         return {"backups": usable, "legacy_backups": [], "diagnostics": diagnostics}
+
+    def delete_profile(self, root: Path, profile_id: str) -> int:
+        """Delete every manager-created archive whose identifier belongs to a profile."""
+        destination = self._root(root)
+        removed = 0
+        for archive in destination.glob(f"{profile_id}_*.zip"):
+            if not archive.is_file() or is_reparse(archive):
+                raise BackupStorageError(
+                    "BACKUP_SOURCE_INVALID", "A profile backup cannot be deleted safely."
+                )
+            archive.unlink()
+            removed += 1
+        return removed
 
     @contextmanager
     def open_verified(

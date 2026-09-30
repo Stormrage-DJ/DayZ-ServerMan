@@ -74,7 +74,12 @@ class RestoreTests(unittest.TestCase):
         self.backups.mkdir(parents=True)
         self.recovery = self.backups / "recovery"
         self.recovery.mkdir()
-        self.profiles = FakeProfiles(record(False))
+        mission = self.dayz / "mpmissions" / "dayzOffline.chernarusplus"
+        storage = mission / "storage_3"
+        storage.mkdir(parents=True)
+        self.world = storage / "players.db"
+        self.world.write_bytes(b"backed-up-world")
+        self.profiles = FakeProfiles(record())
         self.settings = FakeSettings(self.dayz, self.backups)
         backup_service = BackupService(
             self.profiles, self.settings, BackupStorage(),  # type: ignore[arg-type]
@@ -87,6 +92,7 @@ class RestoreTests(unittest.TestCase):
         self.snapshot_file = self.backups / f"{self.backup_id}.zip"
         self.source_digest = digest(self.target)
         self.target.write_text('hostname = "Live";\nmaxPlayers = 40;\n', encoding="utf-8")
+        self.world.write_bytes(b"changed-world")
 
     def tearDown(self) -> None:
         """Remove the temporary tree."""
@@ -119,7 +125,7 @@ class RestoreTests(unittest.TestCase):
         """Preview and restore commit through the journal and preserve the snapshot."""
         service = self.service()
         preview = service.preview("main", self.backup_id)
-        self.assertEqual(preview["replacement_count"], 1)
+        self.assertEqual(preview["replacement_count"], 2)
         self.assertEqual(preview["creation_count"], 0)
         self.assertEqual(preview["targets"][0]["action"], "REPLACE")
         # Capture the snapshot bytes before applying the restore
@@ -128,9 +134,11 @@ class RestoreTests(unittest.TestCase):
         result, phases = self.apply(service, preview)
         self.assertEqual(result["journal_state"], "COMMITTED")
         self.assertEqual(phases, [
-            "VERIFY_SOURCE", "STAGE_TARGETS", "PREPARE_RECOVERY", "WRITE_JOURNAL",
+            "VERIFY_SOURCE", "STAGE_TARGETS", "STAGE_TARGETS",
+            "PREPARE_RECOVERY", "WRITE_JOURNAL",
         ])
         self.assertEqual(digest(self.target), self.source_digest)
+        self.assertEqual(self.world.read_bytes(), b"backed-up-world")
         self.assertEqual(self.snapshot_file.read_bytes(), before_source)
         # The retired journal records the committed restore
         journal = next((self.root / "operations" / "restore-journals" / "completed").glob("*.json"))

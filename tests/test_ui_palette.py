@@ -12,6 +12,10 @@ TOKENS = (PROJECT_ROOT / "runnable" / "src" / "frontend" / "tokens.css").read_te
 STYLES = (PROJECT_ROOT / "runnable" / "src" / "frontend" / "styles.css").read_text(
     encoding="utf-8"
 )
+CONTROLS = (PROJECT_ROOT / "runnable" / "src" / "frontend" / "controls.css").read_text(
+    encoding="utf-8"
+)
+FRONTEND = PROJECT_ROOT / "runnable" / "src" / "frontend"
 
 
 class UiPaletteTests(unittest.TestCase):
@@ -61,6 +65,45 @@ class UiPaletteTests(unittest.TestCase):
         self.assertIn("min-height: var(--brand-height)", STYLES)
         self.assertIn("background: var(--color-scrim)", STYLES)
         self.assertNotIn("background: rgb(0 0 0 / 55%)", STYLES)
+
+    def test_form_controls_share_one_component_contract(self) -> None:
+        """Inputs, selectors, text areas, and choices use shared component tokens."""
+        for declaration in (
+            "--control-background: var(--color-surface-raised);",
+            "--control-border-hover: var(--color-text-subtle);",
+            "--control-text: var(--color-text);",
+            "--control-height: 38px;",
+            "--control-padding-inline: var(--primitive-space-3);",
+            "--control-choice-size: 17px;",
+            "--control-disabled-opacity: .65;",
+        ):
+            self.assertIn(declaration, TOKENS)
+        for contract in (
+            'input:not([type="checkbox"]):not([type="radio"]), select, textarea',
+            "background: var(--control-background);",
+            "color: var(--control-text);",
+            'input[type="checkbox"]',
+            "background: var(--choice-background);",
+            "border-color: var(--choice-border-checked);",
+            'input[type="radio"]',
+            "accent-color: var(--color-action);",
+            "textarea:focus-visible",
+        ):
+            self.assertIn(contract, CONTROLS)
+
+    def test_page_styles_do_not_redefine_control_surfaces(self) -> None:
+        """Page-level CSS may size controls but must not fork their visual surface."""
+        page_styles = "\n".join(
+            (FRONTEND / name).read_text(encoding="utf-8")
+            for name in ("mods.css", "overview.css", "profiles.css")
+        )
+        for forbidden in (
+            "background: var(--control-background)",
+            "border: 1px solid var(--control-border)",
+            "color: var(--control-text)",
+            "background: var(--color-canvas)",
+        ):
+            self.assertNotIn(forbidden, page_styles)
 
 
 if __name__ == "__main__":

@@ -98,6 +98,9 @@ class BackupTests(unittest.TestCase):
             target = mission.joinpath(*item.split("/"))
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(f"fixture:{item}\n", encoding="utf-8")
+        storage = mission / "storage_3" / "data"
+        storage.mkdir(parents=True)
+        (storage / "types.bin").write_bytes(b"persistent-world-state")
         self.settings = FakeSettings(self.dayz, self.backups)
         self.service = BackupService(
             FakeProfiles(record()),  # type: ignore[arg-type]
@@ -148,6 +151,9 @@ class BackupTests(unittest.TestCase):
             "payload/mpmissions/dayzOffline.chernarusplus/" + item
             for item in MISSION_INVENTORY
         ]
+        expected += [
+            "payload/mpmissions/dayzOffline.chernarusplus/storage_3/data/types.bin"
+        ]
         expected += ["runtime-profile/nested/Állapot.txt", "runtime-profile/settings.json"]
         self.assertEqual([entry["path"] for entry in manifest["entries"]], sorted(expected, key=str.casefold))
         history = self.service.history("main")
@@ -173,8 +179,11 @@ class BackupTests(unittest.TestCase):
 
     def test_missing_required_source_fails_before_destination_mutation(self) -> None:
         """A missing required source fails before any destination write."""
-        (self.dayz / "mpmissions" / "dayzOffline.chernarusplus" / "init.c").unlink()
-        with self.assertRaisesRegex(BackupStorageError, "required backup source"):
+        mission = self.dayz / "mpmissions" / "dayzOffline.chernarusplus"
+        for source in mission.rglob("*"):
+            if source.is_file():
+                source.unlink()
+        with self.assertRaisesRegex(BackupStorageError, "contains no files"):
             self.service.create("main", 3, 4, lambda _phase, _percent: None)
         self.assertFalse(any(self.backups.glob("*.zip")))
 

@@ -10,10 +10,11 @@ from typing import Any
 from ..domain.models import RevisionConflict
 from ..domain.backups import entry_path_key
 from ..domain.backups import restore_compatibility
-from ..domain.backup_inventory import MISSION_INVENTORY, accepted_payload_sources
+from ..domain.backup_inventory import MISSION_INVENTORY, mission_payload_prefix
 from ..domain.profiles import ProfileRecord
 from ..repositories.backups import BackupSource, BackupStorage, BackupStorageError
 from .profiles import ProfileService
+from .mission_configuration import MissionPathError, resolve_profile_mission
 from .settings import SettingsService
 
 
@@ -130,13 +131,21 @@ class BackupService:
 
     def _inventory(self, dayz_root: Path, profile: ProfileRecord) -> tuple[BackupSource, ...]:
         """Collect the ordered, duplicate-free backup sources for one profile."""
-        # Read the mission payload sources declared for the profile
-        relative_paths = accepted_payload_sources(profile.values)
         runtime_profile = profile.values.runtime_profile
         if runtime_profile is None:
             raise BackupStorageError("RUNTIME_PROFILE_UNRESOLVED", "Runtime profile is not configured.")
-        # Resolve every source and append the runtime profile files
-        sources = tuple(self._storage.source(dayz_root, item) for item in relative_paths)
+        # Capture the server configuration and the complete resolved mission tree.
+        sources = (self._storage.source(dayz_root, profile.values.server_config),)
+        try:
+            mission_root, _mission = resolve_profile_mission(dayz_root.resolve(strict=True), profile)
+        except MissionPathError as error:
+            raise BackupStorageError("MISSION_UNRESOLVED", str(error)) from error
+        mission_sources = self._storage.directory_sources(
+            dayz_root, mission_root, mission_payload_prefix(mission_root),
+        )
+        if not mission_sources:
+            raise BackupStorageError("MISSION_EMPTY", "The selected mission directory contains no files.")
+        sources += mission_sources
         sources += self._storage.runtime_sources(dayz_root, runtime_profile)
         # Sort by entry path so the manifest stays deterministic
         ordered = tuple(sorted(sources, key=lambda item: entry_path_key(item.entry_path)))
