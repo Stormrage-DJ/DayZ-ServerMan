@@ -60,15 +60,15 @@ function showDeleteConfirmation() {
   dialog.setAttribute("aria-modal", "true");
   dialog.setAttribute("aria-labelledby", "profile-delete-title");
   dialog.returnFocus = document.activeElement; dialog.frozen = frozen;
-  // Explain that deletion cannot be undone.
+  // Distinguish deleted live data from retained recovery archives.
   const title = profileNode("h2", "", "Delete profile?"); title.id = "profile-delete-title";
   const copy = profileNode(
-    "p", "", `Permanently delete ${profileState.selected.display_name}, including its generated configuration, runtime files, exclusive world storage, backups, schedule, and saved preferences. This cannot be undone.`,
+    "p", "", `Permanently delete ${profileState.selected.display_name}, including its generated configuration, runtime files, exclusive world storage, schedule, and saved preferences. Existing backup archives will remain in the configured backup destination.`,
   );
   const actions = profileNode("div", "action-row");
   const cancel = profileNode("button", "button", "Cancel"); cancel.type = "button";
   cancel.addEventListener("click", closeDeleteDialog);
-  const confirm = profileNode("button", "button button-danger", "Delete profile and all data");
+  const confirm = profileNode("button", "button button-danger", "Delete profile data");
   confirm.type = "button"; confirm.addEventListener("click", confirmDeleteProfile);
   actions.append(cancel, confirm); dialog.append(title, copy, actions);
   dialog.addEventListener("keydown", containDeleteFocus);

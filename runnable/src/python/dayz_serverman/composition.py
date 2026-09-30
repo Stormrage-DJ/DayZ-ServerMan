@@ -207,8 +207,7 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
     steamcmd_preflight = SteamCmdPreflight()
     applied_mod_state = AppliedModStateRepository(paths.applied_mod_state)
     profile_deletion = ProfileDeletionService(
-        profiles, settings, lifecycle, backup_storage, preferences, schedules,
-        applied_mod_state,
+        profiles, settings, lifecycle, preferences, schedules, applied_mod_state,
     )
     profile_coordinator = ProfileCoordinator(profiles, operations, profile_deletion)
     workshop_updates = WorkshopUpdateService(

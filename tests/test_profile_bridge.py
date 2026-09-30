@@ -105,16 +105,22 @@ class ProfileBridgeTests(unittest.TestCase):
         self.assertEqual([item["profile_id"] for item in listed["value"]], ["livonia-main"])
         self.assertEqual(read["value"]["display_name"], "Livonia Közösségi")
 
-        # Delete with the current revision and confirm the list is empty
+        # Backups are recovery data and must outlive the profile record.
+        backup = self.composition.paths.backups / "livonia-main_2026-09-30_19-00-00.zip"
+        backup.write_bytes(b"retained backup")
+
+        # Delete with the current revision and confirm the live data is gone.
         deleted = self.dispatch(
             "delete_profile",
             {"profile_id": "livonia-main", "expected_revision": 0},
         )
         deleted_record = self.wait_terminal(deleted["value"]["operation_id"])
         self.assertEqual(deleted_record.state, OperationState.SUCCEEDED)
+        self.assertTrue(deleted_record.result["preserved_backups"])
         self.assertEqual(self.dispatch("list_profiles", {})["value"], [])
         self.assertFalse(generated.exists())
         self.assertFalse(storage.exists())
+        self.assertEqual(backup.read_bytes(), b"retained backup")
 
     def test_preview_returns_exact_vector_without_starting_a_process(self) -> None:
         """Return the exact preview vector without launching any process."""

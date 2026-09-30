@@ -10,7 +10,6 @@ from ..domain.lifecycle import ServerState
 from ..domain.models import RevisionConflict
 from ..repositories.applied_mod_state import AppliedModStateRepository
 from ..repositories.backup_verification import path_has_reparse
-from ..repositories.backups import BackupStorage
 from ..repositories.server_configuration import load_server_configuration
 from .mission_configuration import MissionPathError, resolve_profile_mission
 from .preferences import PreferenceCoordinator
@@ -28,19 +27,18 @@ class ProfileDeletionService:
 
     def __init__(
         self, profiles: ProfileService, settings: SettingsService, lifecycle: Any,
-        backups: BackupStorage, preferences: PreferenceCoordinator,
-        schedules: ScheduleCoordinator, applied_mod_state: AppliedModStateRepository,
+        preferences: PreferenceCoordinator, schedules: ScheduleCoordinator,
+        applied_mod_state: AppliedModStateRepository,
     ) -> None:
         self._profiles = profiles
         self._settings = settings
         self._lifecycle = lifecycle
-        self._backups = backups
         self._preferences = preferences
         self._schedules = schedules
         self._applied_mod_state = applied_mod_state
 
     def delete(self, profile_id: str, expected_revision: int) -> dict[str, object]:
-        """Delete all exclusively owned data for a manager-created profile."""
+        """Delete live profile data while preserving its backup archives."""
         profile = self._profiles.read(profile_id)
         if profile.revision != expected_revision:
             raise RevisionConflict(
@@ -64,9 +62,6 @@ class ProfileDeletionService:
         if storage_is_exclusive:
             self._preflight_directory(storage, mission)
 
-        removed_backups = self._backups.delete_profile(
-            self._settings.backup_root(settings), profile_id,
-        )
         self._schedules.delete_profile(profile_id)
         self._preferences.delete_profile(profile_id)
         self._applied_mod_state.delete_profile(profile_id)
@@ -75,7 +70,7 @@ class ProfileDeletionService:
         self._profiles.delete(profile_id, expected_revision)
         return {
             "profile_id": profile_id,
-            "removed_backups": removed_backups,
+            "preserved_backups": True,
             "removed_generated_files": removed_generated,
             "removed_mission_storage_files": removed_storage,
             "preserved_shared_mission_storage": not storage_is_exclusive,

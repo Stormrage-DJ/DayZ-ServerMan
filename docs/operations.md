@@ -47,11 +47,12 @@ interruption, the manager preserves the files and blocks mutations for review.
 
 Deleting a manager-created profile permanently removes its generated
 configuration and runtime folder, exclusive `storage_<instanceId>` world data,
-profile backups, schedule, and saved preferences. The manager blocks deletion
-when DayZ is active or generated-folder ownership is ambiguous. Mission storage
-that is shared with, or may belong to, another profile is preserved while the
-rest of the selected profile is deleted. Imported profiles outside the generated
-layout are preserved.
+schedule, and saved preferences. Backup ZIP archives remain in the configured
+backup destination as retained recovery data. The manager blocks deletion when
+DayZ is active or generated-folder ownership is ambiguous. Mission storage that
+is shared with, or may belong to, another profile is preserved while the rest of
+the selected profile is deleted. Imported profiles outside the generated layout
+are preserved.
 
 After success, the manager refreshes the shared profile catalog, selects the
 new profile, and stores that selection. Existing profiles are not moved into
@@ -134,13 +135,18 @@ before it reports success.
 
 The portable destination is `runnable/backups/`. A custom local destination can
 be selected in Settings. Existing backup files remain external user data and
-must not be committed to Git.
+must not be committed to Git. Deleting a profile does not delete its backup
+archives.
 
 ## Restore behavior
 
 Restore is a reviewed, transactional operation. The manager verifies the
 selected archive, shows the intended targets, and requires confirmation before
 it changes DayZ files.
+
+The current restore flow requires an existing compatible profile. Retaining a
+backup after profile deletion preserves the archive, but does not recreate the
+deleted profile record automatically.
 
 Recovery journals are stored under `data/operations/`. If an interrupted
 restore cannot be classified safely, the manager blocks conflicting mutations

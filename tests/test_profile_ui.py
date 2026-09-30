@@ -62,7 +62,8 @@ class ProfileUiStaticTests(unittest.TestCase):
             'event.key === "Escape"', 'event.key !== "Tab"', "element.inert = true",
             "returnFocus?.isConnected", "Object.freeze", "replacementAfterDelete",
             "expectedEditGeneration", "Unsaved profile edits preserved",
-            "exclusive world storage", "Delete profile and all data",
+            "exclusive world storage", "Existing backup archives will remain",
+            "Delete profile data",
         ):
             self.assertIn(value, self.source)
         # The app router must consult the central unsaved-changes guard
