@@ -96,6 +96,20 @@ class HostRuntimeTests(unittest.TestCase):
         packaged.mkdir()
         self.assertEqual(resolve_frontend_root(self.manager_root), packaged.resolve())
 
+    def test_backup_picker_uses_zip_filter_and_configured_initial_folder(self) -> None:
+        """The native archive picker permits one ZIP and handles dismissal safely."""
+        fake = FakeWebview()
+        with patch("dayz_serverman.host.runtime.find_webview2_version", return_value="1.0"):
+            launch_application(self.composition, frontend_root=FRONTEND, webview_module=fake)
+        api = fake.window_arguments["js_api"]
+        result = api.select_backup_archive()
+        self.assertTrue(result["value"]["cancelled"])
+        kind, options = fake.window.dialog_calls[0]
+        self.assertEqual(kind, fake.OPEN_DIALOG)
+        self.assertEqual(options["file_types"], ("Backup archives (*.zip)",))
+        self.assertFalse(options["allow_multiple"])
+        self.assertEqual(options["directory"], str(self.composition.settings.backup_root(self.composition.settings.load())))
+
     def test_runtime_selector_uses_fixed_file_and_folder_dialog_kinds(self) -> None:
         """The path selector uses the fixed folder dialog and rejects file kinds."""
         # Launch the runtime with a fake webview to reach the selector

@@ -68,7 +68,7 @@ class RestoreTests(unittest.TestCase):
         self.dayz = self.root / "DáyZ Root"
         self.target = self.dayz / "Config Files" / "serverDZ.cfg"
         self.target.parent.mkdir(parents=True)
-        self.target.write_text('hostname = "Backup";\nmaxPlayers = 60;\n', encoding="utf-8")
+        self.target.write_text('hostname = "Backup";\nmaxPlayers = 60;\nclass Missions { class DayZ { template="dayzOffline.chernarusplus"; }; };\n', encoding="utf-8")
         (self.dayz / "profiles" / "main").mkdir(parents=True)
         self.backups = self.root / "Portable Manager" / "backups"
         self.backups.mkdir(parents=True)
@@ -258,7 +258,7 @@ class RestoreTests(unittest.TestCase):
         custom.mkdir()
         # Point the manager at a custom backup root
         self.settings.value.custom_backup_root = str(custom)
-        self.target.write_text("custom snapshot", encoding="utf-8")
+        self.target.write_text('hostname="custom snapshot"; class Missions { class DayZ { template="dayzOffline.chernarusplus"; }; };', encoding="utf-8")
         created = BackupService(
             self.profiles, self.settings, BackupStorage(),  # type: ignore[arg-type]
             clock=lambda: datetime(2026, 9, 25, 16, 0, tzinfo=UTC),

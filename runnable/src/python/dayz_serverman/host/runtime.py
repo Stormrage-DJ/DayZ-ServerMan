@@ -143,6 +143,15 @@ def launch_application(
             return str(selected[0]) if selected else None
         return str(selected)
     host_api._set_settings_path_selector(select_settings_path)
+    def select_backup_archive() -> str | None:
+        """Open a single-ZIP dialog at the current configured backup destination."""
+        destination = composition.settings.backup_root(composition.settings.load())
+        selected = window.create_file_dialog(open_dialog, directory=str(destination),
+            allow_multiple=False, file_types=("Backup archives (*.zip)",))
+        if not selected:
+            return None
+        return str(selected[0]) if isinstance(selected, (tuple, list)) else str(selected)
+    host_api._set_backup_archive_selector(select_backup_archive)
     # Guard native closes so backend work can drain first
     close_controller = SafeCloseController(window, composition.shutdown)
     closing_event = getattr(getattr(window, "events", None), "closing", None)

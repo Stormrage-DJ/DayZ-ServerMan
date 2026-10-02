@@ -37,7 +37,7 @@ class BackupIntegrityTests(unittest.TestCase):
         self.dayz = self.root / "DáyZ"
         config = self.dayz / "Config Files" / "serverDZ.cfg"
         config.parent.mkdir(parents=True)
-        config.write_text("hostname = Test;\n", encoding="utf-8")
+        config.write_text('hostname = "Test";\nclass Missions { class DayZ { template = "dayzOffline.chernarusplus"; }; };\n', encoding="utf-8")
         create_runtime_profile(self.dayz)
         mission = self.dayz / "mpmissions" / "dayzOffline.chernarusplus"
         mission.mkdir(parents=True)

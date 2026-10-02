@@ -4,6 +4,7 @@
 // Dialog, generation, pending operation, and reviewed preview for restores.
 const restoreState = {
   dialog: null,
+  backupId: null,
   generation: 0,
   pendingOperation: null,
   preview: null,
@@ -28,8 +29,7 @@ function restoreContext(backupId) {
 
 // Report whether a captured restore context still matches the live view.
 function restoreContextActive(context) {
-  const select = document.getElementById("restore-backup");
-  return Boolean(context && select && select.value === context.backupId
+  return Boolean(context && restoreState.backupId === context.backupId
     && context.generation === restoreState.generation
     && isBackupProfileActive(context.profile));
 }
@@ -45,9 +45,13 @@ function restoreFeedback(text, kind = "", role = "status") {
 }
 
 // Verify the chosen backup and show the reviewed restore plan.
-async function previewRestore() {
-  const backupId = document.getElementById("restore-backup").value;
-  if (!backupId) return;
+async function previewRestore(backupId) {
+  if (restoreState.dialog || restoreState.pendingOperation) return;
+  if (!backupState.history?.backups.some(backup => backup.backup_id === backupId && backup.restore_compatibility === "COMPATIBLE")) return;
+  restoreState.generation += 1;
+  restoreState.backupId = backupId;
+  restoreState.preview = null;
+  document.getElementById("restore-panel").hidden = false;
   const context = restoreContext(backupId);
   // Tell the operator that verification is running.
   restoreFeedback("Verifying the backup and current server files.", "notice-busy");
@@ -207,45 +211,19 @@ async function renderRestore(history) {
   if (prior) prior.remove();
   const panel = restoreNode("section", "panel restore-panel");
   panel.id = "restore-panel";
-  panel.append(restoreNode("h3", "", "Restore a backup"));
-  // List compatible backups and let the operator choose one.
-  const select = document.createElement("select");
-  select.id = "restore-backup";
-  select.setAttribute("aria-label", "Backup to restore");
-  select.append(restoreNode("option", "", "Select a backup"));
-  select.firstChild.value = "";
-  history.backups.filter((backup) => backup.restore_compatibility === "COMPATIBLE").forEach((backup) => {
-    const option = restoreNode("option", "", window.ServerManBackupDisplay.summary(backup));
-    option.value = backup.backup_id;
-    select.append(option);
-  });
-  select.addEventListener("change", () => {
-    restoreState.generation += 1;
-    restoreState.preview = null;
-    document.getElementById("restore-feedback").replaceChildren();
-  });
-  const preview = restoreNode("button", "button", "Preview restore");
-  preview.type = "button";
-  preview.addEventListener("click", previewRestore);
+  restoreState.backupId = null;
+  panel.hidden = true;
+  panel.append(restoreNode("h3", "", "Review restore"));
   const feedback = restoreNode("div", "configuration-feedback");
   feedback.id = "restore-feedback";
-  panel.append(select, preview, feedback);
-  const pending = history.backups.filter(
-    (backup) => backup.restore_compatibility !== "COMPATIBLE",
-  );
-  // Note backups that cannot be restored yet.
-  if (pending.length) {
-    const notice = restoreNode("div", "notice notice-warning",
-      `${pending.length} verified backup(s) are unavailable for restore until runtime-profile support is added.`);
-    notice.setAttribute("role", "status");
-    panel.append(notice);
-  }
+  panel.append(feedback);
   document.querySelector(".backup-panel").append(panel);
   // Inspect recovery state before allowing new restores.
   const inspection = await window.pywebview.api.inspect_restore_recovery();
   if (renderGeneration !== restoreState.generation
       || !isBackupProfileActive(profileContext) || !inspection.success) return;
   if (inspection.value.blocked) {
+    panel.hidden = false;
     restoreFeedback(
       "Recovery required. Restore journals are uncertain and all new mutations are blocked.",
       "notice-recovery", "alert",
@@ -265,4 +243,5 @@ window.ServerManRestore = Object.freeze({
   blockProfileChange: blockRestoreProfileChange,
   operationFinished: restoreOperationFinished,
   render: renderRestore,
+  preview: previewRestore,
 });

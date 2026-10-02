@@ -138,15 +138,84 @@ be selected in Settings. Existing backup files remain external user data and
 must not be committed to Git. Deleting a profile does not delete its backup
 archives.
 
+The selected profile's **Latest backups** section shows its three newest backups.
+Use a card's restore icon to review that exact backup. Unavailable restores have
+a disabled icon. Older archives remain stored; this display limit does not delete them.
+
 ## Restore behavior
 
-Restore is a reviewed, transactional operation. The manager verifies the
-selected archive, shows the intended targets, and requires confirmation before
-it changes DayZ files.
+Restore is a reviewed, transactional operation. Stop all DayZ servers in the
+configured installation before preparing a restore. The manager verifies the
+archive and shows the targets before requesting confirmation.
 
-The current restore flow requires an existing compatible profile. Retaining a
-backup after profile deletion preserves the archive, but does not recreate the
-deleted profile record automatically.
+Choose the entry point for your task:
+
+| Task | Entry point | Result |
+|---|---|---|
+| Restore files for an existing profile | Select the profile, then a restore icon under **Latest backups** | Review and restore that card's archive into the existing profile |
+| Recreate a deleted profile | **Restore profile from backup…** | Browse for a ZIP and reconstruct a new profile from its metadata |
+
+### Restore an existing profile
+
+The card's restore icon prepares that specific backup. Review the targets and
+recovery plan, select **Restore this backup**, then confirm **Restore now**.
+There is no archive dropdown. An incompatible archive has a disabled icon and
+an explanation. This flow keeps the existing profile definition.
+
+### Recreate a deleted profile
+
+The ZIP picker starts in the configured backup folder. Archives elsewhere and
+renamed ZIPs are supported. Selection verifies only the chosen archive and
+shows its filename, profile, date and size. Dismissal leaves the workspace
+unchanged. The source ZIP is not imported, renamed or modified.
+
+This flow works even when no profiles exist. New full backups contain the
+complete profile definition, ordered mods and launch arguments. Review the
+name, ID, mission, storage ID and ports, then select **Review restore**.
+Check the final mapping before selecting **Restore profile**.
+
+Selecting an older archive without complete metadata shows one explanation.
+Such archives remain intact and can still restore an existing compatible
+profile. The manager does not infer or migrate missing metadata. Create a new
+full backup to enable direct reconstruction.
+
+The restored profile is selected and remembered after success. Install missing
+mods, check readiness and start the server separately. Neither restore flow
+starts DayZ automatically. Mod binaries, manager locations and manager
+preferences are not restored from a server ZIP.
+
+A selected ZIP is bound to the current application session and its byte hash.
+If the file changes, becomes unavailable or the selection expires, browse again
+and prepare a new review. Changing the destination choices invalidates an
+existing preview and any replacement confirmation.
+
+### Conflicts and recovery
+
+An occupied profile ID or generated folder requires a free ID. An occupied
+mission defaults to a new isolated mission and storage ID. Restoration copies
+only the selected world, although the ZIP can contain other worlds from the
+complete mission. Game and query ports are preserved when free; otherwise the
+preview suggests alternatives. Missing mods are listed for installation from
+**Mods** and do not prevent file recovery.
+
+Explicit world replacement requires matching common mission files and known
+registered consumers. The review names every affected profile and requires
+confirmation. Replacement swaps the whole selected storage tree, preserving
+common mission files, other worlds and existing profile definitions. A verified
+recovery copy is retained beneath the backup recovery directory after success.
+If the selected world was absent in the archive, an explicit replacement
+restores that absence. The review warns that the existing selected world will
+be removed, and its recovery copy is retained.
+
+Direct restoration publishes files and a revision-zero profile record through
+one durable journal. Startup rolls back an interrupted uncommitted operation.
+If files have changed independently, recovery blocks mutations and preserves
+those changes. A committed operation can report pending cleanup. Keep its
+recovery copies until they are no longer needed.
+
+Deleting a restored profile removes its isolated mission only when the
+ownership marker matches and no other profile references that mission. Shared
+missions and retained archives remain preserved.
 
 Recovery journals are stored under `data/operations/`. If an interrupted
 restore cannot be classified safely, the manager blocks conflicting mutations

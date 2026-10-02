@@ -30,14 +30,8 @@ from .backup_verification import (
 )
 
 
-class BackupStorageError(RuntimeError):
-    """Raised when a backup operation fails, carrying a stable diagnostic code."""
-
-    def __init__(self, code: str, message: str) -> None:
-        """Store the diagnostic code with the human-readable message."""
-        self.code = code
-        super().__init__(message)
-
+from .backup_errors import BackupStorageError
+from .backup_publication import _available_id, _verify_staging, _verify_zip, _write_manifest, _summary, _diagnostic
 
 class BackupStorage:
     """Publish, discover, verify, and materialize ZIP backups for one manager."""
@@ -79,6 +73,8 @@ class BackupStorage:
         settings_revision: int, created_at: str, semantic_profile_digest: str,
         runtime_profile: str, sources: Sequence[BackupSource],
         checkpoint: Callable[[str, int], None],
+        *, reconstruction: dict | None = None, directories: tuple[str, ...] = (),
+        validate_context: Callable[[], None] | None = None,
     ) -> BackupManifest:
         """Create, verify, and publish one backup archive."""
         destination = self._root(root)
@@ -96,6 +92,8 @@ class BackupStorage:
         staging.mkdir()
         published = False
         try:
+            for directory in directories:
+                staging.joinpath(*directory.split("/")).mkdir(parents=True, exist_ok=True)
             # Copy every verified source into the staging tree
             for item in sources:
                 try:
@@ -115,6 +113,8 @@ class BackupStorage:
             manifest = BackupManifest(
                 selected_id, profile_id, profile_revision, settings_revision, created_at, entries,
                 semantic_profile_digest=semantic_profile_digest, runtime_profile=runtime_profile,
+                schema_version=3 if reconstruction is not None else 2,
+                reconstruction=reconstruction, directories=directories,
             ).signed()
             _write_manifest(staging / "manifest.json", manifest)
             checkpoint("WRITE_MANIFEST", 70)
@@ -127,6 +127,8 @@ class BackupStorage:
             self._phase_hook("VERIFY")
             checkpoint("PUBLISH", 95)
             self._phase_hook("PUBLISH")
+            if validate_context is not None:
+                validate_context()
             # Publish the verified archive under its final name
             os.replace(partial, final)
             published = True
@@ -149,8 +151,6 @@ class BackupStorage:
         for archive in sorted(destination.glob("*.zip"), key=lambda item: item.name.casefold()):
             try:
                 manifest = read_archive_manifest(archive)
-                if manifest.schema_version != BACKUP_SCHEMA_VERSION:
-                    raise FutureBackupSchema
             except (FutureBackupSchema, FutureBackupArchive):
                 diagnostics.append(_diagnostic("FUTURE_SCHEMA", "A backup uses an unsupported schema."))
                 continue
@@ -195,24 +195,19 @@ class BackupStorage:
         destination = self._root(root)
         manifest = self.verified_manifest(destination, backup_id, profile_id)
         archive = destination / f"{manifest.backup_id}.zip"
-        try:
-            with tempfile.TemporaryDirectory(prefix=f".restore-{manifest.backup_id}-", dir=destination) as value:
-                directory = Path(value)
-                # Materialize the payload, then re-verify the extracted tree
+        with tempfile.TemporaryDirectory(prefix=f".restore-{manifest.backup_id}-", dir=destination) as value:
+            directory = Path(value)
+            try:
                 materialize_archive(archive, directory, manifest)
                 extracted = read_manifest(directory, manifest.backup_id)
                 verify_directory(directory, extracted)
-                yield directory, extracted
-        except BackupStorageError:
-            raise
-        # Translate remaining failures into one storage error
-        except (
-            BackupManifestError, BackupArchiveError, BackupVerificationError,
-            FutureBackupSchema, FutureBackupArchive, OSError, ValueError, json.JSONDecodeError,
-        ) as error:
-            raise BackupStorageError(
-                "BACKUP_INTEGRITY_FAILED", "The selected backup failed integrity verification.",
-            ) from error
+            except (BackupManifestError, BackupArchiveError, BackupVerificationError,
+                    FutureBackupSchema, FutureBackupArchive, OSError, ValueError) as error:
+                raise BackupStorageError(
+                    "BACKUP_INTEGRITY_FAILED", "The selected backup failed integrity verification.",
+                ) from error
+            # Consumer failures retain their own meaning; they are not archive corruption.
+            yield directory, extracted
 
     def verified_manifest(
         self, root: Path, backup_id: object, profile_id: str,
@@ -230,8 +225,6 @@ class BackupStorage:
         # Validate schema, profile ownership, and content before returning
         try:
             manifest = read_archive_manifest(archive, backup_id)
-            if manifest.schema_version != BACKUP_SCHEMA_VERSION:
-                raise FutureBackupSchema
             if manifest.profile_id != profile_id:
                 raise BackupStorageError("PROFILE_MISMATCH", "The backup belongs to another profile.")
             verify_archive(archive, manifest)
@@ -263,80 +256,3 @@ class BackupStorage:
             return safe_directory(root, "Backup root", writable=writable)
         except BackupSourceError as error:
             raise BackupStorageError(error.code, str(error)) from error
-
-
-def _available_id(root: Path, base: str) -> str:
-    """Return the first free backup identifier, suffixing duplicates with a number."""
-    # Search for the first free name, bounding the suffix attempts
-    for index in range(1, 10_000):
-        candidate = base if index == 1 else f"{base}_{index:02d}"
-        if not (root / f"{candidate}.zip").exists():
-            return candidate
-    raise BackupStorageError("BACKUP_EXISTS", "No available backup filename could be generated.")
-
-
-def _verify_staging(directory: Path, backup_id: str, expected: BackupManifest) -> None:
-    """Re-verify the staged directory against the in-memory manifest."""
-    # Re-read and re-verify the staged tree before publication
-    try:
-        manifest = read_manifest(directory, backup_id)
-        if manifest != expected:
-            raise BackupVerificationError("Persisted staging manifest changed unexpectedly.")
-        verify_directory(directory, manifest)
-    except (BackupManifestError, BackupVerificationError, OSError, ValueError, json.JSONDecodeError) as error:
-        raise BackupStorageError("BACKUP_INTEGRITY_FAILED", "The staged backup failed verification.") from error
-
-
-def _verify_zip(path: Path, backup_id: str, expected: BackupManifest, state: str) -> BackupManifest:
-    """Re-verify an archive against the in-memory manifest for one stage."""
-    # Re-read and re-verify the archive at its current location
-    try:
-        manifest = read_archive_manifest(path, backup_id)
-        if manifest != expected:
-            raise BackupArchiveError("Persisted archive manifest changed unexpectedly.")
-        verify_archive(path, manifest)
-        return manifest
-    except (BackupManifestError, BackupArchiveError, OSError, ValueError, json.JSONDecodeError) as error:
-        # Distinguish post-publication failures that require recovery
-        code = "RECOVERY_REQUIRED" if state == "published" else "BACKUP_INTEGRITY_FAILED"
-        raise BackupStorageError(code, f"The {state} backup ZIP failed verification.") from error
-
-
-def _write_manifest(path: Path, manifest: BackupManifest) -> None:
-    """Write the manifest JSON exclusively and flush it to disk."""
-    # Serialize with sorted keys so the digest is reproducible
-    payload = json.dumps(manifest.to_dict(), ensure_ascii=False, sort_keys=True, indent=2) + "\n"
-    # Create the manifest file exclusively and fsync its bytes
-    with path.open("x", encoding="utf-8", newline="\n") as stream:
-        stream.write(payload)
-        stream.flush()
-        os.fsync(stream.fileno())
-
-
-def _summary(manifest: BackupManifest) -> dict[str, Any]:
-    """Return the public listing record for one manifest."""
-    # Include restore compatibility so the UI can flag unusable backups
-    compatibility, reason = restore_compatibility(manifest)
-    return {
-        "backup_id": manifest.backup_id, "profile_id": manifest.profile_id,
-        "profile_revision": manifest.profile_revision, "settings_revision": manifest.settings_revision,
-        "created_at": manifest.created_at, "entry_count": len(manifest.entries),
-        "total_size": sum(item.size for item in manifest.entries),
-        "manifest_digest": manifest.manifest_digest,
-        "semantic_profile_digest": manifest.semantic_profile_digest,
-        "runtime_profile": manifest.runtime_profile, "schema_version": manifest.schema_version,
-        "status": "USABLE", "restore_compatibility": compatibility,
-        "restore_compatibility_reason": reason,
-    }
-
-
-def _diagnostic(code: str, message: str, *, profile_id: str | None = None) -> dict[str, Any]:
-    """Return a diagnostic record scoped to the destination or one profile."""
-    result: dict[str, Any] = {
-        "code": code, "message": message,
-        "scope": "PROFILE" if profile_id is not None else "DESTINATION", "usable": False,
-    }
-    # Attach the profile identifier when the scan was profile-scoped
-    if profile_id is not None:
-        result["profile_id"] = profile_id
-    return result

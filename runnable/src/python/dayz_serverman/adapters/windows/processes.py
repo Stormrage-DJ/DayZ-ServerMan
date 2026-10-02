@@ -52,13 +52,19 @@ class WindowsProcessInventory:
         # Match on the file name so full-path spelling differences do not hide candidates
         expected_name = Path(expected_executable).name.casefold()
         observations: list[ProcessObservation] = []
-        complete = True
+        unreadable: set[int] = set()
         for pid in self._candidate_process_ids(expected_name):
             try:
                 observations.append(self._observe(pid))
             except (OSError, PermissionError):
-                # An unreadable process makes the snapshot incomplete
-                complete = False
+                # An exiting process can become unreadable after the Toolhelp snapshot.
+                unreadable.add(pid)
+        complete = not unreadable
+        if unreadable:
+            # Prove absence with a new snapshot; unreadable live or new candidates still block.
+            remaining = set(self._candidate_process_ids(expected_name))
+            observed = {item.pid for item in observations}
+            complete = not (remaining & unreadable) and remaining <= observed
         return InventorySnapshot(tuple(observations), complete)
 
     def _candidate_process_ids(self, expected_name: str) -> tuple[int, ...]:
@@ -148,4 +154,3 @@ def _creation_time_ns(kernel32: object, handle: int) -> int | None:
     ticks = (creation.dwHighDateTime << 32) | creation.dwLowDateTime
     # FILETIME ticks are 100 ns units; scale to nanoseconds for comparison
     return ticks * 100
-

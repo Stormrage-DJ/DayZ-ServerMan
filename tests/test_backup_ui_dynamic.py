@@ -39,6 +39,8 @@ window.pywebview = { api: {
     value: { operation_id: "legacy-revalidate" } }),
 } };
 window.ServerManUi = { renderHostError: () => {}, render: () => {} };
+// This isolated workspace harness supplies the shared selection boundary.
+window.ServerManProfileContext = { selectedId: () => null, select: () => { void loadBackupHistory(); } };
 
 (async () => {
   window.ServerManWorkspace.activate("backups");
@@ -164,7 +166,7 @@ class BackupUiDynamicTests(unittest.TestCase):
         # Assemble the page from the real frontend scripts and the harness
         scripts = "\n".join(
             (FRONTEND / name).read_text(encoding="utf-8")
-            for name in ("workspace_context.js", "backup_display.js", "backups.js")
+            for name in ("workspace_context.js", "backup_display.js", "backups.js", "backup_history.js")
         )
         page_text = (
             "<!doctype html><html><body><main><div id='content-region'></div></main>"

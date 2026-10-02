@@ -36,11 +36,13 @@ def write_archive(source: Path, target: Path, manifest: BackupManifest) -> None:
     ) as archive:
         # Store the manifest first, then each declared payload entry
         archive.write(source / "manifest.json", "manifest.json")
+        for directory in manifest.directories:
+            archive.write(source / directory, directory + "/")
         for entry in manifest.entries:
             archive.write(source / entry.path, entry.path)
 
 
-def read_archive_manifest(path: Path, expected_backup_id: str | None = None) -> BackupManifest:
+def read_archive_manifest(path: Path, expected_backup_id: str | None = None, *, check_archive_name: bool = True) -> BackupManifest:
     """Read and validate the manifest of a backup archive."""
     try:
         # Reject unsafe or duplicate members before parsing the manifest
@@ -55,7 +57,7 @@ def read_archive_manifest(path: Path, expected_backup_id: str | None = None) -> 
             # Validate the manifest identity, digest, and member list
             manifest = BackupManifest.parse(raw)
             expected = expected_backup_id or path.stem
-            if manifest.backup_id != expected:
+            if check_archive_name and manifest.backup_id != expected:
                 raise BackupManifestError("backup identifier does not match its archive")
             if manifest.manifest_digest != manifest_digest(manifest.unsigned_dict()):
                 raise BackupManifestError("backup manifest digest does not match")
@@ -84,6 +86,9 @@ def verify_archive(path: Path, manifest: BackupManifest) -> None:
                         digest.update(chunk)
                 if digest.hexdigest() != entry.sha256:
                     raise BackupArchiveError("Backup ZIP member checksum does not match.")
+            if manifest.schema_version == 3:
+                from .backup_reconstruction import verify_reconstruction_bytes
+                verify_reconstruction_bytes(manifest, archive.read(manifest.reconstruction["config_entry"]))
     except zipfile.BadZipFile as error:
         raise BackupArchiveError("Backup ZIP structure is invalid.") from error
 
@@ -96,6 +101,8 @@ def materialize_archive(path: Path, target: Path, manifest: BackupManifest) -> N
             infos = _validated_infos(archive)
             _require_members(infos, manifest)
             # Extract the manifest and payload members with exclusive creation
+            for directory in manifest.directories:
+                target.joinpath(*directory.split("/")).mkdir(parents=True, exist_ok=True)
             for name in ("manifest.json", *(entry.path for entry in manifest.entries)):
                 destination = target.joinpath(*name.split("/"))
                 destination.parent.mkdir(parents=True, exist_ok=True)
@@ -111,18 +118,18 @@ def _validated_infos(archive: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
     folded: set[str] = set()
     # Validate every member, rejecting directories, encrypted members, and links
     for info in archive.infolist():
-        if info.is_dir() or info.flag_bits & 0x1:
+        if info.flag_bits & 0x1:
             raise BackupArchiveError("Backup ZIP contains an unsupported member.")
         # Symbolic links appear in the Unix external attribute bits
         mode = info.external_attr >> 16
         if mode and stat.S_ISLNK(mode):
             raise BackupArchiveError("Backup ZIP contains a symbolic link.")
         try:
-            name = info.filename if info.filename == "manifest.json" else normalized_entry_path(info.filename)
+            name = info.filename if info.filename == "manifest.json" else normalized_entry_path(info.filename.rstrip("/")) + ("/" if info.is_dir() else "")
         except BackupManifestError as error:
             raise BackupArchiveError("Backup ZIP contains an unsafe member path.") from error
         # Reject names that would collide under Windows case folding
-        key = name.casefold()
+        key = name.rstrip("/").casefold()
         if key in folded:
             raise BackupArchiveError("Backup ZIP contains duplicate member paths.")
         folded.add(key)
@@ -134,5 +141,6 @@ def _require_members(infos: dict[str, zipfile.ZipInfo], manifest: BackupManifest
     """Raise when the archive members do not exactly match the manifest."""
     # Require exactly the manifest plus the declared payload entries
     expected = {"manifest.json", *(entry.path for entry in manifest.entries)}
+    expected.update(directory + "/" for directory in manifest.directories)
     if set(infos) != expected:
         raise BackupArchiveError("Backup ZIP contents do not match the manifest.")

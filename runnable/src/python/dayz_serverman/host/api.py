@@ -12,10 +12,11 @@ from .preference_api import PreferenceHostMethods
 from .profile_provisioning_api import ProfileProvisioningHostMethods
 from .schedule_api import ScheduleHostMethods
 from .settings_api import SettingsHostMethods
+from .backup_api import BackupHostMethods
 
 class HostApi(MedicalFeatureHostMethods, SettingsHostMethods, ModInventoryHostMethods,
               ModPublicationHostMethods, OperationalHostMethods, PreferenceHostMethods,
-              ProfileProvisioningHostMethods, ScheduleHostMethods):
+              ProfileProvisioningHostMethods, ScheduleHostMethods, BackupHostMethods):
     """Translate approved browser calls into strict bridge requests."""
     def __init__(self, bridge: BridgeFacade) -> None:
         """Store the bridge and prepare request tracking and selection hooks."""
@@ -26,6 +27,7 @@ class HostApi(MedicalFeatureHostMethods, SettingsHostMethods, ModInventoryHostMe
         # Native selection hooks stay unbound until the runtime wires them
         self._legacy_folder_selector: Callable[[], str | None] | None = None
         self._initialize_settings_host()
+        self._backup_archive_selector = None
 
     def _set_legacy_folder_selector(self, selector: Callable[[], str | None]) -> None:
         """Register the native folder picker used by the legacy import flow."""
@@ -154,58 +156,6 @@ class HostApi(MedicalFeatureHostMethods, SettingsHostMethods, ModInventoryHostMe
             "delete_profile",
             {"profile_id": profile_id, "expected_revision": expected_revision},
         )
-
-    def list_backups(self, profile_id: object) -> dict[str, Any]:
-        """List backups belonging to a profile."""
-        return self._invoke("list_backups", {"profile_id": profile_id})
-
-    def create_backup(
-        self,
-        profile_id: object,
-        expected_profile_revision: object,
-        expected_settings_revision: object,
-    ) -> dict[str, Any]:
-        """Create a backup for a profile with revision guards."""
-        return self._invoke(
-            "create_backup",
-            {
-                "profile_id": profile_id,
-                "expected_profile_revision": expected_profile_revision,
-                "expected_settings_revision": expected_settings_revision,
-            },
-        )
-
-    def preview_restore(self, profile_id: object, backup_id: object) -> dict[str, Any]:
-        """Preview restoring a backup into a profile."""
-        return self._invoke(
-            "preview_restore", {"profile_id": profile_id, "backup_id": backup_id},
-        )
-
-    def apply_restore(
-        self,
-        profile_id: object,
-        backup_id: object,
-        expected_profile_revision: object,
-        expected_settings_revision: object,
-        expected_manifest_digest: object,
-        preview_fingerprint: object,
-    ) -> dict[str, Any]:
-        """Apply a reviewed restore preview."""
-        return self._invoke(
-            "apply_restore",
-            {
-                "profile_id": profile_id,
-                "backup_id": backup_id,
-                "expected_profile_revision": expected_profile_revision,
-                "expected_settings_revision": expected_settings_revision,
-                "expected_manifest_digest": expected_manifest_digest,
-                "preview_fingerprint": preview_fingerprint,
-            },
-        )
-
-    def inspect_restore_recovery(self) -> dict[str, Any]:
-        """Report pending restore recovery state."""
-        return self._invoke("inspect_restore_recovery", {})
 
     def load_configuration(self, profile_id: object, target: object) -> dict[str, Any]:
         """Load a configuration target for editing."""

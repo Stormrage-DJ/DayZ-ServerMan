@@ -15,7 +15,7 @@ from .profiles import ProfileValidationError, validate_profile_id, validate_rela
 
 
 # Manifest schema version written for new backups
-BACKUP_SCHEMA_VERSION = 2
+BACKUP_SCHEMA_VERSION = 3
 # Backup identifier: letters, digits, dots, underscores, or hyphens
 BACKUP_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 # Lowercase SHA-256 hex digest
@@ -37,6 +37,10 @@ def normalized_entry_path(value: object) -> str:
         raise BackupManifestError("backup entry path is invalid")
     # Normalize to NFC so path comparisons stay stable across writers
     value = unicodedata.normalize("NFC", value)
+    try:
+        validate_relative_path(value, "backup entry")
+    except ProfileValidationError as error:
+        raise BackupManifestError("backup entry path contains unsafe Windows segments") from error
     path = PurePosixPath(value)
     # Reject absolute or traversing entries before they reach a manifest
     if path.is_absolute() or ".." in path.parts or any(part in ("", ".") for part in path.parts):
@@ -90,10 +94,12 @@ class BackupManifest:
     created_at: str
     entries: tuple[ManifestEntry, ...]
     manifest_digest: str = ""
-    schema_version: int = BACKUP_SCHEMA_VERSION
+    schema_version: int = 2
     content_digest_algorithm: str = "SHA-256"
     semantic_profile_digest: str | None = None
     runtime_profile: str | None = None
+    reconstruction: dict | None = None
+    directories: tuple[str, ...] = ()
 
     @classmethod
     def parse(cls, value: object) -> BackupManifest:
@@ -107,12 +113,14 @@ class BackupManifest:
             raise BackupManifestError("backup manifest fields are invalid")
         # Only the two published schema versions are accepted
         version = value.get("schema_version")
-        if not isinstance(version, int) or isinstance(version, bool) or version not in (1, 2):
+        if not isinstance(version, int) or isinstance(version, bool) or version not in (1, 2, 3):
             raise BackupManifestError("backup manifest schema is unsupported")
         # Version 2 adds the semantic digest and runtime profile fields
         fields = common_fields if version == 1 else common_fields | {
             "semantic_profile_digest", "runtime_profile",
         }
+        if version == 3:
+            fields |= {"reconstruction", "directories"}
         if set(value) != fields:
             raise BackupManifestError("backup manifest fields are invalid")
         # Validate identity, revisions, and the UTC timestamp
@@ -142,7 +150,7 @@ class BackupManifest:
         semantic_digest = None
         runtime_profile = None
         # Version 2 carries the semantic profile digest and runtime identity
-        if version == 2:
+        if version >= 2:
             semantic_digest = value["semantic_profile_digest"]
             runtime_profile = value["runtime_profile"]
             if not isinstance(semantic_digest, str) or SHA256.fullmatch(semantic_digest) is None:
@@ -153,6 +161,14 @@ class BackupManifest:
                 runtime_profile = validate_relative_path(runtime_profile, "runtime_profile")
             except ProfileValidationError as error:
                 raise BackupManifestError("runtime profile identity is invalid") from error
+        reconstruction, directories = None, ()
+        if version == 3:
+            from .backup_reconstruction import validate_directories, validate_reconstruction
+            try:
+                directories = validate_directories(value["directories"], entries, normalized_entry_path, entry_path_key)
+                reconstruction = validate_reconstruction(value["reconstruction"], value["profile_id"], semantic_digest, runtime_profile, entries, directories)
+            except ValueError as error:
+                raise BackupManifestError(str(error)) from error
         return cls(
             backup_id=backup_id,
             profile_id=validate_profile_id(value["profile_id"]),
@@ -164,6 +180,8 @@ class BackupManifest:
             schema_version=version,
             semantic_profile_digest=semantic_digest,
             runtime_profile=runtime_profile,
+            reconstruction=reconstruction,
+            directories=directories,
         )
 
     def unsigned_dict(self) -> dict[str, Any]:
@@ -179,9 +197,12 @@ class BackupManifest:
             "content_digest_algorithm": self.content_digest_algorithm,
         }
         # Version 2 signs the two extra profile identity fields
-        if self.schema_version == 2:
+        if self.schema_version >= 2:
             result["semantic_profile_digest"] = self.semantic_profile_digest
             result["runtime_profile"] = self.runtime_profile
+        if self.schema_version == 3:
+            result["reconstruction"] = self.reconstruction
+            result["directories"] = list(self.directories)
         return result
 
     def signed(self) -> BackupManifest:

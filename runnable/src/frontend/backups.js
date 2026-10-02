@@ -45,68 +45,6 @@ function backupError(result, fallback) {
   document.getElementById("backup-feedback").replaceChildren(notice);
   notice.focus();
 }
-// Render one profile's backup history, diagnostics, and legacy references.
-function renderBackupHistory(history) {
-  backupState.history = history;
-  const profile = backupState.profiles.find((item) => item.profile_id === history.profile_id);
-  const profileName = profile ? profile.display_name : history.profile_id;
-  const list = document.getElementById("backup-history");
-  list.replaceChildren();
-  // Show an explicit empty state when no backups exist for this profile.
-  if (!history.backups.length) {
-    const empty = backupNode("div", "notice", "No backups exist for this server profile.");
-    empty.dataset.state = "empty";
-    list.append(empty);
-  } else {
-    // Describe each backup with its verification state and restore readiness.
-    history.backups.forEach((backup) => {
-      const item = backupNode("article", "backup-item");
-      const compatible = backup.restore_compatibility === "COMPATIBLE";
-      item.append(
-        backupNode("strong", "", `${profileName} backup`),
-        backupNode("span", "status-label status-normal", "Verified"),
-        backupNode("span", compatible ? "status-label status-normal" : "status-label status-warning",
-          compatible ? "Restore ready" : "Restore support pending"),
-        backupNode("p", "", window.ServerManBackupDisplay.summary(backup)),
-        backupNode("p", "", "Includes server configuration and runtime data."),
-      );
-      if (!compatible) item.append(backupNode("p", "",
-        window.ServerManBackupDisplay.text(backup.restore_compatibility_reason)));
-      list.append(item);
-    });
-  }
-  // Surface profile and destination diagnostics from the last verification.
-  history.diagnostics.forEach((diagnostic) => {
-    const scope = diagnostic.scope === "PROFILE" ? "This profile" : "Backup destination";
-    const warning = backupNode("div", "notice notice-warning",
-      `${scope}: ${window.ServerManBackupDisplay.text(diagnostic.message)}`);
-    warning.dataset.state = diagnostic.code === "CORRUPT" ? "recovery" : "warning";
-    warning.setAttribute("role", "status");
-    list.append(warning);
-  });
-  // List legacy archives as external references that cannot be restored.
-  (history.legacy_backups || []).forEach((backup) => {
-    const warning = backupNode("article", "notice notice-warning");
-    warning.dataset.state = "warning";
-    warning.append(
-      backupNode("strong", "", "Legacy backup — not available for restore"),
-      backupNode("p", "", window.ServerManBackupDisplay.summary(backup)),
-    );
-    list.append(warning);
-  });
-  document.getElementById("backup-destination").textContent =
-    history.destination_kind === "custom" ? "Custom local destination" : "Portable default destination";
-  const create = document.getElementById("backup-create");
-  create.disabled = !history.runtime_profile;
-  // Explain how to fix the missing runtime profile before creating backups.
-  if (!history.runtime_profile) {
-    const setup = backupNode("div", "notice notice-warning",
-      "Set a runtime profile directory in Profiles before creating a backup.");
-    setup.setAttribute("role", "status");
-    document.getElementById("backup-feedback").replaceChildren(setup);
-  }
-  if (window.ServerManRestore) void window.ServerManRestore.render(history);
-}
 // Load the backup history for the selected profile.
 async function loadBackupHistory(boundContext = null) {
   const context = boundContext || captureBackupProfile();
@@ -214,7 +152,7 @@ function showBackupConfirmation() {
   const title = backupNode("h3", "", "Create backup?");
   title.id = "backup-confirm-title";
   dialog.append(title, backupNode("p", "",
-    `Server: ${profile.display_name}. Its configuration and runtime data will be copied and verified. Mod directories are not included.`));
+    `Server: ${profile.display_name}. Its configuration, runtime, complete mission and world persistence will be copied and verified. Mod directories are not included.`));
   const actions = backupNode("div", "action-row");
   const cancel = backupNode("button", "button", "Cancel");
   cancel.type = "button";
@@ -271,8 +209,11 @@ function renderBackupWorkspace(profiles) {
   history.id = "backup-history";
   history.setAttribute("aria-busy", "true");
   panel.append(heading, profileLabel, destination, create, feedback,
-    backupNode("h3", "", "Available backups"), history);
+    backupNode("h3", "", "Latest backups"), history);
   document.getElementById("content-region").replaceChildren(panel);
+  const catalog = backupNode("section", "panel"); catalog.id = "backup-catalog";
+  document.getElementById("content-region").append(catalog);
+  if (window.ServerManProfileRestore) void window.ServerManProfileRestore.loadCatalog();
   // Route profile changes through the shared selection and restore guards.
   select.addEventListener("change", () => {
     if (window.ServerManRestore && window.ServerManRestore.blockProfileChange(select)) return;
@@ -283,7 +224,8 @@ function renderBackupWorkspace(profiles) {
     window.ServerManProfileContext.select(select.value);
   });
   // Start with the history for the currently selected profile.
-  loadBackupHistory();
+  if (profiles.length) loadBackupHistory();
+  else { select.disabled = true; history.textContent = "Create or restore a profile to make new backups."; }
 }
 // Open the backup workspace for the profiles reported by the host.
 async function openBackupWorkspace() {
@@ -292,9 +234,7 @@ async function openBackupWorkspace() {
   if (!window.ServerManWorkspace.isActive(workspace)) return;
   if (!result.success) return window.ServerManUi.renderHostError(result);
   // Defer to the shared empty state when no profiles exist.
-  if (!Array.isArray(result.value) || !result.value.length) {
-    return window.ServerManUi.render("backups", "empty");
-  }
+  if (!Array.isArray(result.value)) return window.ServerManUi.renderHostError(result);
   renderBackupWorkspace(result.value);
 }
 // Apply operation events to the queued backup request and its progress meter.

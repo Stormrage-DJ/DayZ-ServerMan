@@ -62,7 +62,7 @@ class BackupBridgeTests(unittest.TestCase):
         )
         server = self.dayz / "Config Files" / "serverDZ.cfg"
         server.parent.mkdir(parents=True, exist_ok=True)
-        server.write_text("hostname = fixture;\n", encoding="utf-8")
+        server.write_text('hostname="fixture"; class Missions { class DayZ { template="dayzOffline.enoch"; }; };\n', encoding="utf-8")
         mission = self.dayz / "mpmissions" / "dayzOffline.enoch"
         # Seed every required mission inventory item
         for item in MISSION_INVENTORY:
@@ -176,7 +176,7 @@ class BackupOperationSafetyTests(unittest.TestCase):
         self.backups.mkdir()
         server = self.dayz / "Config Files" / "serverDZ.cfg"
         server.parent.mkdir(parents=True)
-        server.write_text("fixture", encoding="utf-8")
+        server.write_text('class Missions { class DayZ { template="dayzOffline.chernarusplus"; }; };', encoding="utf-8")
         create_runtime_profile(self.dayz)
         mission = self.dayz / "mpmissions" / "dayzOffline.chernarusplus"
         (mission / "storage_3").mkdir(parents=True)

@@ -96,7 +96,7 @@ async function pollEvents() {
       if (!operation.success) return renderHostError(operation);
       window.ServerManUi.syncOperationStatus(operation.value);
       // Let the visible section consume the event before the shared fallback renders it.
-      const handled = shellState.section === "configuration"
+      const handled = window.ServerManProfileRestore?.operationFinished(operation.value) || shellState.section === "configuration"
         && window.ServerManConfiguration.operationFinished(operation.value)
         || shellState.section === "backups"
           && (window.ServerManRestore.operationFinished(operation.value)

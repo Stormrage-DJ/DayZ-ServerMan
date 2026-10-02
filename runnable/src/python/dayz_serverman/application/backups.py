@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime, tzinfo
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from ..domain.models import RevisionConflict
@@ -58,6 +58,14 @@ class BackupService:
             **history,
         }
 
+    def catalog(self) -> dict[str, Any]:
+        """List retained archives without consulting the active profile catalog."""
+        from ..repositories.backup_catalog import list_catalog
+        settings = self._settings.load()
+        return {"settings_revision": settings.revision,
+                "destination_kind": "custom" if settings.custom_backup_root else "default",
+                **list_catalog(self._settings.backup_root(settings))}
+
     def create(
         self,
         profile_id: object,
@@ -83,6 +91,16 @@ class BackupService:
             )
         # Build the ordered payload inventory from the current install
         sources = self._inventory(Path(settings.dayz_root), profile)
+        from ..repositories.backup_reconstruction import directory_inventory
+        from ..repositories.profile_restore_configuration import read_restore_configuration
+        from ..domain.backup_reconstruction import reconstruction_metadata
+        mission_root, _ = resolve_profile_mission(Path(settings.dayz_root).resolve(strict=True), profile)
+        configuration = read_restore_configuration(sources_config_bytes(sources, profile))
+        if configuration.mission_template.casefold() != PureWindowsPath(mission_root).name.casefold():
+            raise BackupStorageError("MISSION_UNRESOLVED", "Configuration and selected mission disagree.")
+        directories = tuple(sorted((*directory_inventory(Path(settings.dayz_root), mission_root, mission_payload_prefix(mission_root)),
+                                    *directory_inventory(Path(settings.dayz_root), profile.values.runtime_profile, "runtime-profile")), key=entry_path_key))
+        metadata = reconstruction_metadata(profile.values, mission_root, configuration, directories)
         # Re-read the context so a concurrent edit cannot be captured silently
         current_profile = self._profiles.read(profile.values.profile_id)
         current_settings = self._settings.load()
@@ -109,6 +127,8 @@ class BackupService:
             profile.values.runtime_profile,
             sources,
             checkpoint,
+            reconstruction=metadata, directories=directories,
+            validate_context=lambda: self._validate_capture(profile, settings, directories, mission_root),
         )
         # Judge restore compatibility before reporting the new backup
         compatibility, reason = restore_compatibility(manifest)
@@ -154,6 +174,23 @@ class BackupService:
         if len(folded) != len(set(folded)):
             raise BackupStorageError("BACKUP_SOURCE_INVALID", "The backup inventory contains duplicate targets.")
         return ordered
+
+    def _validate_capture(self, profile, settings, directories, mission_root):
+        """Recheck identity and directory inventory after the complete payload capture."""
+        from ..repositories.backup_reconstruction import directory_inventory
+        current = self._profiles.read(profile.values.profile_id)
+        if current != profile or self._settings.load() != settings:
+            raise RevisionConflict("Backup context changed during capture.")
+        captured = tuple(sorted((*directory_inventory(Path(settings.dayz_root), mission_root, mission_payload_prefix(mission_root)),
+                                 *directory_inventory(Path(settings.dayz_root), profile.values.runtime_profile, "runtime-profile")), key=entry_path_key))
+        if captured != directories:
+            raise BackupStorageError("BACKUP_SOURCE_CHANGED", "Backup directories changed during capture.")
+
+
+def sources_config_bytes(sources: tuple[BackupSource, ...], profile: ProfileRecord) -> bytes:
+    """Read the selected configuration from its already validated source identity."""
+    entry = "payload/" + "/".join(PureWindowsPath(profile.values.server_config).parts)
+    return next(source.source.read_bytes() for source in sources if source.entry_path == entry)
 
 
 def _require_revision(value: object, current: int, label: str) -> None:

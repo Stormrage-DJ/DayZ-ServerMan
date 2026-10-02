@@ -61,6 +61,7 @@ from .repositories.workshop_recovery import inspect_workshop_recovery
 from .repositories.applied_mod_state import AppliedModStateRepository
 from .profile_provisioning_composition import build_profile_provisioning
 from .lifecycle_composition import build_lifecycle
+from .profile_restore_composition import build_profile_restore
 
 
 @dataclass(frozen=True)
@@ -196,6 +197,7 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
     if recovery["blocked"]:
         operations.block_for_recovery("Mutations are blocked by unresolved restore recovery.")
     restore_coordinator = RestoreCoordinator(restores, operations)
+    profile_restore_coordinator = build_profile_restore(paths, profiles, settings, backup_storage, lifecycle, mutex, operations)
     # Build shutdown and schedule coordination
     shutdown = ShutdownCoordinator(operations, logger, lifecycle.shutdown_safe)
     lifecycle_coordinator = LifecycleCoordinator(lifecycle, operations, backups)
@@ -233,6 +235,7 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
         **preferences.handlers(),
         **backup_coordinator.handlers(),
         **restore_coordinator.handlers(),
+        **profile_restore_coordinator.handlers(),
         **configuration_coordinator.handlers(),
         **mission_configuration_coordinator.handlers(),
         **medical_feature_coordinator.handlers(),

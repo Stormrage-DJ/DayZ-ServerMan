@@ -34,7 +34,7 @@ class RestoreProfileV2Tests(unittest.TestCase):
         self.dayz = self.root / "DayZ"
         self.target = self.dayz / "Config Files" / "serverDZ.cfg"
         self.target.parent.mkdir(parents=True)
-        self.target.write_text("snapshot config", encoding="utf-8")
+        self.target.write_text('hostname="snapshot"; class Missions { class DayZ { template="dayzOffline.chernarusplus"; }; };', encoding="utf-8")
         (self.dayz / "profiles" / "main").mkdir(parents=True)
         mission = self.dayz / "mpmissions" / "dayzOffline.chernarusplus"
         mission.mkdir(parents=True)

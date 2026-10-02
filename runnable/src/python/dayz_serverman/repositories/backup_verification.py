@@ -88,7 +88,7 @@ def verify_directory(directory: Path, manifest: BackupManifest) -> None:
     """Verify snapshot files against the manifest, rejecting unsafe entries."""
     expected = {item.path for item in manifest.entries}
     actual: set[str] = set()
-    # Collect the on-disk payload, vetoing links and streams during the walk
+    # Collect the on-disk payload, rejecting links and streams during the walk
     for parent, directories, files in os.walk(directory, followlinks=False):
         parent_path = Path(parent)
         for name in directories:
@@ -109,3 +109,12 @@ def verify_directory(directory: Path, manifest: BackupManifest) -> None:
         path = directory / entry.path
         if path.stat().st_size != entry.size or sha256_file(path) != entry.sha256:
             raise BackupVerificationError("Snapshot payload checksum does not match.")
+    if manifest.schema_version == 3:
+        actual_directories = {path.relative_to(directory).as_posix() for path in directory.rglob("*") if path.is_dir()}
+        expected_directories = set(manifest.directories)
+        for entry in manifest.entries:
+            expected_directories.update(parent.as_posix() for parent in Path(entry.path).parents if parent.as_posix() != ".")
+        if actual_directories != expected_directories:
+            raise BackupVerificationError("Snapshot directories do not match the manifest.")
+        from .backup_reconstruction import verify_reconstruction_bytes
+        verify_reconstruction_bytes(manifest, (directory / manifest.reconstruction["config_entry"]).read_bytes())

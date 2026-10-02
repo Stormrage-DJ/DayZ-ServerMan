@@ -73,7 +73,7 @@ def directory_sources(
     root = safe_directory(dayz_root, "DayZ root", writable=False)
     windows = _relative(relative)
     directory = _contained(root, root.joinpath(*windows.parts), file=False)
-    prefix = normalized_entry_path(entry_prefix).rstrip("/")
+    prefix = normalized_entry_path(entry_prefix.rstrip("/"))
     sources: list[BackupSource] = []
     # Walk without following links and capture every regular file
     try:

@@ -32,8 +32,17 @@ class BackupCoordinator:
         """Return the bridge handler table for backup use cases."""
         return {
             "list_backups": self.list_backups,
+            "list_backup_catalog": self.list_backup_catalog,
             "create_backup": self.create_backup,
         }
+
+    def list_backup_catalog(self, parameters):
+        """Query archives even when every profile has been deleted."""
+        _exact(parameters, set())
+        try:
+            return self._service.catalog()
+        except Exception as error:
+            raise _query_error(error) from error
 
     def list_backups(self, parameters: Mapping[str, Any]) -> dict[str, Any]:
         """Return the verified backup history for one profile."""

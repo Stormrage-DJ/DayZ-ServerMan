@@ -31,6 +31,10 @@ function history(profile, revision) { return { success: true, value: {
     { backup_id: `${profile}-pending`, created_at: "2026-09-25T14:00:00Z", entry_count: 2,
       total_size: 8, restore_compatibility: "PENDING_RUNTIME_PROFILE_SUPPORT",
       restore_compatibility_reason: "Runtime-profile restore support is pending." },
+    { backup_id: `${profile}-older`, created_at: "2026-09-24T12:00:00Z", entry_count: 1,
+      total_size: 5, restore_compatibility: "COMPATIBLE" },
+    { backup_id: `${profile}-oldest`, created_at: "2026-09-23T12:00:00Z", entry_count: 1,
+      total_size: 5, restore_compatibility: "COMPATIBLE" },
   ],
 } }; }
 function preview(profile, backup, revision) { return { success: true, value: {
@@ -46,6 +50,8 @@ const previewCalls = [];
 const applyCalls = [];
 const eventCalls = [];
 const operationValues = new Map();
+// This isolated workspace harness supplies the shared selection boundary.
+window.ServerManProfileContext = { selectedId: () => null, select: () => { void loadBackupHistory(); } };
 window.pywebview = { api: {
   list_backups: () => historyCalls.shift().promise,
   inspect_restore_recovery: async () => ({ success: true, value: { blocked: false, diagnostics: [] } }),
@@ -55,6 +61,7 @@ window.pywebview = { api: {
   get_operation: async (operationId) => operationValues.get(operationId),
 } };
 window.ServerManUi = {
+  syncOperationStatus: () => {},
   renderHostError: () => {}, render: () => {}, renderOperation: () => {},
   setHostStatus: () => {}, sectionCopy: { backups: ["Backups", "Backups"] },
 };
@@ -67,21 +74,18 @@ window.ServerManUi = {
     { profile_id: "bravo", display_name: "Bravo" },
   ]);
   alphaHistory.resolve(history("alpha", 3)); await flush(); await flush();
-  const restoreSelect = document.getElementById("restore-backup");
-  check(![...restoreSelect.options].some((option) => option.value === "alpha-pending"),
-            "unavailable backup entered the restore selector");
-  check(document.getElementById("restore-panel").textContent.includes("unavailable for restore"),
-    "restore dependency notice is missing");
-  restoreSelect.value = "alpha-one";
+  const actions = [...document.querySelectorAll("#backup-history .backup-restore-action")];
+  check(actions.length === 3, "history did not limit visible archives to three");
+  check(actions.map(button => button.dataset.backupId).join(",") === "alpha-pending,alpha-two,alpha-one", "history is not newest first");
+  check(actions[0].disabled && !actions[1].disabled && actions[1].getAttribute("aria-label").includes("Restore backup"), "restore icon compatibility or accessible label wrong");
+  check(!document.getElementById("restore-backup") && document.getElementById("restore-panel").hidden, "redundant dropdown or empty review visible");
   const stalePreview = deferred(); previewCalls.push(stalePreview);
-  previewRestore();
-  restoreSelect.value = "alpha-two";
-  restoreSelect.dispatchEvent(new Event("change"));
+  actions[2].click();
+  const activePreview = deferred(); previewCalls.push(activePreview);
+  actions[1].click();
   stalePreview.resolve(preview("alpha", "alpha-one", 3)); await flush();
   check(restoreState.preview === null, "late preview crossed backup generation");
 
-  const activePreview = deferred(); previewCalls.push(activePreview);
-  previewRestore();
   activePreview.resolve(preview("alpha", "alpha-two", 3)); await flush();
   check(restoreState.preview.value.backup_id === "alpha-two", "active preview did not bind");
   check(document.getElementById("restore-feedback").textContent.includes("Runtime profile — REPLACE"),
@@ -112,10 +116,8 @@ window.ServerManUi = {
   check(restoreState.pendingOperation === null, "late apply crossed alpha-to-bravo context");
   bravoHistory.resolve(history("bravo", 7)); await flush(); await flush();
 
-  const bravoSelect = document.getElementById("restore-backup");
-  bravoSelect.value = "bravo-one";
   const bravoPreview = deferred(); previewCalls.push(bravoPreview);
-  previewRestore(); bravoPreview.resolve(preview("bravo", "bravo-one", 7)); await flush();
+  document.querySelector('[data-backup-id="bravo-one"]').click(); bravoPreview.resolve(preview("bravo", "bravo-one", 7)); await flush();
   showRestoreConfirmation();
   const activeApply = deferred(); applyCalls.push(activeApply);
   document.querySelectorAll("#restore-confirmation button")[1].click();
@@ -135,7 +137,7 @@ window.ServerManUi = {
   function setPending(backupOperation, restoreOperation) {
     backupState.pendingOperation = Object.freeze({ context: profileContext, operationId: backupOperation });
     restoreState.pendingOperation = Object.freeze({
-      context: restoreContext(document.getElementById("restore-backup").value),
+      context: restoreContext(restoreState.backupId),
       operationId: restoreOperation,
     });
     const status = backupNode("div", "notice notice-busy", "Pending backup");
@@ -191,7 +193,7 @@ class RestoreUiDynamicTests(unittest.TestCase):
         # Concatenate the frontend modules that implement the scenario
         scripts = "\n".join(
             (FRONTEND / name).read_text(encoding="utf-8")
-            for name in ("workspace_context.js", "backup_display.js", "backups.js", "restore.js", "app.js")
+            for name in ("workspace_context.js", "backup_display.js", "backups.js", "backup_history.js", "restore.js", "app.js")
         )
         # Compose a standalone page embedding the modules and the harness
         page_text = (

@@ -40,7 +40,7 @@ class BackupProfileV2Tests(unittest.TestCase):
         self.dayz = self.root / "DayZ Unicode"
         config = self.dayz / "Config Files" / "serverDZ.cfg"
         config.parent.mkdir(parents=True)
-        config.write_text("hostname = fixture;\n", encoding="utf-8")
+        config.write_text('hostname = "fixture";\nclass Missions { class DayZ { template = "dayzOffline.chernarusplus"; }; };\n', encoding="utf-8")
         self.runtime = create_runtime_profile(self.dayz)
         mission = self.dayz / "mpmissions" / "dayzOffline.chernarusplus"
         mission.mkdir(parents=True)

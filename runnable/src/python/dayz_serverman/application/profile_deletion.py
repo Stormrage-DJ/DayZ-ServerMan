@@ -16,6 +16,7 @@ from .preferences import PreferenceCoordinator
 from .profiles import ProfileService
 from .schedules import ScheduleCoordinator
 from .settings import SettingsService
+from .profile_restore_ownership import owns_complete_mission
 
 
 class ProfileDeletionError(RuntimeError):
@@ -58,14 +59,17 @@ class ProfileDeletionService:
         storage_is_exclusive = self._storage_is_exclusive(
             root, mission_root, instance_id, profile_id,
         )
+        mission_is_exclusive = owns_complete_mission(root, mission_root, mission, profile_id, self._profiles.list())
         self._preflight_directory(generated, root)
         if storage_is_exclusive:
             self._preflight_directory(storage, mission)
+        if mission_is_exclusive:
+            self._preflight_directory(mission, root)
 
         self._schedules.delete_profile(profile_id)
         self._preferences.delete_profile(profile_id)
         self._applied_mod_state.delete_profile(profile_id)
-        removed_storage = self._remove_directory(storage) if storage_is_exclusive else 0
+        removed_storage = self._remove_directory(mission) if mission_is_exclusive else self._remove_directory(storage) if storage_is_exclusive else 0
         removed_generated = self._remove_directory(generated)
         self._profiles.delete(profile_id, expected_revision)
         return {
@@ -74,6 +78,7 @@ class ProfileDeletionService:
             "removed_generated_files": removed_generated,
             "removed_mission_storage_files": removed_storage,
             "preserved_shared_mission_storage": not storage_is_exclusive,
+            "removed_owned_mission": mission_is_exclusive,
         }
 
     @staticmethod

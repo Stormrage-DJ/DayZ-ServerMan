@@ -45,7 +45,14 @@ browser data, and backups.
 
 ## Run tests
 
-Start the application once to create its local environment. Then run:
+Start the application once to create its local environment. In PowerShell,
+set the source path for tests that still import the former reference layout:
+
+```powershell
+$env:PYTHONPATH = (Resolve-Path .\runnable\src\python).Path
+```
+
+Then run:
 
 ```text
 .\runnable\.venv\Scripts\python.exe -m unittest discover -s tests
@@ -107,6 +114,34 @@ the control surface, border, text color, or interaction states.
 Profile creation uses `provision_profile`; `save_profile` remains the edit path
 for existing profiles. Do not add filesystem side effects to ordinary profile
 save.
+
+### Backup restoration
+
+- New archives use schema 3 with complete profile reconstruction metadata and
+  verified directory inventories. Earlier schemas remain identifiable.
+- `frontend/backup_history.js` displays the selected profile's three newest
+  archives. Its icons call the existing-profile review in `frontend/restore.js`.
+- `frontend/profile_restore.js` owns ZIP browsing and direct reconstruction review.
+- `host/runtime.py` wires the native ZIP picker. The host dispatches
+  `inspect_backup_archive` to validate the selected source.
+- `repositories/selected_backup.py` binds opaque session references to source
+  paths and ZIP hashes. Renamed external ZIPs retain their internal identity.
+- `application/profile_restores.py` revalidates sources and destination previews.
+  Publication and recovery use the separate direct-restore storage and journal.
+
+The browser does not read filesystem paths directly. Keep archive validation,
+profile reconstruction and publication checks in Python. Direct restore uses
+the shared mutation lane and installation guard, and requires a stopped server.
+
+Run the focused selection, UI, mapping and transaction checks with:
+
+```powershell
+.\runnable\.venv\Scripts\python.exe -m unittest tests.test_backup_archive_selection tests.test_backup_reconstruction tests.test_profile_restore_mapping tests.test_profile_restore_service tests.test_profile_restore_bridge tests.test_profile_restore_ui tests.test_restore_ui_dynamic tests.test_ui_host_runtime
+```
+
+File hashes and engine readiness do not prove client persistence behavior.
+Use a disposable populated server fixture to verify known player/object state
+and representative mod persistence before accepting persistence portability.
 
 ## Change checklist
 

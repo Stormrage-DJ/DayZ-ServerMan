@@ -35,7 +35,7 @@ becomes damaged. The next launch creates it again.
 3. Select the folder that contains `steamcmd.exe` and its Steam library.
 4. Keep the portable backup destination or select a custom folder.
 5. Save the locations and review their status.
-6. Create or import a server profile.
+6. Create, import, or restore a server profile.
 
 <!-- shot:readme-02 -->
 ![Settings showing the saved DayZ and SteamCMD folders with their status](img/readme-02.png)
@@ -72,9 +72,10 @@ Application source, Python packages, settings, and backups are not placed in
 that directory. The generated configuration uses safe initial values and can
 be adjusted from **Configuration** after creation.
 
-Deleting a profile removes it from DayZ-ServerMan but keeps these operational
-files. Creating the same profile ID again safely reuses a compatible
-`serverDZ.cfg` and `profile` directory without overwriting either one.
+Deleting a manager-created profile removes its generated files and exclusive
+world storage. A restored isolated mission is removed only when ownership is
+proven and no other profile references it. Shared missions and backup archives
+remain preserved.
 
 When creation succeeds, the new profile is selected and remembered. Select
 **Go to Overview**, then **Start server**. A “ready to start” result confirms
@@ -162,13 +163,54 @@ Backup names use the profile ID and local creation time:
 pripyat_2026-09-28_16-21-51.zip
 ```
 
-<!-- shot:readme-08 -->
-![Backups workspace with a verified backup ready to restore and the review step](img/readme-08.png)
-
-The manager verifies a backup before it lists the file as ready to restore.
 Every new backup includes the server configuration, complete mission directory
-(including `storage_<instanceId>` world and mod persistence), and runtime
-profile. Restores require a review step before files are changed.
+(including `storage_<instanceId>` world and mod persistence), runtime profile,
+complete profile definition and empty directories. Mod binaries are not included.
+The manager verifies the archive before reporting success.
+
+### Restore an existing profile
+
+1. Stop all DayZ servers in the configured installation.
+2. Open **Backups** and select the server profile.
+3. Under **Latest backups**, select the restore icon on the required card.
+4. Review the targets and recovery plan, then select **Restore this backup**.
+5. Confirm with **Restore now**, then wait for completion.
+
+The list shows only the three newest backups, newest first. A disabled restore
+icon means that archive is incompatible; the card explains why. This limit does
+not delete older ZIPs. Restoration uses the existing profile and does not create
+another profile or start the server.
+
+### Restore a deleted profile from a ZIP
+
+1. Stop all DayZ servers in the configured installation.
+2. Open **Backups → Restore profile from backup…**.
+3. Select a full backup ZIP. The picker starts in the configured backup folder.
+4. Review the archive summary and destination choices. Leave the ID and ports
+   blank to suggest available values.
+5. Select **Review restore** and check the proposed profile, paths and ports.
+6. Confirm any explicit world replacement, then select **Restore profile**.
+7. After success, check readiness and missing mods before starting the server.
+
+This action works with no existing profiles. ZIPs elsewhere and renamed ZIPs
+are supported. Browsing does not import or modify the source archive. Cancel
+returns to Backups; an invalid or unsupported archive shows one explanation.
+If the file changes after selection, browse again and prepare a new review.
+
+Existing IDs are preserved. An occupied mission defaults to an isolated
+mission and storage ID. Direct restoration copies only the selected world,
+although the full mission archive can contain other worlds. Explicit world
+replacement names every affected profile and retains a verified recovery copy.
+The restored profile is selected and remembered after success.
+
+Older archives without a complete profile definition cannot recreate a deleted
+profile. They remain intact and can still restore an existing profile when
+compatible. Create a new full backup to enable direct reconstruction.
+
+Startup attempts recovery of interrupted restores. Uncertain recovery blocks
+mutations instead of overwriting independently changed files. Keep verified
+recovery copies until they are no longer needed; restore journals remain in
+`data/operations/`.
 
 ## Local application data
 

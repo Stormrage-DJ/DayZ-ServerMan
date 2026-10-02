@@ -63,10 +63,21 @@ class WindowsGracefulStop:
 
         # Wait for the process to disappear within the save-and-close window
         deadline = self._clock() + self._timeout_seconds
+        last_unknown: LifecycleFailure | None = None
         while self._clock() < deadline:
-            if self._process_is_gone(evidence):
-                return
+            try:
+                if self._process_is_gone(evidence):
+                    return
+                last_unknown = None
+            except LifecycleFailure as error:
+                # Exit can make identity temporarily unreadable; never treat uncertainty as absence.
+                if error.code != "PROCESS_STATE_UNKNOWN" or not error.retryable:
+                    raise
+                last_unknown = error
             self._sleeper(self._poll_interval)
+        # Preserve an unresolved inventory failure rather than claiming a successful stop.
+        if last_unknown is not None:
+            raise last_unknown
         raise LifecycleFailure(
             "STOP_TIMEOUT",
             "DayZ did not exit before the save-and-close timeout.",

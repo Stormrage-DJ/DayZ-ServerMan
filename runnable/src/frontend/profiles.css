@@ -48,3 +48,9 @@
   .profile-mod-copy { grid-template-columns: 1fr; align-items: stretch; }
   .profile-mod-copy-actions { justify-content: flex-end; }
 }
+/* Direct restoration uses native modal focus containment and one labelled choice per row. */
+.direct-restore-dialog { width: min(42rem, calc(100vw - 2rem)); max-height: 90vh; overflow: auto; color: var(--color-text); }
+.direct-restore-dialog .form-field { display: grid; gap: .35rem; margin-block: .85rem; }
+.direct-restore-dialog .form-field small { opacity: .8; }
+.direct-restore-dialog dd { overflow-wrap: anywhere; margin-bottom: .4rem; }
+.direct-restore-dialog::backdrop { background: rgb(0 0 0 / .65); }
