@@ -11,10 +11,11 @@ from ..domain.lifecycle import LifecycleFailure, LifecycleSnapshot, ServerState
 
 # Policy of customer decision D10, the only place that holds it: must a writing
 # publication WITHOUT a requested start (a plain apply) run inside the guard?
-# False keeps the behaviour before the guard: the apply is attempted in any
-# server state. True refuses it unless the server is proven stopped. A writing
+# The customer decided on 2026-10-04: yes. Every apply that writes into the
+# server folder takes the installation mutex and needs a proven stopped server.
+# False would attempt the apply in any server state, as before the guard. A writing
 # publication with a requested start is always guarded, whatever this value is.
-PLAIN_APPLY_REQUIRES_GUARD = False
+PLAIN_APPLY_REQUIRES_GUARD = True
 
 
 class StatusPort(Protocol):

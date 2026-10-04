@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runnable" / "src" 
 
 import test_mod_publication_application as fixtures  # noqa: E402
 from applied_gate_fixtures import CountingLifecycle, applied_state_gate  # noqa: E402
-from content_proof_fixtures import current, write_manifest  # noqa: E402
+from content_proof_fixtures import current, target_proof, write_manifest  # noqa: E402
 from dayz_serverman.adapters.windows.publication_paths import dayz_root_identity  # noqa: E402
 from dayz_serverman.application import content_proof_records, mod_publication_start  # noqa: E402
 from dayz_serverman.application.content_proof_records import ContentProofRecorder  # noqa: E402
@@ -23,7 +23,7 @@ from dayz_serverman.application.mod_publication import (  # noqa: E402
 )
 from dayz_serverman.application.mod_publication_prestart import PrestartFingerprints  # noqa: E402
 from dayz_serverman.domain.workshop import derive_required_items  # noqa: E402
-from dayz_serverman.repositories import mod_publication_staging  # noqa: E402
+from dayz_serverman.repositories import mod_publication_stage, mod_publication_staging  # noqa: E402
 from dayz_serverman.repositories.content_proofs import ContentProofStore  # noqa: E402
 from dayz_serverman.repositories.mod_publication_journal import (  # noqa: E402
     PublicationJournalRepository,
@@ -63,9 +63,13 @@ class TargetRecordRuleTests(fixtures.PublicationApplicationFixture):
         write_manifest(self.root, {"111": ("1", 1), "222": ("2", 1)})
         self.store = ContentProofStore(self.paths.content_proofs)
         self.lifecycle = CountingLifecycle()
+        # Optional fault hook of the storage: called with each publication phase
+        self.fault = None
         self.service = ModPublicationService(
             self.profiles, self.settings, self.operations,
-            lambda checkpoint: ModPublicationStorage(checkpoint=checkpoint),
+            lambda checkpoint: ModPublicationStorage(
+                fault_hook=lambda phase, index: self.fault(phase) if self.fault else None,
+                checkpoint=checkpoint),
             PublicationJournalRepository(self.paths.publication_journals),
             self.lifecycle, ContentProofRecorder(self.store), PrestartFingerprints(self.store),
         )
@@ -177,12 +181,79 @@ class TargetRecordRuleTests(fixtures.PublicationApplicationFixture):
         self.assertEqual(after.content_inventory_digest, before.content_inventory_digest)
 
     def test_copied_target_is_recorded_without_another_hash(self) -> None:
-        """A copied group was hashed by the publication; the recorder measures only."""
+        """A copied group was hashed by the publication; the recorder compares fingerprints only."""
         self.publish(self._gate(complete=True), _Context("first"))
         self.assertNotIn("records", {place for place, _name in self.hashed})
         record = self.store.load().targets[self.alpha_key]
+        self.assertEqual(record.basis, "COPIED")
         self.assertEqual(record.target_metadata_digest,
                          tree_metadata_digest(self.dayz / "mods/alpha"))
+
+    def assert_copied_change_is_never_proven(self, phase: str, start: bool) -> None:
+        """Change a copied folder after its last hash, at the given phase; no record may follow."""
+        # A stored record of the folder must also go when the tree is not the hashed one
+        self.store.record(targets={self.alpha_key: target_proof(basis="VERIFIED")})
+        self.fault = lambda name: self.tamper() if name == phase else None
+        gate = self._gate(complete=True, start_requested=start)
+        if start:
+            # The run that meets the change hashes the copied folder and refuses the start
+            with self.assertRaises(ModPublicationError) as raised:
+                self.publish(gate, _Context("first"))
+            self.assertEqual((raised.exception.code, self.lifecycle.calls),
+                             ("PUBLICATION_VERIFICATION_FAILED", 0))
+            self.assertIn(("prestart", "alpha"), self.hashed)
+        else:
+            self.assertEqual(self.publish(gate, _Context("first"))["publication_state"], "VERIFIED")
+        self.fault = None
+        self.assertEqual(self.alpha.read_bytes(), b"TAMPERED-CONTENT-OF-ANOTHER-SIZE")
+        targets = self.store.load().targets
+        self.assertNotIn(self.alpha_key, targets)
+        self.assertEqual(targets[self.beta_key].basis, "COPIED")
+        self.assert_next_start_hashes_and_replaces_alpha()
+
+    def test_copied_folder_changed_after_cleanup_in_a_plain_apply_gets_no_record(self) -> None:
+        """QF-017, copied group: a change after the post-commit hash is not proven (plain apply)."""
+        self.assert_copied_change_is_never_proven("AFTER_CLEANUP", False)
+
+    def test_copied_folder_changed_after_retirement_in_a_plain_apply_gets_no_record(self) -> None:
+        """QF-017, copied group: a change after the journal retired is not proven (plain apply)."""
+        self.assert_copied_change_is_never_proven("AFTER_RETIREMENT", False)
+
+    def test_copied_folder_changed_after_cleanup_in_a_start_run_gets_no_record(self) -> None:
+        """QF-017, copied group: the start run refuses and leaves no record of the change."""
+        self.assert_copied_change_is_never_proven("AFTER_CLEANUP", True)
+
+    def test_copied_folder_changed_after_retirement_in_a_start_run_gets_no_record(self) -> None:
+        """QF-017, copied group: the same for a change after the journal retired."""
+        self.assert_copied_change_is_never_proven("AFTER_RETIREMENT", True)
+
+    def test_copied_folder_that_moves_during_its_post_commit_hash_gets_no_record(self) -> None:
+        """QF-025: the kept fingerprint is the one from before the post-commit hash."""
+        original, calls = mod_publication_stage.inventory_tree, []
+
+        def hash_then_touch(path, *arguments):
+            """Hash the tree; after the second hash of alpha, the post-commit one, move a file time."""
+            digest = original(path, *arguments)
+            calls.append(path.name)
+            if calls.count("alpha") == 2 and path.name == "alpha":
+                self.touch()
+            return digest
+
+        gate = self._gate(complete=True)
+        preview = self.service.preview(self.request(gate))
+        with patch.object(mod_publication_stage, "inventory_tree", side_effect=hash_then_touch):
+            self.service.publish(self.request(gate), preview["publication_fingerprint"], _Context("moving"))
+        self.assertEqual(calls.count("alpha"), 2)
+        targets = self.store.load().targets
+        self.assertNotIn(self.alpha_key, targets)
+        self.assertEqual(targets[self.beta_key].basis, "COPIED")
+
+    def test_copied_folder_without_a_kept_fingerprint_is_hashed_by_the_recorder(self) -> None:
+        """A copy whose fingerprint could not be measured before its hash gets the recorder's bracket."""
+        with patch.object(mod_publication_stage, "measured_fingerprint", return_value=None):
+            self.publish(self._gate(complete=True), _Context("first"))
+        self.assertEqual([name for place, name in self.hashed if place == "records"], ["alpha", "beta"])
+        self.assertEqual(self.store.load().targets[self.alpha_key].basis, "HASHED")
 
     def test_target_found_equal_by_staging_is_recorded_only_after_its_own_hash(self) -> None:
         """Audit: an equal folder without a reviewed fingerprint is hashed again for its record."""

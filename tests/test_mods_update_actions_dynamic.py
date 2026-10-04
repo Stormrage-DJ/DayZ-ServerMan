@@ -163,7 +163,8 @@ same(sentence(), "No server start was requested.", "plain");
 await confirmAndEnd("Apply mods and keys", "PUBLISH_MODS_AND_KEYS", "publish-1", {profile_id: "alpha", start_state: "NOT_REQUESTED"});
 check(calls.published.length === 1 && calls.published[0].length === 6, "plain apply submitted");
 same(feedback(), "Mods and keys applied. Server start was not requested.", "plain result");
-// Plain apply while the server runs, policy "attempt": the warning, and the apply is still offered.
+// Plain apply while the server runs, policy "attempt" (not the host default): the warning, and the apply is still offered.
+previewAnswer = answer(false, false);
 await review(false, "RUNNING_MANAGED");
 check(sentence().startsWith("The server is running. A mod folder that is in use cannot be replaced")
   && sentence().endsWith("Use Update & restart instead."), `attempt: ${sentence()}`);
@@ -192,19 +193,19 @@ window.pywebview.api.get_server_status = async () => ok(host.status);
 // Policy "refuse": a plan that writes offers only Close; a plan that writes nothing is a plain apply.
 previewAnswer = answer(true, false);
 await review(false, "RUNNING_MANAGED");
-same(sentence(), "The server is not stopped. Mods cannot be applied to the server folder now. "
+same(sentence(), "The server is running. Mods cannot be applied to the server folder now. "
   + "Use Update & restart, or stop the server first.", "refused");
 same([...dialog().querySelectorAll("button")].map((button) => button.textContent).join("|"), "Close", "refused buttons");
 dialogButton("Close").click();
 previewAnswer = answer(true, true, 1);
 await review(false, "RUNNING_MANAGED");
-check(sentence().startsWith("The server is not stopped."), "a missing key counts as writing");
+check(sentence().startsWith("The server is running. Mods cannot be applied"), "a missing key counts as writing");
 dialogButton("Close").click();
 previewAnswer = answer(true, true);
 await review(false, "RUNNING_MANAGED");
 check(sentence() === "No server start was requested." && dialogButton("Apply mods and keys"), "no-write plain apply");
 dialogButton("Cancel").click();
-previewAnswer = answer(false, false);
+previewAnswer = answer(true, false);
 // Apply, then start.
 await review(true, "STOPPED");
 check(sentence().includes("will start this server"), "start sentence");

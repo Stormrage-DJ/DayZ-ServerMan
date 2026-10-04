@@ -165,6 +165,8 @@ class PublicationGuardTests(fixtures.PublicationApplicationFixture):
         """Applied mods and present keys: the run needs neither the mutex nor a stopped server."""
         self.publish(self._gate(complete=True), "first")
         self.assertEqual(self.service.preview(self.request())["missing_key_count"], 0)
+        # The first apply wrote, so it took the guard (D10); the run under test must not
+        self.mutex.events.clear()
         self.lifecycle.state = ServerState.RUNNING_MANAGED
         self.mutex.busy = True
         result = self.publish(applied_state_gate(self, self.store, False), "no-write")
@@ -189,34 +191,45 @@ class PublicationGuardTests(fixtures.PublicationApplicationFixture):
         self.assertEqual(refused.exception.code, "PUBLICATION_PREVIEW_STALE")
 
     def test_plain_apply_policy_has_one_switch(self) -> None:
-        """Default: a plain apply is attempted without the guard. Switched on: it is refused."""
-        self.assertIs(installation_guard.PLAIN_APPLY_REQUIRES_GUARD, False)
+        """Decision D10, refuse: the default guards a plain apply. Switched off: it is attempted."""
+        self.assertIs(installation_guard.PLAIN_APPLY_REQUIRES_GUARD, True)
         self.assertIs(self.service._guard_plain_apply, installation_guard.PLAIN_APPLY_REQUIRES_GUARD)
         self.lifecycle.state = ServerState.RUNNING_MANAGED
-        # Policy on: the writing plain apply needs a stopped server
-        self.service = self.build_service(guard_plain_apply=True)
+        # Policy on (default): the writing plain apply needs a stopped server
         self.assert_refused(self._gate(complete=True), "plain-refused", "CONTROL_CONFLICT")
         self.mutex.events.clear()
-        # Policy off (default): the same apply runs on a running server, as before the guard
-        self.service = self.build_service()
+        # Policy off: the same apply runs on a running server, as before the guard
+        self.service = self.build_service(guard_plain_apply=False)
         result = self.publish(self._gate(complete=True), "plain-attempt")
         self.assertEqual((result["start_state"], self.mutex.events), ("NOT_REQUESTED", []))
         self.assertEqual((self.dayz / "mods/alpha/Addons/111.pbo").read_bytes(), b"alpha")
 
-    def test_plain_apply_with_the_policy_on_runs_guarded_when_stopped(self) -> None:
-        """Policy on and a stopped server: the plain apply runs inside the guard."""
-        self.service = self.build_service(guard_plain_apply=True)
+    def test_plain_writing_apply_is_refused_in_each_state_that_is_not_stopped(self) -> None:
+        """D10 with the default policy: the refusal code follows the state, and nothing is written."""
+        gate = self._gate(complete=True)
+        for index, (state, code) in enumerate(REFUSALS.items()):
+            with self.subTest(state=state.value):
+                self.lifecycle.state = state
+                self.assert_refused(gate, f"plain-refused-{index}", code)
+        # A busy installation mutex refuses before the state is read
+        self.lifecycle.state = ServerState.STOPPED
+        self.mutex.busy = True
+        self.assert_refused(gate, "plain-busy", "CONTROL_CONFLICT")
+
+    def test_plain_apply_on_a_stopped_server_runs_inside_the_guard(self) -> None:
+        """Default policy and a stopped server: the plain apply works, under the mutex."""
         result = self.publish(self._gate(complete=True), "plain-guarded")
-        self.assertEqual((result["publication_state"], self.mutex.events),
-                         ("VERIFIED", ["acquire", "release"]))
+        self.assertEqual((result["publication_state"], result["start_state"], self.mutex.events),
+                         ("VERIFIED", "NOT_REQUESTED", ["acquire", "release"]))
+        self.assertEqual((self.dayz / "mods/alpha/Addons/111.pbo").read_bytes(), b"alpha")
 
     def test_preview_counts_missing_keys(self) -> None:
         """The preview names the key files that an apply would add; an unreadable folder counts all."""
         first = self.service.preview(self.request())
-        self.assertEqual((first["missing_key_count"], first["plain_apply_guarded"]), (1, False))
+        self.assertEqual((first["missing_key_count"], first["plain_apply_guarded"]), (1, True))
         self.assertEqual([target["current"] for target in first["targets"]], [False, False])
         # The page reads the effective plain-apply policy from the preview
-        self.assertIs(self.build_service(guard_plain_apply=True).preview(self.request())["plain_apply_guarded"], True)
+        self.assertIs(self.build_service(guard_plain_apply=False).preview(self.request())["plain_apply_guarded"], False)
         self.publish(self._gate(complete=True), "first")
         preview = self.service.preview(self.request(applied_state_gate(self, self.store, False)))
         self.assertEqual((preview["key_count"], preview["missing_key_count"]), (1, 0))
@@ -263,8 +276,8 @@ class PublicationGuardTests(fixtures.PublicationApplicationFixture):
         composition = build_composition(self.paths.root)
         try:
             self.assertIsInstance(composition.mod_publication._guard, InstallationGuard)
-            self.assertIs(composition.mod_publication._guard_plain_apply,
-                          installation_guard.PLAIN_APPLY_REQUIRES_GUARD)
+            # Decision D10: the running application refuses a writing plain apply unless the server is stopped
+            self.assertIs(composition.mod_publication._guard_plain_apply, True)
         finally:
             composition.operations.shutdown(2)
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 MODS_HOST = r"""
 const calls = {updates: [], published: [], restarted: [], previews: 0};
 let previewAnswer = () => ok({profile_id: "alpha", publication_fingerprint: "b".repeat(64), key_count: 2,
-  missing_key_count: 0, plain_apply_guarded: false,
+  missing_key_count: 0, plain_apply_guarded: true,
   targets: [{workshop_id: "111", target_relative: "mods\\alpha", current: false}]});
 const modRow = (order, id, state, kind = "workshop") => ({order, name: `Mod ${order}`, directory: `mods\\m${order}`,
   launch_scope: "client", source_kind: kind, workshop_id: id, version: "1.0", state, time_updated: 1,

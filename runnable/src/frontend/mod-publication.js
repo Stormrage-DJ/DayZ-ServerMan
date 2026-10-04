@@ -13,8 +13,7 @@ const modReviewTexts = Object.freeze({
   inUse: " A mod folder that is in use cannot be replaced; the apply then stops and puts the folders back.",
   useRestart: " Use Update & restart instead.",
   whenStopped: " To be safe, apply the mods when the server is stopped.",
-  refused: "The server is not stopped. Mods cannot be applied to the server folder now. "
-    + "Use Update & restart, or stop the server first.",
+  refused: " Mods cannot be applied to the server folder now.",
   restart: "DayZ-ServerMan will save and stop the server, apply the mods, and start the server again. "
     + "The server is offline during these steps.",
   restartBackup: "DayZ-ServerMan will save and stop the server, create a verified backup, apply the mods, "
@@ -34,13 +33,33 @@ const modReviewServerStates = Object.freeze({
 });
 // The same for a state that is not known or could not be read.
 const MOD_REVIEW_STATE_UNCONFIRMED = "The server state could not be confirmed.";
+// What the operator can do when a writing apply is refused, per state; another state is not confirmed.
+const modReviewRefusedAdvice = Object.freeze({
+  RUNNING_MANAGED: " Use Update & restart, or stop the server first.",
+  RUNNING_EXTERNAL: " Stop the server first, then update again.",
+  STARTING: " Wait until the server runs, then use Update & restart.",
+  STOPPING: " Wait until the server is stopped, then update again.",
+});
+const MOD_REVIEW_REFUSED_UNCONFIRMED = " Check the server state on Overview.";
+
+// Word the server state that the page read; a state that is unknown or was not read is said as that.
+function reviewStateSentence(state) {
+  const known = typeof state === "string" && Object.hasOwn(modReviewServerStates, state);
+  return known ? modReviewServerStates[state] : MOD_REVIEW_STATE_UNCONFIRMED;
+}
 
 // Word the plain apply to a server that is not stopped: the state as it was read, the risk, and the advice.
 function unstoppedApplySentence(state) {
-  const known = typeof state === "string" && Object.hasOwn(modReviewServerStates, state);
   // Only a server that this manager runs can use the restart action.
-  return `${known ? modReviewServerStates[state] : MOD_REVIEW_STATE_UNCONFIRMED}${modReviewTexts.inUse}`
+  return `${reviewStateSentence(state)}${modReviewTexts.inUse}`
     + (state === "RUNNING_MANAGED" ? modReviewTexts.useRestart : modReviewTexts.whenStopped);
+}
+
+// Word the refusal of a writing apply while the server is not proven stopped: state, refusal, and true advice.
+function refusedApplySentence(state) {
+  const known = typeof state === "string" && Object.hasOwn(modReviewRefusedAdvice, state);
+  return `${reviewStateSentence(state)}${modReviewTexts.refused}`
+    + (known ? modReviewRefusedAdvice[state] : MOD_REVIEW_REFUSED_UNCONFIRMED);
 }
 
 // Report whether the reviewed plan would write into the server folder.
@@ -57,12 +76,12 @@ function publicationVariant(start, state, preview, backup) {
   }
   if (start) return { key: "changed", sentence: modReviewTexts.changed, submit: null };
   if (state === "STOPPED") return { key: "plain", sentence: modReviewTexts.noStart, submit: "publish" };
-  // A plain apply while the server is not stopped follows the policy that the host reports.
+  // A plain apply while the server is not stopped follows the policy that the host reports (D10: refuse).
   if (preview.plain_apply_guarded !== true) {
     return { key: "attempt", sentence: unstoppedApplySentence(state), submit: "publish" };
   }
   return publicationPlanWrites(preview)
-    ? { key: "refused", sentence: modReviewTexts.refused, submit: null }
+    ? { key: "refused", sentence: refusedApplySentence(state), submit: null }
     : { key: "plain", sentence: modReviewTexts.noStart, submit: "publish" };
 }
 

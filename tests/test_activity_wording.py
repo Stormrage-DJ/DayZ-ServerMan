@@ -144,7 +144,9 @@ class BlockReasonTests(unittest.TestCase):
             literals.update(re.findall(r'(?:block_for_recovery|self\._block)\(\s*"([^"]+)"', source))
             literals.update(re.findall(r'"(Profile provisioning recovery[^"]+|Migration publication requires[^"]+'
                                        r'|SteamCMD process-tree exit[^"]+)"', source))
-        self.assertEqual(len(literals), 13, sorted(literals))
+        self.assertEqual(len(literals), 14, sorted(literals))
+        self.assertIn("Mutations are blocked by an interrupted mod publication while the server is not proven stopped.",
+                      literals)
         known = {sentence for _fragment, sentence in wording.BLOCK_REASONS}
         for literal in sorted(literals):
             self.assertIn(wording.block_reason_text(literal), known, literal)
@@ -155,6 +157,8 @@ class BlockReasonTests(unittest.TestCase):
         cases = {
             "Mutations are blocked by unresolved mod publication.": "no DayZ server folder is set",
             "Mutations are blocked by unresolved mod publication recovery.": "could not be undone safely",
+            "Mutations are blocked by an interrupted mod publication while the server is not proven stopped.":
+                "Stop the server, then restart DayZ-ServerMan.",
             "Mutations are blocked by unresolved restore recovery.": "Open Backups",
             "Mutations are blocked until restore recovery is inspected.": "Open Backups",
             "Direct profile restore recovery requires attention.": "Stop the DayZ server",

@@ -177,6 +177,23 @@ class ProofBasisTests(fixtures.PublicationApplicationFixture):
                          ("PUBLICATION_VERIFICATION_FAILED", 0, ["alpha"]))
         self.assertEqual(self.bases(), [None, "COPIED"])
 
+    def test_group_that_passed_gets_no_record_when_a_later_group_fails(self) -> None:
+        """QF-024: the check records nothing before every group passed."""
+        self.strip_bases()
+        beta = self.dayz / "mods/beta/Addons/222.pbo"
+        gate = applied_state_gate(self, self.store, True)
+        # Change the content of the second group while size and time stay the same
+        state = beta.stat()
+        beta.write_bytes(b"X" * state.st_size)
+        os.utime(beta, ns=(state.st_atime_ns, state.st_mtime_ns))
+        with self.assertRaises(ModPublicationError) as raised:
+            self.publish(gate, "second-fails")
+        self.assertEqual((raised.exception.code, self.lifecycle.calls),
+                         ("PUBLICATION_VERIFICATION_FAILED", 0))
+        # The first group was hashed and matched; it still has no basis
+        self.assertEqual(self.hashed, ["alpha", "beta"])
+        self.assertEqual(self.bases(), [None, None])
+
     def test_tree_that_moves_during_the_prestart_hash_gets_no_record(self) -> None:
         """The pre-start record needs the same fingerprint before and after its hash."""
         self.strip_bases()

@@ -15,6 +15,7 @@ from .application.mod_inventory_coordinator import ModInventoryCoordinator
 from .application.mod_publication import ModPublicationService
 from .application.mod_publication_coordinator import ModPublicationCoordinator
 from .application.mod_publication_prestart import PrestartFingerprints
+from .application.mod_publication_startup import recover_interrupted_publications
 from .application.mod_restart_coordinator import ModRestartCoordinator
 from .application.operations.manager import OperationManager
 from .application.preferences import PreferenceCoordinator
@@ -65,7 +66,13 @@ def build_workshop(
     logger: StructuredLogger | None = None,
     backups: BackupService | None = None,
 ) -> WorkshopComposition:
-    """Build SteamCMD update, inventory, and publication services."""
+    """Build SteamCMD update, inventory, and publication services.
+
+    An interrupted mod publication is recovered first, before any service can queue a mutation.
+    """
+    # Every write into the DayZ root takes the installation mutex and needs a stopped server
+    guard = InstallationGuard(lifecycle, WindowsInstallationMutex())
+    recover_interrupted_publications(publication_journals, settings, operations, guard)
     steamcmd_preflight = SteamCmdPreflight()
     # The legacy applied-state file is only read; the proof store replaces its writes
     applied_mod_state = AppliedModStateRepository(paths.applied_mod_state)
@@ -95,7 +102,7 @@ def build_workshop(
         # A requested start accepts a stored fingerprint for an unchanged mod folder
         prestart=PrestartFingerprints(content_proofs, logger),
         # A writing publication takes the installation mutex and needs a stopped server
-        guard=InstallationGuard(lifecycle, WindowsInstallationMutex()),
+        guard=guard,
     )
     return WorkshopComposition(
         profile_coordinator=profile_coordinator,

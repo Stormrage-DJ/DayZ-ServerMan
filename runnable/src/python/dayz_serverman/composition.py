@@ -50,7 +50,6 @@ from .repositories.legacy_backup_index import LegacyBackupIndexRepository
 from .repositories.migration_journal import MigrationJournalRepository
 from .repositories.migration_publication import MigrationPublication
 from .repositories.mod_publication_journal import PublicationJournalRepository
-from .repositories.mod_publication_recovery import PublicationRecovery
 from .repositories.backups import BackupStorage
 from .repositories.restore_journal import RestoreJournalRepository
 from .repositories.restore_storage import RestoreStorage
@@ -131,21 +130,8 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
     # Track long-running operations with durable records
     operation_store = OperationStore(paths.operations)
     operations = OperationManager(operation_store, logger=logger)
+    # An interrupted mod publication is recovered by the workshop composition, inside the write guard
     publication_journals = PublicationJournalRepository(paths.publication_journals)
-    publication_records = publication_journals.records()
-    # Block mutations while unresolved mod publication records exist
-    if publication_records:
-        current_settings = settings.load()
-        if current_settings.dayz_root is None:
-            operations.block_for_recovery("Mutations are blocked by unresolved mod publication.")
-        else:
-            publication_recovery = PublicationRecovery(publication_journals).inspect(
-                Path(current_settings.dayz_root),
-            )
-            if publication_recovery["blocked"]:
-                operations.block_for_recovery(
-                    "Mutations are blocked by unresolved mod publication recovery."
-                )
     # Block mutations after an interrupted SteamCMD update
     workshop_recovery = inspect_workshop_recovery(paths.operations, WindowsChildProbe())
     if workshop_recovery["blocked"]:
