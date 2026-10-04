@@ -144,7 +144,7 @@ barButton("+1 waiting").focus();
 document.activeElement.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
 check(!queue() && barText().includes("Profile save cancelled."), "Escape did not close the queue list");
 // F6 moves the focus into the bar and back to where it was.
-const pageControl = document.getElementById("overview-profile");
+const pageControl = document.getElementById("backup-after-stop");
 pageControl.focus();
 document.dispatchEvent(new KeyboardEvent("keydown", {key: "F6", bubbles: true}));
 check(bar().contains(document.activeElement) && document.activeElement === bar().querySelector("button"),

@@ -8,6 +8,7 @@ import tempfile
 import threading
 import time
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runnable" / "src" / "python"))
@@ -17,6 +18,11 @@ from dayz_serverman.application.activity_wording import restart_apply_text  # no
 from dayz_serverman.application.backups import BackupStorageError  # noqa: E402
 from dayz_serverman.application.mod_publication import ModPublicationError  # noqa: E402
 from dayz_serverman.application.mod_restart_coordinator import ModRestartCoordinator  # noqa: E402
+from dayz_serverman.application.lifecycle_coordinator import (  # noqa: E402
+    OTHER_PROFILE_RUNNING,
+    for_running_profile,
+)
+from dayz_serverman.composition import build_composition  # noqa: E402
 from dayz_serverman.application.operations.manager import OperationManager  # noqa: E402
 from dayz_serverman.application.operations.store import OperationStore  # noqa: E402
 from dayz_serverman.bridge.facade import ApplicationCallError  # noqa: E402
@@ -44,6 +50,8 @@ class _Services:
         # Set when the test knows the operation identifier
         self.submitted = threading.Event()
         self.start_state = "STARTED"
+        # Profile that the fake server runs with; None when it is not known
+        self.running_profile: str | None = None
 
     def _step(self, name: str) -> None:
         """Log the call and raise the failure that the test planned for it."""
@@ -80,6 +88,10 @@ class _Services:
                 "start_state": self.start_state, "prestart_check": {"hashed": 1, "fingerprint_accepted": 2}}
 
     # Lifecycle service
+    def status(self) -> SimpleNamespace:
+        """Report the profile that the server runs with."""
+        return SimpleNamespace(profile_id=self.running_profile)
+
     def stop(self, settings_revision: int) -> None:
         """Log the stop."""
         self._step("stop")
@@ -106,10 +118,11 @@ class ModRestartCoordinatorTests(unittest.TestCase):
         self.services.manager = self.manager
         self.coordinator = ModRestartCoordinator(
             self.services, self.services, self.services, self.manager)
+        self.apply = self.coordinator.apply
 
     def run_restart(self, backup: bool = False):
         """Submit the restart and return the terminal operation record."""
-        accepted = self.coordinator.apply({
+        accepted = self.apply({
             "profile_id": "main", "expected_profile_revision": 1,
             "expected_semantic_profile_digest": "a" * 64, "expected_settings_revision": 2,
             "update_operation_id": "update-1", "publication_fingerprint": "b" * 64,
@@ -122,6 +135,25 @@ class ModRestartCoordinatorTests(unittest.TestCase):
                 return record
             time.sleep(0.01)
         self.fail("operation did not finish")
+
+    def test_request_for_another_profile_than_the_running_one_is_refused(self) -> None:
+        """D11: nothing is queued, checked or stopped for a profile that is not the running one."""
+        self.services.running_profile = "other"
+        # The composition puts the same check in front of this call as in front of stop and restart
+        self.apply = for_running_profile(self.services, self.coordinator.apply)
+        self.assertIn("for_running_profile(lifecycle, handler)", inspect.getsource(build_composition))
+        with self.assertRaises(ApplicationCallError) as raised:
+            self.run_restart(backup=True)
+        self.assertEqual(raised.exception.code.value, "INVALID_REQUEST")
+        self.assertEqual(raised.exception.safe_message, OTHER_PROFILE_RUNNING)
+        self.assertEqual(self.services.calls, [])
+        self.assertEqual(self.manager.list_recent(), ())
+        # The running profile itself, and a server whose profile is not known, pass as before
+        for running in ("main", None):
+            self.services.running_profile = running
+            self.services.calls.clear()
+            self.assertEqual(self.run_restart().state.value, "SUCCEEDED")
+            self.assertEqual(self.services.calls, ["confirm", "stop", "publish"])
 
     def test_success_runs_the_steps_in_order(self) -> None:
         """Plan check, stop, apply; the result is the publication result plus the backup."""

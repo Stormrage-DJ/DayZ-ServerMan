@@ -12,7 +12,8 @@ from .application.backup_coordinator import BackupCoordinator
 from .application.backups import BackupService
 from .application.configuration import ConfigurationService
 from .application.configuration_coordinator import ConfigurationCoordinator
-from .application.lifecycle_coordinator import LifecycleCoordinator
+from .application.installation_guard import InstallationGuard
+from .application.lifecycle_coordinator import LifecycleCoordinator, for_running_profile
 from .application.server_readiness import ReadinessLifecycleService
 from .application.logs import LogQueryService
 from .application.mission_configuration import MissionConfigurationService
@@ -37,6 +38,7 @@ from .application.restores import RestoreService
 from .application.schedules import ScheduleCoordinator
 from .application.settings import SettingsService
 from .application.shutdown import ShutdownCoordinator
+from .application.startup_recoveries import recover_interrupted_restores
 from .application.update_check import UpdateCheckService
 from .application.update_check_coordinator import UpdateCheckCoordinator
 from .application.update_check_scheduler import UpdateCheckScheduler
@@ -142,7 +144,6 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
     state_repository = VersionedJsonRepository(paths.state_file)
     profile_repository = ProfileRepository(paths.profiles)
     profiles = ProfileService(profile_repository, settings)
-    profile_provisioning_coordinator = build_profile_provisioning(profiles, settings, operations, paths.operations)
     preferences = PreferenceCoordinator(
         VersionedJsonRepository(paths.ui_preferences), profiles,
     )
@@ -179,15 +180,18 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
     lifecycle, mutex = build_lifecycle(
         settings, profiles, state_repository, operations, paths.logs,
     )
+    # Recoveries that write into the DayZ root take the mutex and need a proven stopped server
+    installation_guard = InstallationGuard(lifecycle, mutex)
+    profile_provisioning_coordinator = build_profile_provisioning(
+        profiles, settings, operations, paths.operations, installation_guard,
+    )
     # Build restore services and gate mutations on pending recovery
     restore_journals = RestoreJournalRepository(paths.operations / "restore-journals")
     restores = RestoreService(
         profiles, settings, backup_storage, RestoreStorage(), restore_journals,
         paths.backup_recovery, lifecycle, mutex,
     )
-    recovery = restores.inspect_recovery()
-    if recovery["blocked"]:
-        operations.block_for_recovery("Mutations are blocked by unresolved restore recovery.")
+    recover_interrupted_restores(restore_journals, restores, operations)
     restore_coordinator = RestoreCoordinator(restores, operations)
     profile_restore_coordinator = build_profile_restore(paths, profiles, settings, backup_storage, lifecycle, mutex, operations)
     # Build shutdown and schedule coordination
@@ -227,7 +231,9 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
         **workshop.workshop_coordinator.handlers(),
         **workshop.mod_inventory_coordinator.handlers(),
         **workshop.mod_publication_coordinator.handlers(),
-        **workshop.mod_restart_coordinator.handlers(),
+        # "Update & restart" stops the running server, so it must name the running profile (D11)
+        **{name: for_running_profile(lifecycle, handler)
+           for name, handler in workshop.mod_restart_coordinator.handlers().items()},
         **workshop.verification_coordinator.handlers(),
         **update_check_coordinator.handlers(),
         **logs.handlers(),

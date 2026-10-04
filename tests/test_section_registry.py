@@ -12,7 +12,9 @@ except ModuleNotFoundError:
 from dayz_serverman.host.assets import compose_shell_html
 
 
-SECTIONS = ("overview", "profiles", "configuration", "tweaks", "mods", "backups", "logs", "settings")
+# Registration order is navigation order: the groups Operate, Server setup, Application
+SECTIONS = ("overview", "mods", "backups", "logs", "profiles", "configuration", "tweaks", "settings")
+GROUPS = {"operate": SECTIONS[:4], "setup": SECTIONS[4:7], "application": SECTIONS[7:]}
 
 # Replaces every page module with a recorder, then drives the shell through the registry
 HARNESS = r"""
@@ -27,8 +29,8 @@ const page = (name, extra = {}) => { window[name] = {
   "ServerManMigration", "ServerManProfileRestore"].forEach((name) => page(name));
 window.ServerManOverview.track = (id) => calls.push(`track(${id})`);
 window.ServerManLogs.refresh = () => {};
-window.ServerManOverviewStatus = {refresh: async () => {}};
-window.ServerManUpdateStatus = {poll: async () => {}};
+window.ServerManUpdateStatus = {poll: async () => {}, open: async () => {},
+  badge: () => ({form: "none", text: "", name: "", count: 0})};
 window.ServerManProfileContext = {initialize: async () => ({success: true}), selectedId: () => "alpha",
   profiles: () => profiles};
 let events = [];
@@ -40,7 +42,7 @@ window.pywebview = {api: {
   get_operation: async (id) => ok(operations.get(id)),
 }};
 const expected = {
-  overview: ["Overview", "Server state, lifecycle controls, and the next safe operator action.",
+  overview: ["Overview", "Server state, updates, backups and the daily schedule.",
     "ServerManOverview.open(null)", "ServerManOverview.open(snapshot)", true],
   profiles: ["Profiles", "Create and maintain complete DayZ server launch profiles.",
     "ServerManProfiles.open(alpha)", "ServerManProfiles.open(alpha)", true],
@@ -54,7 +56,7 @@ const expected = {
     "ServerManBackups.open()", "ServerManBackups.open()", true],
   logs: ["Logs", "Inspect manager activity and captured DayZ server output.",
     "ServerManLogs.open()", "ServerManLogs.open()", false],
-  settings: ["Settings", "Configure portable application paths and SteamCMD authentication.",
+  settings: ["Settings", "Application folders and update checks.",
     "ServerManSettings.open(null)", "ServerManSettings.open(snapshot)", false],
 };
 const handlers = {
@@ -66,6 +68,26 @@ const handlers = {
 const navigation = [...document.querySelectorAll(".nav-item")].map((item) => item.dataset.section);
 check(JSON.stringify(window.ServerManSections.ids()) === JSON.stringify(navigation),
   "registry order differs from the navigation");
+// The navigation is built from the registry: three labelled groups, one item with an icon per section.
+const groups = [...document.querySelectorAll(".nav-list > .nav-group")];
+check(JSON.stringify(groups.map((group) => group.querySelector(".nav-group-label").textContent))
+  === JSON.stringify(["Operate", "Server setup", "Application"]), "group labels");
+check(JSON.stringify(groups.map((group) => group.querySelectorAll(".nav-item").length))
+  === JSON.stringify([4, 3, 1]), "items per group");
+check(groups.every((group) => group.getAttribute("role") === "group"
+  && document.getElementById(group.getAttribute("aria-labelledby")).textContent
+    === group.querySelector(".nav-group-label").textContent), "group names");
+for (const item of document.querySelectorAll(".nav-item")) {
+  const section = window.ServerManSections.get(item.dataset.section);
+  check(item.querySelector(".nav-label").textContent === section.title, `${section.id}: item label`);
+  check(item.querySelector("svg.nav-icon path").getAttribute("d") === section.icon, `${section.id}: icon`);
+  // Every section has a group and real path data, and its drawn icon has a size and a shape (QF-036).
+  check(typeof section.group === "string" && section.group !== "", `${section.id}: no group`);
+  check(typeof section.icon === "string" && /^M\d/.test(section.icon), `${section.id}: no icon path data`);
+  const box = item.querySelector("svg.nav-icon").getBoundingClientRect();
+  const shape = item.querySelector("svg.nav-icon path").getBBox();
+  check(box.width === 20 && box.height === 20 && shape.width > 0 && shape.height > 0, `${section.id}: icon not drawn`);
+}
 check(Object.isFrozen(window.ServerManSections), "registry is not frozen");
 let refused = false;
 try { window.ServerManSections.register("mods", {title: "x", description: "x", open: () => {}}); }
@@ -149,8 +171,17 @@ class SectionRegistryStaticTests(unittest.TestCase):
         """Each navigation section has one registration, in navigation order."""
         registered = re.findall(r'^registerSection\("([a-z]+)"', self.registry, re.MULTILINE)
         self.assertEqual(tuple(registered), SECTIONS)
+        # The document holds no navigation item: the one registration also creates the item
         document = (FRONTEND / "index.html").read_text(encoding="utf-8")
-        self.assertEqual(tuple(re.findall(r'data-section="([a-z]+)"', document)), SECTIONS)
+        self.assertEqual(re.findall(r'data-section="([a-z]+)"', document), [])
+        self.assertIn('<nav class="nav-list" aria-label="Sections"></nav>', document)
+        # Each registration names its group, its icon and whether the page shows the server line
+        for group, sections in GROUPS.items():
+            self.assertEqual(self.registry.count(f'group: "{group}"'), len(sections), group)
+        self.assertEqual(self.registry.count(" icon:"), len(SECTIONS))
+        # Every icon carries path data (QF-036)
+        self.assertEqual(len(re.findall(r'icon: "M\d', self.registry)), len(SECTIONS))
+        self.assertEqual(self.registry.count("usesProfile: true"), 6)
 
     def test_shell_loop_names_no_section_module_for_dispatch(self) -> None:
         """The shell loop opens and notifies sections only through the registry."""

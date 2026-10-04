@@ -18,7 +18,7 @@ from ..repositories.restore_paths import RestorePathError
 from ..repositories.restore_storage import RestoreStorageError
 from .operations.manager import OperationManager
 from .operations.models import OperationCancelled, OperationFailure, QueueUnavailable
-from .restores import RestoreService
+from .restores import RESTORE_KIND, RestoreService
 from .settings import SettingsValidationError
 
 
@@ -55,12 +55,19 @@ class RestoreCoordinator:
             raise _translate(error) from error
 
     def inspect_restore_recovery(self, parameters: Mapping[str, Any]) -> dict[str, object]:
-        """Inspect restore recovery state and clear the block when safe."""
+        """Inspect restore recovery state and lift the restore block when safe.
+
+        The service runs the recovery only under the installation guard. Only the blocks
+        that the restore owns are lifted; a block of another recovery stays.
+        """
         _exact(parameters, set())
+        if not self._operations.is_drained() and self._service.recovery_pending():
+            # A running operation holds the installation, and the journal may be its own: check later
+            return {"blocked": True, "deferred": True, "diagnostics": []}
         result = self._service.inspect_recovery()
         # Clear the mutation block only when recovery is not required
         if not result["blocked"]:
-            self._operations.clear_recovery_block()
+            self._operations.clear_recovery_block(RESTORE_KIND)
         return result
 
     def apply_restore(self, parameters: Mapping[str, Any]) -> dict[str, str]:
@@ -86,9 +93,9 @@ class RestoreCoordinator:
             except Exception as error:
                 call = _translate(error)
                 recovery = call.code == ErrorCode.RECOVERY_REQUIRED
-                # Block further mutations until recovery has been inspected
+                # Block further mutations until recovery has been inspected; the block is owned by this kind
                 if recovery:
-                    self._operations.block_for_recovery(
+                    context.block_for_recovery(
                         "Mutations are blocked until restore recovery is inspected.",
                     )
                 raise OperationFailure(
@@ -97,6 +104,7 @@ class RestoreCoordinator:
                 ) from error
 
         try:
+            # The kind is RESTORE_KIND, so the blocks of this operation are the restore recovery's to lift
             operation = self._operations.submit(
                 "RESTORE_BACKUP",
                 work,

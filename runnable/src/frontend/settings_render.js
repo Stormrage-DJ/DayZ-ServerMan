@@ -1,4 +1,5 @@
-// Settings rendering: path editors, the backup destination choice, resolved locations, and path diagnostics.
+// Settings rendering: path editors, the backup destination choice, resolved locations, path diagnostics,
+// and the marks that say which location is in use while the form holds unsaved changes.
 "use strict";
 
 // Look up the diagnostic that belongs to a path role.
@@ -11,6 +12,19 @@ function diagnosticFor(role) {
 function diagnosticCopy(role) {
   const wording = window.ServerManDiagnosticLabels.path(role, diagnosticFor(role));
   return [wording.label, wording.sentence, wording.ready ? "status-normal" : "status-warning"];
+}
+
+// Build the line that names the saved path while the form shows another one; null when both are equal.
+function inUseLine(role) {
+  const saved = settingsState.original?.[role];
+  if (!saved || saved === settingsState.paths[role]) return null;
+  return settingsNode("p", "settings-in-use", `In use until saved: ${saved}`);
+}
+
+// Return the saved backup destination: its choice and its path.
+function savedBackupDestination() {
+  const custom = settingsState.original?.custom_backup_root;
+  return custom ? { mode: "custom", path: custom } : { mode: "portable", path: settingsState.defaultBackup };
 }
 
 // Build one read-only path field with browse button and diagnostic line.
@@ -34,6 +48,8 @@ function pathEditor(role, labelText, description) {
   const [status, copy, statusClass] = diagnosticCopy(role);
   const statusNode = settingsNode("p", `status-label ${statusClass}`, `${status}: ${copy}`);
   field.append(label, descriptionNode, input, browse, statusNode);
+  const inUse = inUseLine(role);
+  if (inUse) field.append(inUse);
   return field;
 }
 
@@ -43,7 +59,13 @@ function backupChoice(input, title, description, path, browse = null) {
   choice.dataset.backupChoice = input.value;
   const label = settingsNode("label", "backup-choice-heading"); label.htmlFor = input.id;
   const copy = settingsNode("span", "backup-choice-copy");
-  copy.append(settingsNode("strong", "", title), settingsNode("small", "", description));
+  const heading = settingsNode("strong", "", title);
+  // The tag marks the selected choice only while it is the saved destination.
+  const saved = savedBackupDestination();
+  if (input.checked && saved.mode === input.value && saved.path === path) {
+    heading.append(" ", settingsNode("span", "settings-in-use-tag", "In use"));
+  }
+  copy.append(heading, settingsNode("small", "", description));
   label.append(input, copy);
   const location = settingsNode("code", "backup-choice-path", path);
   choice.append(label, location);
@@ -77,6 +99,13 @@ function backupEditor() {
   );
   const [status, copy, statusClass] = diagnosticCopy("custom_backup_root");
   fieldset.append(options, settingsNode("p", `status-label ${statusClass}`, `${status}: ${copy}`));
+  // While another destination is chosen than the saved one, the saved one is still in use.
+  const saved = savedBackupDestination();
+  const chosen = settingsState.backupMode === "portable"
+    ? settingsState.defaultBackup : settingsState.paths.custom_backup_root;
+  if (saved.mode !== settingsState.backupMode || saved.path !== chosen) {
+    fieldset.append(settingsNode("p", "settings-in-use", `In use until saved: ${saved.path}`));
+  }
   return fieldset;
 }
 
@@ -90,8 +119,10 @@ function resolvedLocations() {
   const list = settingsNode("dl", "detail-list");
   // Show each resolved path or a prompt to choose its folder.
   resolvedSettingsFields.forEach(([role, label]) => {
-    list.append(settingsNode("dt", "", label),
-      settingsNode("dd", "", settingsState.paths[role] || "Select the related folder"));
+    const value = settingsNode("dd", "", settingsState.paths[role] || "Select the related folder");
+    const inUse = inUseLine(role);
+    if (inUse) value.append(inUse);
+    list.append(settingsNode("dt", "", label), value);
   });
   section.append(list);
   return section;

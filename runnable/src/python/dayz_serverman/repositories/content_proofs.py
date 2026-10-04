@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
 from collections.abc import Collection, Mapping
 from pathlib import Path
@@ -24,6 +25,10 @@ from ..observability.structured_log import StructuredLogger
 
 # A larger file is treated as unreadable; the limits keep a real store far below it
 MAX_FILE_BYTES = 4 * 1024 * 1024
+# A reader and the writer can meet during the replace of the file on Windows: the
+# refused side tries again this many times, this many seconds apart, then gives up
+SHARING_RETRIES = 4
+SHARING_RETRY_SECONDS = 0.02
 # Exact field set of the persisted root object
 _ROOT_FIELDS = {"schema_version", "sources", "targets"}
 
@@ -39,14 +44,23 @@ class ContentProofStore:
     def load(self) -> ProofDocument:
         """Return every well-formed record; any unusable document is an empty store."""
         try:
-            # Read at most one byte above the cap so an oversized file is detected
-            with self._path.open("rb") as stream:
-                raw = stream.read(MAX_FILE_BYTES + 1)
+            try:
+                raw = self._read()
+            except PermissionError:
+                # A sharing violation during the replace: wait once, then read again
+                time.sleep(SHARING_RETRY_SECONDS)
+                raw = self._read()
             if len(raw) > MAX_FILE_BYTES:
                 return ProofDocument()
             return _document(json.loads(raw.decode("utf-8")))
         except (OSError, ValueError, TypeError, RecursionError):
+            # A reader error means "no proof" for this read, never a failed call
             return ProofDocument()
+
+    def _read(self) -> bytes:
+        """Return the file bytes, at most one byte above the cap so an oversized file is detected."""
+        with self._path.open("rb") as stream:
+            return stream.read(MAX_FILE_BYTES + 1)
 
     def target_records(self) -> Collection[tuple[str, str, str, str]]:
         """Return (root identity, directory key, Workshop id, manifest id) of every target.
@@ -118,11 +132,23 @@ class ContentProofStore:
                 stream.flush()
                 os.fsync(stream.fileno())
             # Swap the staged file into place
-            os.replace(temporary, self._path)
+            self._replace(temporary)
         finally:
             # Remove the staged file when any step fails
             if temporary.exists():
                 temporary.unlink()
+
+    def _replace(self, temporary: Path) -> None:
+        """Swap the staged file into place; a replace refused by an open reader is retried."""
+        for attempt in range(SHARING_RETRIES + 1):
+            try:
+                os.replace(temporary, self._path)
+                return
+            except PermissionError:
+                # The last refusal goes to the caller, which logs it and goes on
+                if attempt == SHARING_RETRIES:
+                    raise
+                time.sleep(SHARING_RETRY_SECONDS)
 
     def _log_failure(self, error: Exception) -> None:
         """Emit the write-failure event and swallow logging failures."""

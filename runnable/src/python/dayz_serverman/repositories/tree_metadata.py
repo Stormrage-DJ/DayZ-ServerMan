@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import stat
+import threading
 import unicodedata
 from pathlib import Path
 from ctypes import wintypes
@@ -19,30 +20,54 @@ class TreeMetadataError(RuntimeError):
     pass
 
 
+class _StreamData(ctypes.Structure):
+    """Mirror of the Win32 stream enumeration record."""
+    _fields_ = [("size", ctypes.c_longlong), ("name", wintypes.WCHAR * 296)]
+
+
+# Guards the one-time binding of the stream functions
+_BIND_LOCK = threading.Lock()
+# Private kernel32 handle with its bound stream functions; None until the first call
+_KERNEL: ctypes.WinDLL | None = None
+
+
+def _stream_functions() -> ctypes.WinDLL:
+    """Return the private kernel32 handle whose stream functions are bound once.
+
+    The argument types are never set again after the first call. A binding per
+    call on the shared `ctypes.windll` handle let two threads replace each
+    other's pointer type between binding and call, which raised
+    `ctypes.ArgumentError` in one of them (QF-028).
+    """
+    global _KERNEL
+    with _BIND_LOCK:
+        if _KERNEL is None:
+            # A private handle keeps the binding away from every other ctypes user
+            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel.FindFirstStreamW.argtypes = (
+                wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(_StreamData), wintypes.DWORD,
+            )
+            kernel.FindFirstStreamW.restype = wintypes.HANDLE
+            kernel.FindNextStreamW.argtypes = (wintypes.HANDLE, ctypes.POINTER(_StreamData))
+            kernel.FindNextStreamW.restype = wintypes.BOOL
+            kernel.FindClose.argtypes = (wintypes.HANDLE,)
+            kernel.FindClose.restype = wintypes.BOOL
+            _KERNEL = kernel
+        return _KERNEL
+
+
 def has_alternate_stream(path: Path) -> bool:
-    """Return True when a file carries a non-default NTFS stream."""
+    """Return True when a file carries a non-default NTFS stream; safe on any thread."""
     # Alternate data streams exist only on Windows
     if os.name != "nt":
         return False
-
-    class StreamData(ctypes.Structure):
-        """Mirror of the Win32 stream enumeration record."""
-        _fields_ = [("size", ctypes.c_longlong), ("name", wintypes.WCHAR * 296)]
-
-    data = StreamData()
-    # Bind the kernel32 entry points used for stream enumeration
-    kernel = ctypes.windll.kernel32
-    kernel.FindFirstStreamW.argtypes = (
-        wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(StreamData), wintypes.DWORD,
-    )
-    kernel.FindFirstStreamW.restype = wintypes.HANDLE
-    kernel.FindNextStreamW.argtypes = (wintypes.HANDLE, ctypes.POINTER(StreamData))
-    kernel.FindNextStreamW.restype = wintypes.BOOL
-    kernel.FindClose.argtypes = (wintypes.HANDLE,)
+    # Each call owns its record; the functions and their types are shared and fixed
+    data = _StreamData()
+    kernel = _stream_functions()
     handle = kernel.FindFirstStreamW(str(path), 0, ctypes.byref(data), 0)
     if handle == wintypes.HANDLE(-1).value:
         # Error 2 or 38 means the file or its stream set is absent
-        if kernel.GetLastError() in (2, 38):
+        if ctypes.get_last_error() in (2, 38):
             return False
         raise TreeMetadataError("file streams could not be inspected")
     try:

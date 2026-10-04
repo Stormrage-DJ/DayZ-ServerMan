@@ -117,7 +117,7 @@ function operationErrorText(error, fallback = OPERATION_INTERNAL_TEXT) {
   if (state || code === "EXTERNAL_PROCESS") {
     return `This cannot be done while the server is ${state || operationServerStates.RUNNING_EXTERNAL}.`;
   }
-  if (code === "MUTATION_CONFLICT") return mutationConflictText(error.details?.reason, message);
+  if (code === "MUTATION_CONFLICT") return mutationConflictText(error.details?.reason, message, error.details?.owner);
   if (Object.hasOwn(operationErrorTexts, code)) return operationErrorTexts[code];
   // A rejected request with a known host sentence has its own wording.
   const known = code === "INVALID_REQUEST" && operationRequestTexts.find(([fragment]) => message.includes(fragment));
@@ -130,21 +130,21 @@ function operationErrorText(error, fallback = OPERATION_INTERNAL_TEXT) {
 }
 
 // Word a refused submission by its cause: a full queue, a recovery block with its reason, or the closing manager.
-function mutationConflictText(reason, message) {
+function mutationConflictText(reason, message, owner = null) {
   // A host that names no cause is read by its message.
   const cause = typeof reason === "string" && reason ? reason
     : message.includes("queue is full") ? "QUEUE_FULL"
       : message.includes("lane is draining") ? "SHUTTING_DOWN" : "RECOVERY_BLOCK";
   if (cause === "RECOVERY_BLOCK") {
-    return `${operationConflictTexts.RECOVERY_BLOCK} ${window.ServerManHostSentences.blockReason(message)}`;
+    return `${operationConflictTexts.RECOVERY_BLOCK} ${window.ServerManHostSentences.blockReason(message, owner)}`;
   }
   if (Object.hasOwn(operationConflictTexts, cause)) return operationConflictTexts[cause];
   return window.ServerManHostSentences.sentence(message) || OPERATION_INTERNAL_TEXT;
 }
 
 // Word the Overview notice of a recovery block: the reason, what it blocks, and where the details are.
-function recoveryNoticeText(reason) {
-  return `${window.ServerManHostSentences.blockReason(reason)} Changes are blocked until this is resolved. `
+function recoveryNoticeText(reason, owner = null) {
+  return `${window.ServerManHostSentences.blockReason(reason, owner)} Changes are blocked until this is resolved. `
     + "Details are in Logs, Manager diagnostics.";
 }
 

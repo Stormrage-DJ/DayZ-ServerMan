@@ -73,7 +73,7 @@ function updateUnsavedState() {
 // Load the selected profile's configuration target for editing.
 async function loadSelectedConfiguration(preserveOnFailure = false) {
   const workspace = window.ServerManWorkspace.capture("configuration", "shared-configuration");
-  const profileId = document.getElementById("configuration-profile").value;
+  const profileId = window.ServerManProfileContext.selectedId();
   const target = "server";
   // Capture the load and edit generation that this response must satisfy.
   const sequence = ++configurationState.loadSequence;
@@ -108,7 +108,7 @@ function captureConfigurationEdit() {
 // Enable or disable every configuration control during a host round trip.
 function setConfigurationControlsDisabled(disabled) {
   document.querySelectorAll(
-    "#configuration-profile, [data-configuration-field], #configuration-discard",
+    "[data-configuration-field], #configuration-discard",
   ).forEach((control) => { control.disabled = disabled; });
 }
 
@@ -186,8 +186,8 @@ async function reviewOrApplyConfiguration() {
   document.getElementById("configuration-apply").disabled = true;
 }
 
-// Build the configuration panel and bind its profile, discard, and apply controls.
-function renderConfigurationWorkspace(profiles) {
+// Build the configuration panel for the profile selected in the sidebar and bind its discard and apply controls.
+function renderConfigurationWorkspace() {
   // Register this workspace as an owner of the shared unsaved-change guard.
   window.ServerManTransitions.registerOwner(
     "shared-configuration", discardConfigurationChanges, focusConfigurationEditor,
@@ -199,19 +199,6 @@ function renderConfigurationWorkspace(profiles) {
   headingCopy.append(configElement("h2", "", "Server configuration"),
     configElement("p", "", "Edit the selected profile's serverDZ configuration with guided, typed controls."));
   heading.append(headingCopy, configElement("span", "status-label status-normal", "Profile scoped"));
-  const selectors = configElement("div", "configuration-selectors");
-  const profileLabel = configElement("label", "", "Profile");
-  const profileSelect = document.createElement("select");
-  profileSelect.id = "configuration-profile";
-  // Fill the profile picker, preferring the shared selection.
-  profiles.forEach((profile) => {
-    const option = configElement("option", "", profile.display_name);
-    option.value = profile.profile_id;
-    profileSelect.append(option);
-  });
-  profileSelect.value = window.ServerManProfileContext?.selectedId?.() || profileSelect.value;
-  profileLabel.append(profileSelect);
-  selectors.append(profileLabel);
   const path = configElement("p", "configuration-path");
   path.append("Target: ", configElement("code", "", "Loading…"));
   path.querySelector("code").id = "configuration-path";
@@ -232,11 +219,9 @@ function renderConfigurationWorkspace(profiles) {
   apply.disabled = true;
   apply.addEventListener("click", reviewOrApplyConfiguration);
   actions.append(indicator, discard, apply);
-  panel.append(heading, selectors, path, fields, feedback, actions);
+  panel.append(heading, path, fields, feedback, actions);
   region.replaceChildren(panel);
   region.setAttribute("aria-busy", "false");
-  // Route picker changes through the shared profile context.
-  profileSelect.addEventListener("change", (event) => requestProfile(event.target.value));
   // Start with the selected profile's configuration target.
   loadSelectedConfiguration();
 }
@@ -250,12 +235,11 @@ async function openConfigurationWorkspace() {
   if (!Array.isArray(result.value) || !result.value.length) {
     return window.ServerManUi.render("configuration", "empty");
   }
-  renderConfigurationWorkspace(result.value);
+  renderConfigurationWorkspace();
 }
 
 // Publish the configuration workspace controls used by the shell.
 window.ServerManConfiguration = Object.freeze({
   open: openConfigurationWorkspace,
   operationFinished: configurationOperationFinished,
-  requestProfile,
 });

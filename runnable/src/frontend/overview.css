@@ -1,37 +1,44 @@
-/* Styles for the overview controls and server schedule row */
-.overview-controls { display: grid; grid-template-columns: auto minmax(0, 1fr); }
-.overview-controls > .panel-heading { align-self: center; }
-.overview-controls > .action-row { align-self: center; }
-/* Schedule row: description, time fields, choices, and status */
-.server-schedule-row {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: minmax(12rem, 1fr) auto auto auto;
-  gap: var(--primitive-space-3) var(--primitive-space-4);
-  align-items: end;
-  padding-top: var(--primitive-space-4);
-  border-top: 1px solid var(--color-border);
-}
-.schedule-copy { display: grid; align-self: center; gap: 2px; }
-.schedule-copy small, .schedule-status { color: var(--color-text-subtle); }
+/* Styles for the Overview: notice area, server panel, and the three cards */
+.overview-top { display: grid; gap: var(--primitive-space-4); }
+.workspace { container: workspace / inline-size; }
+/* Server panel: the state at the left, the four controls at the right */
+.overview-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--primitive-space-4) var(--primitive-space-6); align-items: start; }
+.overview-server-state { display: grid; justify-items: start; gap: var(--primitive-space-2); min-width: 0; }
+.overview-server-state h2, .overview-server-state p { margin: 0; }
+.overview-state { font-size: 24px; }
+.overview-uptime { color: var(--color-text-muted); }
+.overview-process { width: 100%; max-width: 34rem; color: var(--color-text-muted); }
+.overview-process summary, .schedule-editor summary { width: fit-content; min-height: 28px; cursor: pointer; }
+.overview-process .detail-list { margin-top: var(--primitive-space-2); }
+.overview-controls .action-row { align-items: center; justify-content: flex-end; margin: 0; }
+/* Cards: updates, last backup, next scheduled action */
+.overview-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--primitive-space-4); align-items: start; }
+.overview-card { display: grid; gap: var(--primitive-space-2); min-width: 0; }
+.overview-card h2, .overview-card p { margin: 0; }
+.overview-card-body { display: grid; justify-items: start; gap: var(--primitive-space-2); min-width: 0; }
+.overview-card-lead { font-size: 15px; }
+.overview-card-meta, .schedule-status { color: var(--color-text-muted); font-size: 13px; line-height: 1.45; }
+.overview-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--primitive-space-1) var(--primitive-space-3); }
+.overview-card-meta[hidden] { display: none; }
+.overview-card-actions { margin-top: var(--primitive-space-2); }
+/* Schedule editor inside its disclosure: time fields, the two actions, and the save button */
+.schedule-editor { color: var(--color-text-muted); }
+.schedule-editor[open] { display: grid; justify-items: start; gap: var(--primitive-space-3); }
 .schedule-time { display: flex; gap: var(--primitive-space-2); }
 .schedule-time-field { display: grid; gap: var(--primitive-space-1); font-size: 12px; }
-.schedule-time-field input {
-  width: 72px;
-}
-.schedule-choices { display: flex; min-width: 0; gap: var(--primitive-space-3); border: 0; margin: 0; padding: 0 0 8px; }
+.schedule-time-field input { width: 72px; }
+.schedule-choices { display: flex; flex-wrap: wrap; min-width: 0; gap: var(--primitive-space-3); border: 0; margin: 0; padding: 0; }
 .schedule-choice { white-space: nowrap; }
-.schedule-status { grid-column: 1 / -1; }
-/* Medium layout: keep the schedule row on two columns */
-@media (max-width: 979px) {
-  .server-schedule-row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
-  .schedule-copy, .schedule-status { grid-column: 1 / -1; }
-  .schedule-choices { padding-bottom: 0; }
+/* Medium workspace: two columns, the schedule card spans both; the controls wrap under the state */
+@container workspace (max-width: 979px) {
+  .overview-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .schedule-card { grid-column: 1 / -1; }
 }
-/* Phone layout: stack schedule controls in one column */
-@media (max-width: 659px) {
-  .overview-controls { grid-template-columns: 1fr; }
-  .server-schedule-row { grid-template-columns: 1fr; }
-  .schedule-time, .schedule-choices { grid-column: 1; }
-  .server-schedule-row > .button { justify-self: start; }
+@container workspace (max-width: 859px) {
+  .overview-panel { grid-template-columns: 1fr; }
+  .overview-controls .action-row { justify-content: flex-start; }
+}
+/* Narrow workspace: one column */
+@container workspace (max-width: 659px) {
+  .overview-cards { grid-template-columns: 1fr; }
 }

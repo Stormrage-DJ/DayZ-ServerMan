@@ -14,7 +14,9 @@ SCRIPT_FILES = (
     "backups.js", "backup_history.js", "profile_restore.js",
     "restore.js", "migration.js", "settings.js", "settings_render.js", "overview_backup.js",
     "overview_readiness.js",
-    "overview_lifecycle_dialog.js", "overview.js", "logs.js",
+    "overview_lifecycle_dialog.js", "overview.js", "overview_server.js", "overview_cards.js", "logs.js",
+    # The server status is read by the shared state module since the shell shows it in every section
+    "server_state.js",
 )
 
 
@@ -109,17 +111,20 @@ class WorkspaceFeaturesStaticTests(unittest.TestCase):
         self.assertIn("actions.append(backupChoice, start, stop, restart)", self.script)
         self.assertNotIn("force_kill", self.script)
 
-    def test_overview_selects_server_first_and_persists_the_choice(self) -> None:
-        """The overview selects the server profile first and persists it."""
+    def test_overview_follows_the_sidebar_selection_and_the_choice_is_persisted(self) -> None:
+        """Overview has no profile bar; the sidebar selection is persisted and read by the page."""
         for value in (
-            "overview-profile-bar", "Server profile", "get_ui_preferences",
-            "save_selected_profile", "Profile selection could not be remembered",
+            "get_ui_preferences", "save_selected_profile", "Profile selection could not be remembered",
+            "window.ServerManProfileContext.selectedId()",
         ):
             self.assertIn(value, self.script + self.styles)
-        self.assertLess(
-            self.script.index("region.append(selection)"),
-            self.script.index("region.append(panel, controls, details)"),
-        )
+        for removed in ("overview-profile-bar", "Server profile", "region.append(selection)",
+                        "overview-profile-select"):
+            self.assertNotIn(removed, self.script + self.styles)
+        # Without a profile the notice leads to both ways of getting the first one
+        for value in ('"Create a server profile"', '["Create profile", "profiles"]',
+                      '"Restore profile from backup\\u2026", "backups"', "setSection(section)"):
+            self.assertIn(value, self.script)
 
     def test_global_profile_context_and_guided_tweak_topology_are_present(self) -> None:
         """The global profile context and guided tweak topology are present."""

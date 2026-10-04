@@ -28,10 +28,15 @@ function formatBackupSize(bytes) {
   return `${value.toFixed(digits)} ${units[unit]}`;
 }
 
+// Word the content of one backup: file count and total size.
+function backupCounts(backup) {
+  const files = Number(backup.entry_count) === 1 ? "1 file" : `${backup.entry_count} files`;
+  return `${files} · ${formatBackupSize(backup.total_size)}`;
+}
+
 // Summarize one backup as date, file count, and total size.
 function backupSummary(backup) {
-  const files = Number(backup.entry_count) === 1 ? "1 file" : `${backup.entry_count} files`;
-  return `${formatBackupDate(backup.created_at)} · ${files} · ${formatBackupSize(backup.total_size)}`;
+  return `${formatBackupDate(backup.created_at)} · ${backupCounts(backup)}`;
 }
 
 // Normalize legacy wording in backup messages to the current product terms.
@@ -44,6 +49,7 @@ function userBackupText(value) {
 window.ServerManBackupDisplay = Object.freeze({
   date: formatBackupDate,
   size: formatBackupSize,
+  counts: backupCounts,
   summary: backupSummary,
   text: userBackupText,
 });

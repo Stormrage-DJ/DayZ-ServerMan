@@ -92,10 +92,15 @@ class ModsUiTests(unittest.TestCase):
         """Verify the update-state labels, reasons, check header, and asset order are present."""
         # Compose the shell and load the update-state sources
         html = compose_shell_html(FRONTEND)
-        status = (FRONTEND / "update_status.js").read_text(encoding="utf-8")
+        # The check header is drawn by its own module; both belong to the update state of the page
+        header = (FRONTEND / "mods_update_header.js").read_text(encoding="utf-8")
+        status = (FRONTEND / "update_status.js").read_text(encoding="utf-8") + header
         display = (FRONTEND / "mods_display.js").read_text(encoding="utf-8")
         mods = (FRONTEND / "mods.js").read_text(encoding="utf-8")
         styles = (FRONTEND / "mods.css").read_text(encoding="utf-8")
+        self.assertIn("window.ServerManUpdateHeader = Object.freeze(", header)
+        self.assertLess(html.index("window.ServerManUpdateStatus = "),
+                        html.index("window.ServerManUpdateHeader = "))
         # The shared state is published before the page that reads it
         self.assertIn("window.ServerManUpdateStatus = Object.freeze(", status)
         self.assertLess(html.index("window.ServerManUpdateStatus = "),
@@ -104,7 +109,7 @@ class ModsUiTests(unittest.TestCase):
         self.assertIn("get_update_status(profileId)", status)
         self.assertIn('request_update_check("mods", force)', status)
         self.assertIn("requestUpdateCheck(false)", status)
-        self.assertIn("recheckUpdateStatus(true)", status)
+        self.assertIn("ServerManUpdateStatus.recheck(true)", header)
         self.assertIn("automatic_update_checks", status)
         self.assertIn("UPDATE_STATUS_IDLE_INTERVAL = 5000", status)
         # Each label row and reason of the presentation table
@@ -133,15 +138,28 @@ class ModsUiTests(unittest.TestCase):
         self.assertIn('addEventListener("serverman:update-status"', mods)
         self.assertIn("body.replaceChildren(renderModRows())", display)
         self.assertEqual(mods.count('getElementById("content-region").replaceChildren'), 1)
-        self.assertIn('shellState.section === "mods") await window.ServerManUpdateStatus.poll()',
-                      (FRONTEND / "app.js").read_text(encoding="utf-8"))
+        # The shell polls the update state in every section; only the cadence depends on the Mods page
+        app = (FRONTEND / "app.js").read_text(encoding="utf-8")
+        self.assertIn('await window.ServerManUpdateStatus.poll(shellState.section === "mods");', app)
+        self.assertNotIn('if (shellState.section === "mods") await window.ServerManUpdateStatus.poll', app)
+        self.assertIn("UPDATE_STATUS_BACKGROUND_INTERVAL = 30000", status)
+        self.assertIn("modsVisible ? UPDATE_STATUS_IDLE_INTERVAL : UPDATE_STATUS_BACKGROUND_INTERVAL", status)
+        # No page listens to a Mods tick any more: the pages follow the shared state events
+        self.assertNotIn("mods-tick", html)
+        # Read at start, on a profile change, and after an operation that can change mod content
+        for kind in ("UPDATE_WORKSHOP_ITEMS", "PUBLISH_MODS_AND_KEYS", "APPLY_MODS_AND_RESTART",
+                     "VERIFY_WORKSHOP_FILES", "SAVE_PROFILE", "DELETE_PROFILE", "PROVISION_PROFILE",
+                     "RESTORE_PROFILE_FROM_BACKUP"):
+            self.assertIn(f'"{kind}"', app)
+        self.assertEqual(app.count("window.ServerManUpdateStatus.open()"), 3)
         # Safe rendering, motion preference, and the size gate
         for source in (status, display):
             self.assertNotIn("innerHTML", source)
             self.assertNotIn("localStorage", source)
         self.assertIn("@media (prefers-reduced-motion: reduce) "
                       "{ .mods-update-busy::before { animation: none; } }", styles)
-        for name in ("mods.js", "mods_operations.js", "mods_display.js", "update_status.js", "mods.css"):
+        for name in ("mods.js", "mods_operations.js", "mods_display.js", "update_status.js",
+                     "mods_update_header.js", "mods.css"):
             lines = (FRONTEND / name).read_text(encoding="utf-8").splitlines()
             self.assertLessEqual(len(lines), 300, name)
 
@@ -153,7 +171,7 @@ class ModsUiTests(unittest.TestCase):
         mods = "\n".join((FRONTEND / name).read_text(encoding="utf-8")
                          for name in ("mods.js", "mods_operations.js"))
         display = (FRONTEND / "mods_display.js").read_text(encoding="utf-8")
-        status = (FRONTEND / "update_status.js").read_text(encoding="utf-8")
+        status = (FRONTEND / "mods_update_header.js").read_text(encoding="utf-8")
         # The flow is published after the page helpers it uses and before the shell
         self.assertIn("window.ServerManModsVerify = Object.freeze(", verify)
         self.assertLess(html.index("function renderModsItems("),

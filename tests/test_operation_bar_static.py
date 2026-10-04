@@ -147,9 +147,9 @@ class OperationBarStaticTests(unittest.TestCase):
         marked = sorted(name for name, source in self.scripts.items() if "ServerManBusy" in source
                         and name != "busy_controls.js")
         self.assertEqual(marked, sorted((
-            "overview.js", "overview_lifecycle_dialog.js", "profiles.js", "profile_create.js",
+            "overview_server.js", "overview_lifecycle_dialog.js", "profiles.js", "profile_create.js",
             "profile_delete.js", "configuration.js", "tweaks.js", "tweaks_dialog.js", "tweaks_render.js",
-            "mods.js", "mods_verify.js", "mods_update_actions.js", "mod-publication.js", "backups.js",
+            "mods_signin.js", "mods_verify.js", "mods_update_actions.js", "mod-publication.js", "backups.js",
             "restore.js",
             "profile_restore.js", "settings.js", "migration.js",
         )))

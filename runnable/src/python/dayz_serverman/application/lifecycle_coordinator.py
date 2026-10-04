@@ -20,6 +20,11 @@ from .operations.models import OperationCancelled, OperationFailure, QueueUnavai
 BACKUP_SAFE_POINTS = frozenset(
     f"BACKUP_{phase}" for phase in ("DISCOVER", "STAGE", "HASH", "WRITE_MANIFEST", "VERIFY")
 )
+# Refusal of a stop or restart that names another profile than the one the server runs with
+OTHER_PROFILE_RUNNING = (
+    "The running server was started with another profile. "
+    "Select that profile to stop or restart the server."
+)
 
 
 class LifecycleCoordinator:
@@ -39,8 +44,9 @@ class LifecycleCoordinator:
         return {
             "get_server_status": self.get_server_status,
             "start_server": self.start_server,
-            "stop_server": self.stop_server,
-            "restart_server": self.restart_server,
+            # An operator request must name the profile that the server runs with (D11)
+            "stop_server": for_running_profile(self._lifecycle, self.stop_server),
+            "restart_server": for_running_profile(self._lifecycle, self.restart_server),
         }
 
     def get_server_status(self, parameters: Mapping[str, Any]) -> dict[str, object]:
@@ -179,6 +185,28 @@ class LifecycleCoordinator:
                 retryable=True, details=error.details,
             ) from error
         return {"operation_id": operation.operation_id, "state": operation.state.value}
+
+
+def for_running_profile(
+    lifecycle: ServerLifecycleService, handler: Callable[[Mapping[str, Any]], Any],
+) -> Callable[[Mapping[str, Any]], Any]:
+    """Return the bridge handler behind a check that the request names the running profile.
+
+    A stop with "Backup after stop" backs up the profile of the request, so an
+    operator request for another profile than the running one is refused (D11).
+    A server whose profile is not known (stopped, external, another session) is
+    left to the state rules of the services. The scheduler does not use this
+    check; its dispatcher skips the run of another profile itself.
+    """
+    def checked(parameters: Mapping[str, Any]) -> Any:
+        """Refuse a request for another profile, else run the handler."""
+        requested = parameters.get("profile_id") if isinstance(parameters, Mapping) else None
+        running = getattr(lifecycle.status(), "profile_id", None)
+        if isinstance(requested, str) and running is not None and running != requested:
+            raise ApplicationCallError(ErrorCode.INVALID_REQUEST, OTHER_PROFILE_RUNNING)
+        return handler(parameters)
+
+    return checked
 
 
 def _start_parameters(parameters: Mapping[str, Any]) -> tuple[str, int, int]:

@@ -1,13 +1,24 @@
-/* Styles for the mods inventory panel and access fields */
+/* Styles for the Mods sign-in panel and the inventory panel */
 .mods-panel, .mods-inventory-panel { min-width: 0; box-shadow: none; }
-.mods-selected-server, .mods-count { color: var(--color-text-muted); font-size: .82rem; }
-/* Access row for the selected server and mod source */
+.mods-count { color: var(--color-text-muted); font-size: .82rem; }
+/* Sign-in: one line with "Change" when configured; the form opens under it */
+.mods-signin-line { display: flex; align-items: center; justify-content: space-between; gap: var(--primitive-space-4); }
+.mods-signin-summary { min-width: 0; overflow-wrap: anywhere; font-weight: 700; }
+.mods-signin-line + .mods-signin-form { margin-top: var(--primitive-space-4); }
+.mods-signin-form[hidden] { display: none; }
+.mods-signin-guidance { margin: 0 0 var(--primitive-space-4); }
+/* Feedback regions: sign-in results in the sign-in panel, every other result under the check header */
+.mods-feedback:empty { display: none; }
+.mods-feedback { margin-bottom: var(--primitive-space-4); }
+.mods-signin .mods-feedback { margin: var(--primitive-space-4) 0 0; }
+.mods-feedback > .notice { padding: var(--primitive-space-3); }
+/* Field row of the sign-in form */
 .mods-access-row { display: grid; grid-template-columns: minmax(11rem, .7fr) minmax(16rem, 1fr); gap: var(--primitive-space-3); }
 .mods-access-row .mods-field { padding: 0; border: 0; background: transparent; }
 .mods-access-row input, .mods-access-row select { width: 100%; }
-.mods-panel > .notice { padding: var(--primitive-space-3); margin: var(--primitive-space-4) 0 0; }
-.mods-panel > .notice strong, .mods-panel > .notice p { display: inline; }
-.mods-panel > .notice p { margin-left: var(--primitive-space-2); }
+.mods-signin-form > .notice { padding: var(--primitive-space-3); margin: var(--primitive-space-4) 0 0; }
+.mods-signin-form > .notice strong, .mods-signin-form > .notice p { display: inline; }
+.mods-signin-form > .notice p { margin-left: var(--primitive-space-2); }
 .mods-actions { margin-top: var(--primitive-space-4); }
 /* Inventory table layout and status colors */
 .mods-table-scroll { overflow-x: auto; border: 1px solid var(--color-border); border-radius: var(--radius-control); }
@@ -35,6 +46,8 @@
 /* Update check header: summary, last check, busy mark, and the check action */
 .mods-update-header { display: flex; align-items: center; justify-content: space-between; gap: var(--primitive-space-4); margin-bottom: var(--primitive-space-4); padding: var(--primitive-space-3) var(--primitive-space-4); border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface-raised); }
 .mods-update-header .button { flex: 0 0 auto; }
+/* Why the restart is not offered while another profile runs: a visible line under the header */
+.mods-restart-lock { margin: 0 0 var(--primitive-space-4); }
 .mods-header-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: var(--primitive-space-2); }
 .mods-update-copy { display: grid; justify-items: start; gap: var(--primitive-space-1); min-width: 0; }
 .mods-update-summary.status-neutral { color: var(--color-text-muted); }

@@ -22,10 +22,14 @@ from dayz_serverman.application.migration_preview import settings_proposal
 from dayz_serverman.application.operations.manager import OperationManager
 from dayz_serverman.application.operations.models import QueueUnavailable
 from dayz_serverman.application.operations.store import OperationStore
+from dayz_serverman.application.restores import RESTORE_KIND
 from dayz_serverman.bridge.contracts import CONTRACT_VERSION, ErrorCode
 from dayz_serverman.bridge.facade import ApplicationCallError, BridgeFacade
 from dayz_serverman.observability.structured_log import StructuredLogger
 
+
+# A restore block reason that has its own catalogue sentence
+INSPECTED = "Mutations are blocked until restore recovery is inspected."
 
 PACKAGE = ROOT / "runnable" / "src" / "python" / "dayz_serverman"
 # Events with their own sentence builder in the activity formatter
@@ -143,8 +147,9 @@ class BlockReasonTests(unittest.TestCase):
             source = path.read_text(encoding="utf-8")
             literals.update(re.findall(r'(?:block_for_recovery|self\._block)\(\s*"([^"]+)"', source))
             literals.update(re.findall(r'"(Profile provisioning recovery[^"]+|Migration publication requires[^"]+'
-                                       r'|SteamCMD process-tree exit[^"]+)"', source))
-        self.assertEqual(len(literals), 14, sorted(literals))
+                                       r'|SteamCMD process-tree exit[^"]+'
+                                       r'|Mutations are blocked by an interrupted backup restore[^"]+)"', source))
+        self.assertEqual(len(literals), 17, sorted(literals))
         self.assertIn("Mutations are blocked by an interrupted mod publication while the server is not proven stopped.",
                       literals)
         known = {sentence for _fragment, sentence in wording.BLOCK_REASONS}
@@ -160,6 +165,12 @@ class BlockReasonTests(unittest.TestCase):
             "Mutations are blocked by an interrupted mod publication while the server is not proven stopped.":
                 "Stop the server, then restart DayZ-ServerMan.",
             "Mutations are blocked by unresolved restore recovery.": "Open Backups",
+            "Mutations are blocked by an interrupted backup restore while the server is not proven stopped.":
+                "A backup restore was interrupted and must be finished.",
+            "Mutations are blocked by an interrupted direct profile restore while the server is not proven stopped.":
+                "A profile restore from a backup archive was interrupted and must be finished.",
+            "Mutations are blocked by an interrupted profile creation while the server is not proven stopped.":
+                "Creating a profile was interrupted and must be finished.",
             "Mutations are blocked until restore recovery is inspected.": "Open Backups",
             "Direct profile restore recovery requires attention.": "Stop the DayZ server",
             "Direct profile restore requires recovery.": "Stop the DayZ server",
@@ -168,13 +179,20 @@ class BlockReasonTests(unittest.TestCase):
         }
         for reason, part in cases.items():
             self.assertIn(part, wording.block_reason_text(reason), reason)
+        # QF-045: a block without a catalogue sentence names its way out: a restart, or Backups for a restore
+        restart = " Restart DayZ-ServerMan to check again."
         self.assertEqual(wording.block_reason_text("The configured DayZ root is unsafe."),
-                         "The configured DayZ server folder is unsafe.")
+                         "The configured DayZ server folder is unsafe." + restart)
         self.assertEqual(wording.block_reason_text("Launch evidence could not be recorded safely."),
-                         "Launch evidence could not be recorded safely.")
+                         "Launch evidence could not be recorded safely." + restart)
+        self.assertEqual(wording.block_reason_text("Committed restore targets could not be proven.", "RESTORE_BACKUP"),
+                         "Committed restore targets could not be proven. Open Backups to finish the restore.")
+        # A catalogue sentence keeps its own way out, whoever owns the block
+        self.assertEqual(wording.block_reason_text(INSPECTED, "RESTORE_BACKUP"), wording.block_reason_text(INSPECTED))
+        self.assertEqual(wording.BLOCK_RESTORE_OWNER, RESTORE_KIND)
         for raw in ("profile record is unavailable: INTERRUPTED_WRITE", "RECOVERY_REQUIRED", "", None,
                     "journal_state is bad"):
-            self.assertEqual(wording.block_reason_text(raw), wording.BLOCK_FALLBACK, raw)
+            self.assertEqual(wording.block_reason_text(raw), wording.BLOCK_FALLBACK + restart, raw)
 
 
 class ActivityFormatterTests(unittest.TestCase):

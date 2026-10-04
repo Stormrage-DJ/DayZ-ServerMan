@@ -17,16 +17,18 @@ function overviewStatusPresentation(status) {
       || ["Running", "status-busy", "DayZ is running; application readiness is not available."];
   }
   const values = {
-    STOPPED: ["Stopped", "status-normal", "The configured server process is not running."],
-    RUNNING_EXTERNAL: ["External process", "status-warning", "DayZ is running, but this manager does not own it."],
+    STOPPED: ["Stopped", "status-neutral", "The configured server process is not running."],
+    RUNNING_EXTERNAL: [
+      "Running outside the manager", "status-warning", "DayZ is running, but this manager does not own it.",
+    ],
     STARTING: ["Starting", "status-busy", "The manager is starting DayZ."],
     STOPPING: ["Stopping", "status-busy", "DayZ is saving and closing."],
-    AMBIGUOUS: ["Ambiguous", "status-error", "More than one matching DayZ process was found."],
-    UNKNOWN: ["Unknown", "status-error", "The DayZ process state could not be proven."],
+    AMBIGUOUS: ["Several servers found", "status-error", "More than one matching DayZ process was found."],
+    UNKNOWN: ["State unknown", "status-error", "The DayZ process state could not be proven."],
   };
   // Fall back explicitly when the host returns an unknown state.
   return values[status?.state]
-    || ["Unknown", "status-error", "No authoritative state is available."];
+    || ["State unknown", "status-error", "No authoritative state is available."];
 }
 
 // Describe the managed-process evidence without confusing it with readiness.

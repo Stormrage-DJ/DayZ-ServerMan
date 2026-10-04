@@ -24,7 +24,7 @@ HIDDEN_EVENTS = frozenset((
 DETAIL_HINT = "Details are in Manager diagnostics."
 # Fixed sentence per event that needs no field
 EVENT_TEXTS: dict[str, str] = {
-    "schedule.skipped": "The scheduled action was skipped because the server was not running.",
+    "schedule.skipped": "The scheduled action was skipped because its server was not running under the manager.",
     "schedule.queue_failed": f"The scheduled action could not be started. {DETAIL_HINT}",
     "schedule.storage_unavailable": f"The daily schedule could not be read. {DETAIL_HINT}",
     "update_check.ids_capped": "The update check left out some mods because the profiles hold too many.",
@@ -113,9 +113,10 @@ def _event_sentence(event: str, fields: Mapping[str, Any], level: str) -> str | 
         return _operation_sentence(fields)
     if event == "bridge.failure":
         subject = METHOD_TEXTS.get(str(fields.get("method")), "A request")
-        return f"{subject} failed: {wording.error_text(fields.get('error_code'), fields.get('message'))}"
+        text = wording.error_text(fields.get("error_code"), fields.get("message"), fields.get("owner"))
+        return f"{subject} failed: {text}"
     if event == "operation_lane.recovery_block":
-        return f"Changes are now blocked. {wording.block_reason_text(fields.get('reason'))}"
+        return f"Changes are now blocked. {wording.block_reason_text(fields.get('reason'), fields.get('owner'))}"
     if event in ("schedule.saved", "schedule.queued"):
         return _schedule_sentence(event, fields)
     if event == "update_check.completed":

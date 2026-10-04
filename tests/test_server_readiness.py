@@ -135,6 +135,26 @@ class ServerReadinessTests(unittest.TestCase):
         self.assertEqual(self.probe.ports, [2405, 2405, 2405, 2405])
         self.assertEqual(self.mission_probe.calls[-1][1], 50_000)
 
+    def test_status_names_the_started_profile_and_start_time_until_the_stop(self) -> None:
+        """The profile and the start time of the launch are reported while it runs."""
+        self.assertIsNone(self.service.status().profile_id)
+        started = self.service.start("livonia-main", 7, 4)
+        # 50,000 ns after the epoch, in the UTC text form that the application writes
+        self.assertEqual((started.profile_id, started.started_at),
+                         ("livonia-main", "1970-01-01T00:00:00.000+00:00"))
+        self.assertEqual(self.service.status().to_dict()["profile_id"], "livonia-main")
+        # The launch is still named while its stop is in progress
+        self.lifecycle.snapshot = LifecycleSnapshot(ServerState.STOPPING)
+        self.assertEqual(self.service.status().profile_id, "livonia-main")
+        # A process that this manager does not own, or a new launch in progress, names no profile
+        for state in (ServerState.RUNNING_EXTERNAL, ServerState.STARTING, ServerState.UNKNOWN):
+            self.lifecycle.snapshot = LifecycleSnapshot(state)
+            status = self.service.status()
+            self.assertEqual((status.profile_id, status.started_at), (None, None))
+        self.lifecycle.snapshot = LifecycleSnapshot(ServerState.RUNNING_MANAGED, 700)
+        self.assertEqual(self.service.stop(4).profile_id, None)
+        self.assertEqual(self.service.status().to_dict()["started_at"], None)
+
     def test_missing_query_port_uses_legacy_default(self) -> None:
         """Legacy configs without steamQueryPort remain readiness-compatible."""
         config = self.root / "Config Files" / "serverDZ.cfg"

@@ -1,4 +1,4 @@
-// Settings workspace: resolve and save application locations.
+// Settings workspace: resolve and save application locations; the update-check switch has its own module.
 "use strict";
 
 // Operator-selectable installation folders with labels and help text.
@@ -94,7 +94,9 @@ function renderSettings() {
   const openLegacy = settingsNode("button", "button", "Open legacy import");
   openLegacy.type = "button"; openLegacy.id = "open-legacy-import";
   legacy.append(openLegacy);
-  document.getElementById("content-region").replaceChildren(panel, legacy);
+  // The update-check switch saves at once and is rebuilt from its stored value with every redraw.
+  document.getElementById("content-region").replaceChildren(
+    panel, window.ServerManSettingsUpdates.render(), legacy);
   // Wire browse, backup mode, save, and legacy actions.
   panel.querySelectorAll("[data-settings-browse]").forEach((button) => {
     button.addEventListener("click", () => chooseSettingsPath(button.dataset.settingsBrowse));
@@ -203,6 +205,7 @@ async function openSettings(snapshot = null) {
   // Clear the dirty flag and render the loaded state.
   window.ServerManTransitions.setDirty("settings-paths", false);
   renderSettings();
+  void window.ServerManSettingsUpdates.load();
 }
 
 // Track the pending settings save until it reaches a terminal state.

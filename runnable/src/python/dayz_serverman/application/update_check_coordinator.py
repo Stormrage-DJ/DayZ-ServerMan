@@ -7,9 +7,11 @@ from typing import Any
 
 from ..bridge.contracts import ErrorCode
 from ..bridge.facade import ApplicationCallError
+from ..domain.models import RepositoryError
 from ..domain.profiles import ProfileValidationError, validate_profile_id
 from ..repositories.profiles import ProfileNotFound, ProfileStorageError
 from .mod_inventory import ModInventoryService
+from .settings import SettingsValidationError
 from .update_check import UpdateCheckService
 
 # The only check scope until the server build check exists
@@ -47,6 +49,11 @@ class UpdateCheckCoordinator:
         except (ProfileStorageError, OSError) as error:
             raise ApplicationCallError(
                 ErrorCode.STORAGE_FAILURE, "Profile storage is unavailable.",
+            ) from error
+        except (RepositoryError, SettingsValidationError) as error:
+            # A settings record that cannot be read now is a storage failure, not an internal one
+            raise ApplicationCallError(
+                ErrorCode.STORAGE_FAILURE, "Settings storage is unavailable.",
             ) from error
         view = derived if derived is not None else self._service.snapshot()
         # Count with the row rule so the numbers agree with the Mods table

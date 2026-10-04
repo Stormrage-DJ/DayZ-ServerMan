@@ -8,6 +8,11 @@ const applicationStatuses = new Map([
 // Severity ordering used to pick the most important status.
 const statusPriority = { "": 0, "is-busy": 1, "is-warning": 2, "is-recovery": 3, "is-error": 4 };
 
+// Set an attribute only when its value differs, so a live region is not rewritten with the same content.
+function setChangedAttribute(node, name, value) {
+  if (node.getAttribute(name) !== value) node.setAttribute(name, value);
+}
+
 // Build one element node with optional class and text.
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -27,16 +32,17 @@ function renderApplicationStatus() {
   // Show the ready state when every source is clear.
   const text = healthy ? "Ready" : overall.text;
   const region = document.getElementById("application-status");
-  // Publish the text, dot styling, and accessible label.
-  document.getElementById("application-status-text").textContent = text;
-  region.querySelector(".status-dot").className = `status-dot ${healthy ? "" : overall.kind}`.trim();
-  region.setAttribute("aria-label", `Application status: ${text}`);
+  // Publish the text, dot styling, and accessible label; each only when it changed (QF-030).
+  const line = document.getElementById("application-status-text");
+  if (line.textContent !== text) line.textContent = text;
+  setChangedAttribute(region.querySelector(".status-dot"), "class", `status-dot ${healthy ? "" : overall.kind}`.trim());
+  setChangedAttribute(region, "aria-label", `Application status: ${text}`);
   // Repeat a status that needs attention on the menu button, because a narrow window hides the sidebar.
   const dot = document.getElementById("menu-status-dot");
   if (dot) {
-    dot.className = `status-dot ${overall.kind}`.trim();
-    dot.hidden = healthy;
-    document.getElementById("menu-button").setAttribute("aria-label",
+    setChangedAttribute(dot, "class", `status-dot ${overall.kind}`.trim());
+    if (dot.hidden !== healthy) dot.hidden = healthy;
+    setChangedAttribute(document.getElementById("menu-button"), "aria-label",
       healthy ? "Open navigation" : `Open navigation. Application status: ${text}`);
   }
 }
@@ -47,10 +53,9 @@ function setHostStatus(text, kind = "", source = "application") {
   renderApplicationStatus();
 }
 
-// Drop one source status and refresh the header.
+// Drop one source status and refresh the header; a source that is not set changes nothing.
 function clearHostStatus(source) {
-  applicationStatuses.delete(source);
-  renderApplicationStatus();
+  if (applicationStatuses.delete(source)) renderApplicationStatus();
 }
 
 // Render the loading skeleton for a workspace.

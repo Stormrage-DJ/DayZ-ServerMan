@@ -1,11 +1,16 @@
-// Update status: the remote update-check state of the selected profile and the Mods check header.
+// Update status: the remote update-check state of the selected profile, read in every section,
+// and the badge model that the navigation draws from it.
 "use strict";
 
-// Shortest pause between two status reads while no check runs, in milliseconds.
+// Shortest pause between two status reads while no check runs, in milliseconds: Mods visible, any other section.
 const UPDATE_STATUS_IDLE_INTERVAL = 5000;
+const UPDATE_STATUS_BACKGROUND_INTERVAL = 30000;
 // Last status of the selected profile, the automatic-check preference, and read bookkeeping.
 const updateStatusState = {
   profileId: "", status: null, automatic: true, readAt: 0, reading: false, requestError: "",
+  // The request-and-read that is in flight, with the profile it belongs to, and whether it announces
+  // the state also when nothing changed.
+  opening: null, openingProfile: "", announceAlways: false,
 };
 // Operator wording for each failure code of a check run.
 const updateFailureReasons = Object.freeze({
@@ -22,11 +27,13 @@ function updateStatusProfile() {
   return window.ServerManProfileContext?.selectedId?.() || "";
 }
 
-// Reduce a status to the values whose change must redraw the update indicators.
+// Reduce the held status to the values whose change must redraw the update indicators. The profile is part
+// of it: the check state is shared by all profiles, so two profiles can have equal values (QF-029).
 function updateStatusSignature(status) {
-  if (!status) return "none";
+  const profile = updateStatusState.profileId;
+  if (!status) return `${profile}|none`;
   const mods = status.mods || {};
-  return [status.revision, status.checking, mods.check_state, mods.last_success_at,
+  return [profile, status.revision, status.checking, mods.check_state, mods.last_success_at,
     mods.error_code, mods.update_count, mods.pending_apply_count].join("|");
 }
 
@@ -63,26 +70,46 @@ async function requestUpdateCheck(force) {
   return result;
 }
 
-// Start on Mods open or profile change: request a non-forced check, then read the state.
-async function openUpdateStatus() {
-  if (!updateStatusProfile()) { await readUpdateStatus(); return; }
-  // Send the request and read the effective automatic-check preference together.
-  const [, preferences] = await Promise.all([
-    requestUpdateCheck(false), window.pywebview.api.get_ui_preferences(),
-  ]);
-  if (preferences && preferences.success) {
-    updateStatusState.automatic = preferences.value.automatic_update_checks !== false;
+// Request a non-forced check and read the state once; a changed state is announced to the listening pages.
+async function runUpdateStatusOpen() {
+  const before = updateStatusSignature(updateStatusState.status);
+  if (!updateStatusProfile()) {
+    await readUpdateStatus();
+  } else {
+    // Send the request and read the effective automatic-check preference together.
+    const [, preferences] = await Promise.all([
+      requestUpdateCheck(false), window.pywebview.api.get_ui_preferences(),
+    ]);
+    if (preferences && preferences.success) {
+      updateStatusState.automatic = preferences.value.automatic_update_checks !== false;
+    }
+    await readUpdateStatus();
   }
-  await readUpdateStatus();
+  const always = updateStatusState.announceAlways;
+  updateStatusState.announceAlways = false;
+  if (always || before !== updateStatusSignature(updateStatusState.status)) announceUpdateStatus();
 }
 
-// Refresh on the shell poll: at most once per idle interval, on every poll while a check runs.
-async function pollUpdateStatus() {
-  // Each poll tick of the visible Mods page also lets the page refresh what it reads itself.
-  document.dispatchEvent(new CustomEvent("serverman:mods-tick"));
+// Start at the first snapshot, on Mods open, on a profile change, and after an operation that can change
+// mod content. Callers for the same profile share one request-and-read.
+function openUpdateStatus() {
+  const profileId = updateStatusProfile();
+  if (updateStatusState.opening && updateStatusState.openingProfile === profileId) {
+    return updateStatusState.opening;
+  }
+  const flight = runUpdateStatusOpen().finally(() => {
+    if (updateStatusState.opening === flight) updateStatusState.opening = null;
+  });
+  updateStatusState.opening = flight; updateStatusState.openingProfile = profileId;
+  return flight;
+}
+
+// Refresh on every shell poll, in every section: one read per idle interval, on every poll while a check runs.
+async function pollUpdateStatus(modsVisible = false) {
   const checking = updateStatusState.status?.checking === true;
   const waited = Date.now() - updateStatusState.readAt;
-  if (updateStatusState.reading || (!checking && waited < UPDATE_STATUS_IDLE_INTERVAL)) return;
+  const interval = modsVisible ? UPDATE_STATUS_IDLE_INTERVAL : UPDATE_STATUS_BACKGROUND_INTERVAL;
+  if (updateStatusState.reading || (!checking && waited < interval)) return;
   // Allow one read at a time and announce only a real change.
   updateStatusState.reading = true;
   try {
@@ -92,10 +119,12 @@ async function pollUpdateStatus() {
   }
 }
 
-// Request a check, read the fresh state, and announce it; "Check now" passes force.
+// Request a check, read the fresh state, and announce it; "Check now" passes force. A request that is
+// not forced shares the request-and-read of the shell, so one finished operation sends one request.
 async function recheckUpdateStatus(force = false) {
   if (!updateStatusProfile()) return;
-  await requestUpdateCheck(force);
+  if (!force) { updateStatusState.announceAlways = true; await openUpdateStatus(); return; }
+  await requestUpdateCheck(true);
   await readUpdateStatus();
   announceUpdateStatus();
 }
@@ -164,74 +193,51 @@ function setUpdateText(node, text, title = "") {
   if (title) node.title = title; else node.removeAttribute("title");
 }
 
-// Run "Check now" from the header button and show the busy mark at once.
-async function checkUpdatesNow(event) {
-  const button = event.currentTarget;
-  button.disabled = true;
-  const busy = document.getElementById("mods-update-busy");
-  if (busy) busy.hidden = false;
-  await recheckUpdateStatus(true);
-  // Unlock the action when no page redrew the header after the answer.
-  if (button.isConnected) button.disabled = updateStatusState.status?.checking === true;
+// Phrase the parts of a pending count for the accessible name: updates first, then downloaded mods.
+function updateBadgeParts(mods) {
+  const parts = [];
+  if (mods.update_count > 0) parts.push(`${updateCountText(mods.update_count, "update", "updates")} available`);
+  if (mods.pending_apply_count > 0) parts.push(`${mods.pending_apply_count} downloaded - not applied`);
+  return parts;
 }
 
-// Build the check header of the "Configured mods" panel: summary, last check, and "Check now".
-function renderUpdateHeader(rows) {
-  const node = window.ServerManUi.element;
-  const header = node("div", "mods-update-header"); header.id = "mods-update-header";
-  // Announce summary changes politely without moving the focus.
-  const copy = node("div", "mods-update-copy"); copy.setAttribute("role", "status");
-  const summary = node("strong", "status-label mods-update-summary"); summary.id = "mods-update-summary";
-  const meta = node("span", "mods-update-meta");
-  const checked = node("span", "mods-last-checked"); checked.id = "mods-last-checked";
-  const busy = node("span", "mods-update-busy", "Checking…"); busy.id = "mods-update-busy";
-  meta.append(checked, busy); copy.append(summary, meta);
-  // Offer the on-demand check beside the summary, in a group that takes further header actions.
-  const button = node("button", "button", "Check now");
-  button.id = "check-updates-now"; button.type = "button";
-  button.addEventListener("click", checkUpdatesNow);
-  const actions = node("div", "mods-header-actions"); actions.append(button);
-  header.append(copy, actions);
-  fillUpdateHeader(header, rows);
-  return header;
-}
-
-// Write the current summary, last check time, busy mark, and action state into a header.
-function fillUpdateHeader(header, rows) {
+// Describe the badge of the Mods navigation item: its form, its text, and the words after "Mods".
+function updateBadge() {
   const status = updateStatusState.status;
-  const checking = status?.checking === true;
-  // Show a failed operator request in place of the summary.
-  const summary = updateStatusState.requestError
-    ? { text: `Could not check: ${updateStatusState.requestError}`, tone: "error" }
-    : updateSummary(rows);
-  const line = header.querySelector(".mods-update-summary");
-  setUpdateText(line, summary.text);
-  line.className = `status-label mods-update-summary status-${summary.tone}`;
-  // Show the last successful check with its exact value as a tooltip.
-  const success = formatUpdateTime(status?.mods?.last_success_at);
-  setUpdateText(header.querySelector(".mods-last-checked"),
-    success ? `Last checked ${success.text}` : "Not checked yet", success ? success.exact : "");
-  // Mark a running check and lock the action until it ends.
-  header.querySelector(".mods-update-busy").hidden = !checking;
-  header.querySelector("#check-updates-now").disabled = checking;
+  const none = { form: "none", text: "", name: "", count: 0 };
+  // A status that was read for another profile says nothing about the selected one.
+  if (!updateStatusProfile() || updateStatusState.profileId !== updateStatusProfile()) return none;
+  if (!status || !status.mods) return none;
+  const mods = status.mods;
+  const count = (Number(mods.update_count) || 0) + (Number(mods.pending_apply_count) || 0);
+  // A pending count is shown in every check state; the name says when the check behind it is not fresh.
+  if (count > 0) {
+    const suffix = mods.check_state === "FAILED" ? ["last check failed"]
+      : mods.check_state === "OK" ? [] : ["not checked recently"];
+    return { form: "count", text: count > 99 ? "99+" : String(count), count,
+      name: [...updateBadgeParts(mods), ...suffix].join(", ") };
+  }
+  if (mods.check_state === "OK") return none;
+  if (mods.check_state === "FAILED") return { form: "failed", text: "!", name: "could not check for updates", count };
+  // Only the first check shows the turning ring; a later check leaves the badge as it is.
+  if (status.checking && mods.check_state === "NEVER") {
+    return { form: "checking", text: "", name: "checking for updates", count };
+  }
+  return { form: "unchecked", text: "", name: "updates not checked", count };
 }
 
-// Refresh the visible Mods check header in place.
-function refreshUpdateHeader(rows) {
-  const header = document.getElementById("mods-update-header");
-  if (header) fillUpdateHeader(header, rows);
-}
-
-// Publish the update state for the Mods page and later shell indicators.
+// Publish the update state for the shell indicators and the Mods page.
 window.ServerManUpdateStatus = Object.freeze({
   open: openUpdateStatus,
   poll: pollUpdateStatus,
   recheck: recheckUpdateStatus,
   current: () => updateStatusState.status,
   automaticChecks: () => updateStatusState.automatic,
+  // Settings stores the switch and hands the new value over; the next read uses it.
+  setAutomaticChecks: (enabled) => { updateStatusState.automatic = enabled !== false; },
+  requestError: () => updateStatusState.requestError,
   reason: updateCheckReason,
   formatTime: formatUpdateTime,
   summary: updateSummary,
-  renderHeader: renderUpdateHeader,
-  refreshHeader: refreshUpdateHeader,
+  badge: updateBadge,
 });

@@ -99,6 +99,10 @@ class RestoreOperationTests(unittest.TestCase):
             coordinator.apply_restore(PARAMETERS)
         self.assertEqual(blocked.exception.code.value, "MUTATION_CONFLICT")
         self.assertEqual(coordinator.inspect_restore_recovery({})["blocked"], False)
+        # QF-040: the successful inspection lifts every block of the failed restore, so a new restore is accepted
+        self.assertIsNone(self.operations.recovery_block)
+        self.assertEqual(self.wait_terminal(coordinator.apply_restore(PARAMETERS)["operation_id"]).state,
+                         OperationState.RECOVERY_REQUIRED)
 
     def test_review_digests_are_canonical_before_queueing(self) -> None:
         """Malformed review digests are rejected before the restore is queued."""
@@ -171,6 +175,8 @@ class RestoreOperationTests(unittest.TestCase):
             # Queries stay available and report the unresolved recovery
             snapshot = composition.coordinator.get_application_snapshot({})
             self.assertIn("unresolved restore recovery", snapshot["mutation_block"])
+            # QF-045, additive: the snapshot names the owner, so the notice can point to Backups
+            self.assertEqual(snapshot["mutation_block_owner"], "RESTORE_BACKUP")
             inspection = composition.restore_coordinator.inspect_restore_recovery({})
             self.assertTrue(inspection["blocked"])
             # Mutations fail closed while the recovery is unresolved
@@ -182,6 +188,7 @@ class RestoreOperationTests(unittest.TestCase):
                     "custom_backup_root": None,
                 })
             self.assertEqual(blocked.exception.code.value, "MUTATION_CONFLICT")
+            self.assertEqual(blocked.exception.details, {"reason": "RECOVERY_BLOCK", "owner": "RESTORE_BACKUP"})
         finally:
             composition.operations.shutdown(2)
 

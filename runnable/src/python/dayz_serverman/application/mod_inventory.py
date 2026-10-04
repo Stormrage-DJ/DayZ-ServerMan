@@ -116,9 +116,10 @@ class ModInventoryService:
         # Without a configured content root every item stays unavailable
         if root is None:
             return {}, False
-        # A verification failure degrades to unavailable instead of failing the list
+        # A verification failure or a file-system error degrades to unavailable
+        # instead of failing the list
         try:
             return ({item.workshop_id: item
                      for item in WorkshopCacheVerifier(root).observe(ids)}, True)
-        except CacheVerificationError:
+        except (CacheVerificationError, OSError):
             return {}, False

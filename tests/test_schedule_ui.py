@@ -16,7 +16,13 @@ class ScheduleUiTests(unittest.TestCase):
     def test_composed_ui_has_compact_daily_schedule_controls(self) -> None:
         """The composed shell ships the compact daily schedule controls."""
         html = compose_shell_html(FRONTEND)
-        self.assertIn('"Daily schedule"', html)
+        # The schedule is a card: summary line, status line, the open-manager note, the editor disclosure
+        self.assertIn('"Next scheduled action"', html)
+        self.assertIn('"Runs at local time, only while DayZ-ServerMan is open."', html)
+        self.assertIn('scheduleNode("details", "schedule-editor")', html)
+        for text in ('"Change schedule"', '"Set schedule"', '"No scheduled action"', '"Save schedule"'):
+            self.assertIn(text, html)
+        self.assertNotIn('"Daily schedule"', html)
         self.assertIn('"Save & Stop"', html)
         self.assertIn('"Save & Restart"', html)
         self.assertIn('input.type = "number"', html)

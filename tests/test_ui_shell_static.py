@@ -1,6 +1,7 @@
 """Static shell document, token, and frontend script contract tests."""
 from __future__ import annotations
 
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -13,7 +14,7 @@ from dayz_serverman.host.assets import compose_shell_html  # noqa: E402
 
 
 FRONTEND = PROJECT_ROOT / "runnable" / "src" / "frontend"
-SECTIONS = ("Overview", "Profiles", "Configuration", "Tweaks", "Mods", "Backups", "Logs", "Settings")
+SECTIONS = ("Overview", "Mods", "Backups", "Logs", "Profiles", "Configuration", "Tweaks", "Settings")
 
 
 class UiShellStaticTests(unittest.TestCase):
@@ -46,14 +47,24 @@ class UiShellStaticTests(unittest.TestCase):
 
     def test_shell_has_navigation_landmarks(self) -> None:
         """The shell exposes navigation landmarks and accessibility hooks."""
-        # Confirm every workspace section is a navigation button
-        for section in SECTIONS:
-            self.assertIn(f">{section}</button>", self.document)
+        # Every workspace section is registered with its title; the navigation is built from the registry
+        registry = (FRONTEND / "sections.js").read_text(encoding="utf-8")
+        navigation = (FRONTEND / "navigation.js").read_text(encoding="utf-8")
+        self.assertEqual(tuple(re.findall(r'^  title: "([A-Za-z]+)",$', registry, re.MULTILINE)), SECTIONS)
+        self.assertIn('<aside class="sidebar" id="sidebar" aria-label="Primary navigation">', self.document)
+        self.assertIn('<nav class="nav-list" aria-label="Sections"></nav>', self.document)
+        self.assertIn('wrapper.setAttribute("role", "group")', navigation)
+        self.assertIn('wrapper.setAttribute("aria-labelledby", label.id)', navigation)
         self.assertIn('href="#main-content"', self.document)
         self.assertIn("<main id=\"main-content\"", self.document)
         self.assertIn("<h1 id=\"page-title\"", self.document)
-        self.assertEqual(self.document.count('aria-current="page"'), 1)
+        # The current page is marked by the navigation module, on exactly one item
+        self.assertEqual(self.document.count('aria-current="page"'), 0)
+        self.assertIn('button.setAttribute("aria-current", "page")', navigation)
         self.assertIn('aria-live="polite"', self.document)
+        self.assertIn("document.createElementNS(NAVIGATION_SVG", navigation)
+        self.assertIn('icon.setAttribute("aria-hidden", "true")', navigation)
+        self.assertIn('icon.setAttribute("focusable", "false")', navigation)
 
     def test_initial_document_is_complete_operational_shell(self) -> None:
         """The initial document is a complete operational shell."""
@@ -122,15 +133,19 @@ class UiShellStaticTests(unittest.TestCase):
         self.assertNotIn("pywebview.api.dispatch", self.script)
         self.assertNotIn("reviewState", self.script)
 
-    def test_profile_switchers_share_one_persisted_context(self) -> None:
-        """Every profile switcher shares the persisted profile context."""
-        for selector in (
-            "global-profile", "overview-profile", "configuration-profile",
-            "backup-profile", "profile-workspace-selector",
-        ):
-            self.assertIn(f'"{selector}"', self.script)
+    def test_one_profile_selector_feeds_every_page(self) -> None:
+        """The sidebar holds the only profile selector; every page reads the shared selection."""
+        self.assertIn('const profileSelectorIds = ["global-profile"];', self.script)
+        for removed in ("overview-profile", "configuration-profile", "backup-profile",
+                        "profile-workspace-selector"):
+            self.assertNotIn(f'"{removed}"', self.script)
+            self.assertNotIn(removed, self.styles)
         self.assertIn("syncVisibleProfileSelectors", self.script)
-        self.assertGreaterEqual(self.script.count("ServerManProfileContext.select"), 5)
+        # The pages read the selection; only the sidebar changes it, through the unsaved-change guard
+        self.assertGreaterEqual(self.script.count("ServerManProfileContext.selectedId()"), 5)
+        self.assertNotIn("ServerManProfileContext.select(", self.script.replace(
+            "ServerManProfileContext.selectedId(", ""))
+        self.assertIn('"Discard unsaved changes to switch server profiles."', self.script)
 
     def test_tweaks_render_partial_target_failures_instead_of_staying_busy(self) -> None:
         """Tweaks render partial target failures instead of staying busy."""
@@ -215,7 +230,7 @@ class UiShellStaticTests(unittest.TestCase):
     def test_shared_dirty_guard_covers_navigation_selection_reload_and_close(self) -> None:
         """The shared dirty guard covers navigation, selection, reload, and close."""
         for value in (
-            '"shared-configuration"', "registerOwner(", "requestProfile",
+            '"shared-configuration"', "registerOwner(", "selectGlobalProfile",
             "Leaving this section", "beforeunload", "requestNativeClose",
             "hasUnsavedChanges()", "Unsaved edits preserved",
         ):
@@ -241,7 +256,10 @@ class UiShellStaticTests(unittest.TestCase):
         """Configuration stays server only and uses guided groups."""
         self.assertIn('setDirty("shared-configuration"', self.script)
         self.assertIn('capture("configuration", "shared-configuration")', self.script)
-        self.assertIn("ServerManProfileContext.select(profileId)", self.script)
+        # The page loads the profile of the sidebar selection; it has no selector and no pin
+        self.assertIn("const profileId = window.ServerManProfileContext.selectedId();", self.script)
+        self.assertNotIn("requestProfile", self.script)
+        self.assertNotIn("configuration-selectors", self.script + self.styles)
         self.assertIn('const target = "server"', self.script)
         self.assertIn("ServerManConfigurationCatalog.serverGroups", self.script)
         self.assertIn("guided-setting-row", self.script)

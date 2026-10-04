@@ -9,7 +9,14 @@ const shellState = {
   hostReady: false,
   // Timer handle for the next queued host event poll.
   pollTimer: null,
+  // Whether the update state was requested and read after the first snapshot.
+  updatesRead: false,
 };
+// Operations whose end can change what the update badge counts.
+const updateRelevantKinds = Object.freeze([
+  "UPDATE_WORKSHOP_ITEMS", "PUBLISH_MODS_AND_KEYS", "APPLY_MODS_AND_RESTART", "VERIFY_WORKSHOP_FILES",
+  "SAVE_PROFILE", "DELETE_PROFILE", "PROVISION_PROFILE", "RESTORE_PROFILE_FROM_BACKUP",
+]);
 
 // Mark the host unreachable and show the shared host error notice.
 function reportHostFailure(result) {
@@ -34,6 +41,11 @@ async function loadSnapshot() {
     document.body.dataset.shellReady = "true";
     window.ServerManUi.setHostStatus("Application host connected", "", "host");
     window.ServerManUi.clearHostStatus("workspace");
+    // The sidebar and the heading show the server and its state in every section.
+    window.ServerManPageContext.show(shellState.section);
+    void window.ServerManServerState.refresh();
+    // Request and read the update state once at start; the badge follows it from here on.
+    if (!shellState.updatesRead) { shellState.updatesRead = true; void window.ServerManUpdateStatus.open(); }
     // Rebuild the operation bar from the snapshot; the page stays visible below it.
     const operations = Array.isArray(result.value.operations) ? result.value.operations : [];
     window.ServerManOperationBar.reset(operations);
@@ -91,13 +103,20 @@ async function pollEvents() {
       window.ServerManSections.operationFinished(shellState.section, operation.value);
       // Announce a result only after the page had the chance to announce it itself.
       window.ServerManOperationBar.settle(operation.value);
+      // A finished operation that can change mod content asks for the update state at once.
+      if (updateRelevantKinds.includes(operation.value.kind)
+          && !["QUEUED", "RUNNING", "CANCELLING"].includes(operation.value.state)) {
+        void window.ServerManUpdateStatus.open();
+      }
     }
-    // Refresh externally changed server state while Overview is visible.
-    if (shellState.section === "overview") await window.ServerManOverviewStatus.refresh();
+    // Keep the server state current in every section; the sidebar and the pages follow its change event.
+    await window.ServerManServerState.refresh();
     // Keep the log view current while it is open.
     if (shellState.section === "logs") window.ServerManLogs.refresh(false);
-    // Keep the update state current while Mods is visible.
-    if (shellState.section === "mods") await window.ServerManUpdateStatus.poll();
+    // Keep the update state current in every section; the read is more frequent while Mods is visible.
+    await window.ServerManUpdateStatus.poll(shellState.section === "mods");
+    // A page value that follows the clock (the uptime) is recomputed on each tick.
+    document.dispatchEvent(new CustomEvent("serverman:poll-tick"));
   } catch (_error) {
     if (window.ServerManWorkspace.isActive(workspace)) {
       window.ServerManUi.setHostStatus("Application host interrupted", "is-error", "host");
@@ -116,16 +135,14 @@ function schedulePoll() {
 function commitSection(section) {
   window.ServerManWorkspace.activate(section);
   shellState.section = section;
-  // Mark the selected navigation button as the current page.
-  document.querySelectorAll(".nav-item").forEach((button) => {
-    if (button.dataset.section === section) button.setAttribute("aria-current", "page");
-    else button.removeAttribute("aria-current");
-  });
+  // Mark the selected navigation item as the current page.
+  window.ServerManNavigation.setCurrent(section);
   // Swap the page heading to the selected section and clear stale notices.
   const { title, description } = window.ServerManSections.get(section);
   window.ServerManUi.clearHostStatus("workspace");
   document.getElementById("page-title").textContent = title;
   document.getElementById("page-description").textContent = description;
+  window.ServerManPageContext.show(section);
   closeDrawer();
   // Open the workspace for the new section once the host is ready.
   if (shellState.hostReady) window.ServerManSections.open(section);
@@ -148,12 +165,10 @@ function closeDrawer() {
   document.getElementById("drawer-scrim").hidden = true;
 }
 
-// Wire the one-time navigation, drawer, and lifecycle handlers.
+// Wire the one-time drawer and lifecycle handlers; the navigation module wires its own items.
 function initializeInteractions() {
-  // Route navigation clicks through the guarded section switch.
-  document.querySelectorAll(".nav-item").forEach((button) => {
-    button.addEventListener("click", () => setSection(button.dataset.section));
-  });
+  // Mark the first section as the current page.
+  window.ServerManNavigation.setCurrent(shellState.section);
   // Toggle the drawer and keep its toggle state in sync.
   document.getElementById("menu-button").addEventListener("click", () => {
     const open = !document.body.classList.contains("drawer-open");
@@ -177,9 +192,11 @@ function initializeInteractions() {
 
 // Start the shell once the page structure is ready.
 document.addEventListener("DOMContentLoaded", initializeInteractions, { once: true });
-// Reopen the active section when the shared profile selection changes.
+// Reopen the active section when the shared profile selection changes, and read its update state at once.
 document.addEventListener("serverman:profile-change", () => {
-  if (shellState.hostReady) window.ServerManSections.profileChanged(shellState.section);
+  if (!shellState.hostReady) return;
+  window.ServerManSections.profileChanged(shellState.section);
+  void window.ServerManUpdateStatus.open();
 });
 // Load the first snapshot when the application host becomes available.
 window.addEventListener("pywebviewready", loadSnapshot, { once: true });

@@ -39,20 +39,20 @@ window.pywebview = { api: {
     value: { operation_id: "legacy-revalidate" } }),
 } };
 window.ServerManUi = { renderHostError: () => {}, render: () => {} };
-// This isolated workspace harness supplies the shared selection boundary.
-window.ServerManProfileContext = { selectedId: () => null, select: () => { void loadBackupHistory(); } };
+// This isolated workspace harness supplies the shared selection: the page has no selector of its own.
+let selected = "alpha";
+const catalog = [{ profile_id: "alpha", display_name: "Alpha" }, { profile_id: "bravo", display_name: "Bravo" }];
+window.ServerManProfileContext = { selectedId: () => selected };
+// A profile change in the sidebar reopens the page for the new selection, as the shell does.
+const choose = (profileId) => { selected = profileId; renderBackupWorkspace(catalog); };
 
 (async () => {
   window.ServerManWorkspace.activate("backups");
   const alpha = deferred(); const bravo = deferred();
   historyCalls.push(alpha, bravo);
-  renderBackupWorkspace([
-    { profile_id: "alpha", display_name: "Alpha" },
-    { profile_id: "bravo", display_name: "Bravo" },
-  ]);
-  const select = document.getElementById("backup-profile");
-  select.value = "bravo";
-  select.dispatchEvent(new Event("change"));
+  renderBackupWorkspace(catalog);
+  check(!document.querySelector("#content-region select"), "the page still has a profile selector");
+  choose("bravo");
   alpha.resolve(history("alpha", 1));
   await flush();
   check(backupState.history === null, "late profile history replaced active context");
@@ -76,9 +76,7 @@ window.ServerManProfileContext = { selectedId: () => null, select: () => { void 
   check(document.activeElement === buttons[1], "reverse Tab escaped confirmation");
   buttons[1].dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
   check(document.activeElement === buttons[0], "forward Tab escaped confirmation");
-  select.value = "alpha";
-  select.dispatchEvent(new Event("change"));
-  check(select.value === "bravo", "profile changed behind confirmation");
+  check(backupState.confirmation.context.profileId === "bravo", "confirmation is not bound to its profile");
   buttons[0].dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   check(!document.getElementById("backup-confirmation"), "Escape did not cancel confirmation");
   check(!document.querySelector("main").inert, "modal background was not restored");
@@ -90,7 +88,7 @@ window.ServerManProfileContext = { selectedId: () => null, select: () => { void 
   check(document.activeElement.textContent === "Starting backup creation.",
     "confirm did not move focus to submission status");
   const alphaReload = deferred(); historyCalls.push(alphaReload);
-  select.value = "alpha"; select.dispatchEvent(new Event("change"));
+  choose("alpha");
   host.create.resolve({ success: true, value: { operation_id: "stale-operation" } });
   await flush();
   check(backupState.pendingOperation === null, "late create response crossed workspace context");
@@ -100,7 +98,7 @@ window.ServerManProfileContext = { selectedId: () => null, select: () => { void 
   host.create = deferred();
   document.querySelectorAll("#backup-confirmation button")[1].click();
   const bravoReload = deferred(); historyCalls.push(bravoReload);
-  select.value = "bravo"; select.dispatchEvent(new Event("change"));
+  choose("bravo");
   host.create.resolve({ success: false, error: { message: "stale failure" } });
   await flush();
   check(!document.getElementById("backup-feedback").textContent.includes("stale failure"),
@@ -109,7 +107,7 @@ window.ServerManProfileContext = { selectedId: () => null, select: () => { void 
 
   const bravoContext = captureBackupProfile();
   const alphaAgain = deferred(); historyCalls.push(alphaAgain);
-  select.value = "alpha"; select.dispatchEvent(new Event("change"));
+  choose("alpha");
   alphaAgain.resolve(history("alpha", 7)); await flush();
   for (const state of ["SUCCEEDED", "FAILED", "CANCELLED", "RECOVERY_REQUIRED"]) {
     backupState.pendingOperation = Object.freeze({ context: bravoContext, operationId: `bravo-${state}` });
@@ -121,7 +119,7 @@ window.ServerManProfileContext = { selectedId: () => null, select: () => { void 
 
   const alphaContext = captureBackupProfile();
   const bravoAgain = deferred(); historyCalls.push(bravoAgain);
-  select.value = "bravo"; select.dispatchEvent(new Event("change"));
+  choose("bravo");
   bravoAgain.resolve(history("bravo", 8)); await flush();
   for (const state of ["SUCCEEDED", "FAILED", "CANCELLED", "RECOVERY_REQUIRED"]) {
     backupState.pendingOperation = Object.freeze({ context: alphaContext, operationId: `alpha-${state}` });

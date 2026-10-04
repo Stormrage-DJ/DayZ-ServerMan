@@ -11,26 +11,24 @@
 <body data-shell-ready="false">
   <a class="skip-link" href="#main-content">Skip to main content</a>
   <div class="app-shell">
-    <!-- Sidebar: brand, server selector, navigation, and status -->
+    <!-- Sidebar: brand, server block, navigation, and status -->
     <aside class="sidebar" id="sidebar" aria-label="Primary navigation">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true">D</span>
         <span><strong>DayZ-ServerMan</strong><small>Operator console</small></span>
       </div>
-      <label class="sidebar-profile" for="global-profile">
-        <span>Server</span>
-        <select id="global-profile" disabled><option>Loading profiles…</option></select>
-      </label>
-      <nav class="nav-list">
-        <button class="nav-item" type="button" data-section="overview" aria-current="page"><span aria-hidden="true">O</span>Overview</button>
-        <button class="nav-item" type="button" data-section="profiles"><span aria-hidden="true">P</span>Profiles</button>
-        <button class="nav-item" type="button" data-section="configuration"><span aria-hidden="true">C</span>Configuration</button>
-        <button class="nav-item" type="button" data-section="tweaks"><span aria-hidden="true">T</span>Tweaks</button>
-        <button class="nav-item" type="button" data-section="mods"><span aria-hidden="true">M</span>Mods</button>
-        <button class="nav-item" type="button" data-section="backups"><span aria-hidden="true">B</span>Backups</button>
-        <button class="nav-item" type="button" data-section="logs"><span aria-hidden="true">L</span>Logs</button>
-        <button class="nav-item" type="button" data-section="settings"><span aria-hidden="true">S</span>Settings</button>
-      </nav>
+      <!-- Server block: the one profile selector, the state of the installation, and the first-profile action -->
+      <div class="sidebar-server">
+        <label class="sidebar-profile" for="global-profile">
+          <span>Server</span>
+          <select id="global-profile" disabled><option>Loading profiles…</option></select>
+        </label>
+        <p class="status-label sidebar-server-state status-neutral" id="sidebar-server-state">Checking…</p>
+        <p class="sidebar-running" id="sidebar-running" hidden></p>
+        <button class="button sidebar-create" id="sidebar-create-profile" type="button" hidden>Create profile</button>
+      </div>
+      <!-- Navigation: groups and items are built from the section registry at start -->
+      <nav class="nav-list" aria-label="Sections"></nav>
       <div class="sidebar-foot" id="application-status" role="status" aria-live="polite" aria-atomic="true">
         <span class="status-dot is-busy" aria-hidden="true"></span>
         <span class="sidebar-status-copy"><strong>Application status</strong><small id="application-status-text">Connecting…</small></span>
@@ -47,10 +45,15 @@
             <span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span>
             <span class="status-dot" id="menu-status-dot" aria-hidden="true" hidden></span>
           </button>
-          <div>
+          <div class="page-heading-copy">
             <h1 id="page-title">Overview</h1>
-            <p id="page-description">A calm summary of server health and the next safe operator action.</p>
+            <p class="page-server" id="page-server" hidden></p>
+            <p id="page-description">Server state, updates, backups and the daily schedule.</p>
           </div>
+          <!-- Narrow windows: the update badge of the closed sidebar, as a button that opens Mods -->
+          <button class="page-update-badge" id="page-update-badge" type="button" hidden>
+            <span class="nav-badge" aria-hidden="true"></span>
+          </button>
         </div>
 
         <section class="content-region" id="content-region" aria-live="polite" aria-busy="true">

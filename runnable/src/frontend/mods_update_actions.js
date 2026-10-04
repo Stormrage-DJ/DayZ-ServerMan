@@ -30,6 +30,9 @@ function updateStartPresentation() {
   const restart = ["RUNNING_MANAGED", "RUNNING_EXTERNAL", "STARTING"].includes(state);
   // While this page's own operation runs, the label keeps naming the action that is in progress.
   const label = modsState.pending ? modsActionState.label : restart ? "Update & restart" : "Update & start";
+  // A restart stops the running server, so it is not offered while another profile runs (D11).
+  const lock = state === "RUNNING_MANAGED" ? window.ServerManServerState.lockReason() : "";
+  if (lock) return { label, enabled: false, reason: lock, locked: true };
   if (state === "STOPPED" || state === "RUNNING_MANAGED") return { label, enabled: true, reason: "" };
   const known = typeof state === "string" && Object.hasOwn(modsServerReasons, state);
   return { label, enabled: false, reason: known ? modsServerReasons[state] : MODS_SERVER_UNCONFIRMED };
@@ -49,12 +52,30 @@ function syncUpdateActions() {
   // The reason of a state that offers no start is the tooltip; the busy lock keeps its own reason.
   if (shown.reason) start.title = shown.reason;
   else if (!start.hasAttribute("aria-disabled")) start.removeAttribute("title");
+  syncRestartLockLine(start, shown.locked ? shown.reason : "");
 }
 
-// Read the server state from the host; a failed read leaves the state unconfirmed.
+// Show the D11 lock reason as visible text under the check header, tied to the action (QF-033).
+function syncRestartLockLine(start, reason) {
+  const header = document.getElementById("mods-update-header");
+  let line = document.getElementById("mods-restart-lock");
+  if (!reason) {
+    line?.remove();
+    if (start.getAttribute("aria-describedby") === "mods-restart-lock") start.removeAttribute("aria-describedby");
+    return;
+  }
+  if (!line && header) {
+    line = modsNode("p", "busy-wait-line mods-restart-lock"); line.id = "mods-restart-lock";
+    header.after(line);
+  }
+  if (line && line.textContent !== reason) line.textContent = reason;
+  // The busy lock manages the description while it holds the control.
+  if (line && !start.hasAttribute("aria-disabled")) start.setAttribute("aria-describedby", "mods-restart-lock");
+}
+
+// Read the server state through the shared state; a failed read leaves the state unconfirmed.
 async function readModsServerState() {
-  let result = null;
-  try { result = await window.pywebview.api.get_server_status(); } catch (_error) { result = null; }
+  const result = await window.ServerManServerState.read();
   modsActionState.server = result?.success && typeof result.value?.state === "string"
     ? result.value.state : null;
   syncUpdateActions();
@@ -114,6 +135,11 @@ function reportUnverifiedUpdate(operation, outcome) {
       : ` SteamCMD exited without a verifiable update result${exitDetail}. Open SteamCMD login, then retry.`;
   modsFeedback(`${outcome.text}${detail}${suffix}`, outcome.look !== "cancelled");
   renderModsItems(result.items);
+  // A sign-in problem opens the sign-in form, so the login action is at hand; the focus stays.
+  const items = Array.isArray(result.items) ? result.items : [];
+  if (result.download_state === "UNKNOWN" || items.some(window.ServerManDiagnosticLabels.signInFailed)) {
+    window.ServerManModsSignin.open();
+  }
 }
 
 // Decide what follows a verified update: a sentence when nothing is to apply, else the apply review.
@@ -150,8 +176,13 @@ function modsUpdateFinished(operation, outcome) {
   return true;
 }
 
-// Keep the server state current with each poll tick while the Mods page is visible.
-document.addEventListener("serverman:mods-tick", () => { void readModsServerState(); });
+// Follow the shared server state: the shell reads it on every poll tick and announces a change.
+document.addEventListener("serverman:server-status", (event) => {
+  // A state that the last read did not confirm offers no start, like a failed read of this page.
+  const confirmed = event.detail?.confirmed !== false && typeof event.detail?.status?.state === "string";
+  modsActionState.server = confirmed ? event.detail.status.state : null;
+  syncUpdateActions();
+});
 // Publish the update actions for the Mods page and its apply review.
 window.ServerManModsActions = Object.freeze({
   attach: attachUpdateActions, sync: syncUpdateActions, read: readModsServerState,

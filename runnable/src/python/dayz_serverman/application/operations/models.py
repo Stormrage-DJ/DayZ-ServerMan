@@ -153,15 +153,16 @@ SHUTTING_DOWN = "SHUTTING_DOWN"
 
 class QueueUnavailable(RuntimeError):
     """Raised when the operation lane cannot accept new work."""
-    def __init__(self, message: str, reason: str = QUEUE_FULL) -> None:
-        """Store the safe message and the machine-readable cause of the refusal."""
+    def __init__(self, message: str, reason: str = QUEUE_FULL, owner: str | None = None) -> None:
+        """Store the safe message, the machine-readable cause, and the owner of a recovery block."""
         self.reason = reason
+        self.owner = owner
         super().__init__(message)
 
     @property
     def details(self) -> dict[str, str]:
-        """Return the additive error detail that names the cause to the bridge caller."""
-        return {"reason": self.reason}
+        """Return the additive error detail that names the cause, and the block owner when there is one."""
+        return {"reason": self.reason, **({"owner": self.owner} if self.owner else {})}
 
 
 class OperationNotFound(RuntimeError):

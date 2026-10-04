@@ -14,6 +14,17 @@ const restoreState = {
 const RESTORE_RECOVERY_TEXT = "Recovery required. Changes are blocked until an unfinished restore is resolved. "
   + "Details are in Logs, Manager diagnostics.";
 
+// Notice for a recovery check that waits, because a running operation holds the DayZ installation.
+const RESTORE_DEFERRED_TEXT = "Restore recovery is checked again when the running operation finishes.";
+
+// Word a blocked recovery inspection: the reason that the host names, else the general notice.
+// The host names a reason when the server is not proven stopped, so the operator learns what to do.
+function restoreRecoveryText(inspection) {
+  const reason = inspection?.reason;
+  const sentences = window.ServerManHostSentences;
+  return reason && sentences ? sentences.blockReason(reason) : RESTORE_RECOVERY_TEXT;
+}
+
 // Build one element for the restore workspace.
 function restoreNode(tag, className, text) {
   const node = document.createElement(tag);
@@ -233,22 +244,29 @@ async function renderRestore(history) {
   const inspection = await window.pywebview.api.inspect_restore_recovery();
   if (renderGeneration !== restoreState.generation
       || !isBackupProfileActive(profileContext) || !inspection.success) return;
-  if (inspection.value.blocked) {
+  if (inspection.value.deferred) {
+    // The journal may belong to the running restore, so nothing is claimed to be interrupted; focus stays.
     panel.hidden = false;
-    restoreFeedback(RESTORE_RECOVERY_TEXT, "notice-recovery", "alert");
+    const notice = restoreNode("div", "notice", RESTORE_DEFERRED_TEXT);
+    notice.setAttribute("role", "status");
+    feedback.replaceChildren(notice);
+  } else if (inspection.value.blocked) {
+    panel.hidden = false;
+    restoreFeedback(restoreRecoveryText(inspection.value), "notice-recovery", "alert");
   }
 }
 
-// Keep the profile selector pinned while a restore is under review.
-function blockRestoreProfileChange(select) {
-  if (!restoreState.dialog || !restoreState.preview) return false;
-  select.value = restoreState.preview.context.profile.profileId;
-  return true;
+// Close an open restore review: forget the reviewed plan and expire every request of it.
+function closeRestoreReview() {
+  closeRestoreDialog(false);
+  restoreState.generation += 1;
+  restoreState.backupId = null;
+  restoreState.preview = null;
 }
 
 // Publish the restore workspace entry points.
 window.ServerManRestore = Object.freeze({
-  blockProfileChange: blockRestoreProfileChange,
+  close: closeRestoreReview,
   operationFinished: restoreOperationFinished,
   render: renderRestore,
   preview: previewRestore,

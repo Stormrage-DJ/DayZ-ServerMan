@@ -24,6 +24,9 @@ const hostBlockReasons = Object.freeze([
   ["mod publication recovery", "Applying mods to the server folder was interrupted and could not be undone safely. Restart DayZ-ServerMan; it checks the server folder again when it starts."],
   ["unresolved mod publication", "Applying mods to the server folder was interrupted, and it cannot be checked because no DayZ server folder is set."],
   ["interrupted mod publication", "Applying mods to the server folder was interrupted and must be finished. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then restart DayZ-ServerMan."],
+  ["interrupted backup restore", "A backup restore was interrupted and must be finished. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then open Backups again or restart DayZ-ServerMan."],
+  ["interrupted direct profile restore", "A profile restore from a backup archive was interrupted and must be finished. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then restart DayZ-ServerMan."],
+  ["interrupted profile creation", "Creating a profile was interrupted and must be finished. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then restart DayZ-ServerMan."],
   ["interrupted SteamCMD update", "A mod update was interrupted, so its result is not known. Restart DayZ-ServerMan, then update the mods again."],
   ["process-tree exit", "SteamCMD did not close cleanly, so the mod update cannot be confirmed. Close SteamCMD, restart DayZ-ServerMan, then update the mods again."],
   ["Profile provisioning recovery", "Creating a profile was interrupted and could not be undone safely. Restart DayZ-ServerMan; it checks the unfinished profile again when it starts."],
@@ -32,6 +35,11 @@ const hostBlockReasons = Object.freeze([
 ]);
 // Reason shown when a block reason is neither known nor a plain sentence.
 const HOST_BLOCK_FALLBACK = "An earlier operation did not finish cleanly.";
+// The way out of a block without a catalogue sentence: a restart checks again, or Backups for a restore.
+const HOST_BLOCK_RESTART_ACTION = "Restart DayZ-ServerMan to check again.";
+const HOST_BLOCK_RESTORE_ACTION = "Open Backups to finish the restore.";
+// Operation kind of a restore apply; the blocks it owns are lifted on the Backups page.
+const HOST_BLOCK_RESTORE_OWNER = "RESTORE_BACKUP";
 // Identifier table and its search pattern, built once from the field catalogues on first use.
 const hostIdentifierCache = { table: null, pattern: null };
 
@@ -86,11 +94,13 @@ function hostSentence(message) {
   return /[.!?]$/.test(text) ? text : `${text}.`;
 }
 
-// Word why changes are blocked: the known sentence, else the host sentence, else the fallback.
-function hostBlockReason(reason) {
+// Word why changes are blocked: the known sentence, else the host sentence or the fallback with its way out.
+function hostBlockReason(reason, owner = null) {
   const text = String(reason || "");
   const known = hostBlockReasons.find(([fragment]) => text.includes(fragment));
-  return known ? known[1] : hostSentence(text) || HOST_BLOCK_FALLBACK;
+  if (known) return known[1];
+  const action = owner === HOST_BLOCK_RESTORE_OWNER ? HOST_BLOCK_RESTORE_ACTION : HOST_BLOCK_RESTART_ACTION;
+  return `${hostSentence(text) || HOST_BLOCK_FALLBACK} ${action}`;
 }
 
 // Publish the host sentence lookups used by the message catalogue and by the pages.

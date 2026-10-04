@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path, PureWindowsPath
 from typing import Callable, Protocol
 
@@ -46,6 +47,8 @@ class ReadinessTarget:
     started_after_ns: int
     rpt_directory: Path | None
     mission_ready: bool = False
+    # Profile that the launch was requested for; None only for a target built without one
+    profile_id: str | None = None
 
 
 class ReadinessLifecycleService:
@@ -119,11 +122,17 @@ class ReadinessLifecycleService:
         if snapshot.state == ServerState.STOPPED:
             self._clear_target()
             return snapshot
-        if snapshot.state != ServerState.RUNNING_MANAGED:
-            return snapshot
         with self._lock:
             target = self._target
         if target is None:
+            return snapshot
+        # Name the profile and the start time of the launch that this manager made
+        if snapshot.state in (ServerState.RUNNING_MANAGED, ServerState.STOPPING):
+            snapshot = replace(
+                snapshot, profile_id=target.profile_id,
+                started_at=_utc_text(target.started_after_ns),
+            )
+        if snapshot.state != ServerState.RUNNING_MANAGED:
             return snapshot
         query_ready = self._probe.is_ready(target.query_port)
         mission_ready = target.mission_ready or self._mission_probe.is_ready(
@@ -154,6 +163,7 @@ class ReadinessLifecycleService:
                 self._clock(),
                 started_after_ns,
                 rpt_directory,
+                profile_id=profile_id,
             )
 
     def _query_port(self, profile_id: str) -> int:
@@ -193,3 +203,9 @@ class ReadinessLifecycleService:
         """Forget readiness context after a verified stop."""
         with self._lock:
             self._target = None
+
+
+def _utc_text(wall_clock_ns: int) -> str:
+    """Return a wall-clock time in nanoseconds as ISO-8601 UTC text with milliseconds."""
+    moment = datetime.fromtimestamp(wall_clock_ns / 1_000_000_000, UTC)
+    return moment.isoformat(timespec="milliseconds")

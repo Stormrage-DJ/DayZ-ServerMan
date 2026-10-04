@@ -113,17 +113,10 @@ function renderProfileForm(record) {
   const panel = profileNode("section", "panel profile-panel");
   const heading = profileNode("div", "panel-heading");
   const title = profileNode("h2", "", "Edit profile"); heading.append(title);
-  // Offer a selector to switch between existing profiles.
-  const chooser = document.createElement("select"); chooser.id = "profile-workspace-selector";
-  chooser.setAttribute("aria-label", "Selected profile");
-  profileState.records.forEach((item) => { const option = profileNode("option", "", item.display_name);
-    option.value = item.profile_id; option.selected = item.profile_id === record?.profile_id;
-    chooser.append(option); });
-  chooser.addEventListener("change", () => { const requested = chooser.value;
-    if (requested) window.ServerManProfileContext.select(requested);
-    chooser.value = profileState.selected?.profile_id || ""; });
+  // The profile is chosen in the sidebar; the heading line of the page names it again.
+  window.ServerManPageContext?.setText("");
   const create = profileNode("button", "button button-primary", "New profile"); create.type = "button";
-  create.addEventListener("click", openProfileCreation); heading.append(chooser, create);
+  create.addEventListener("click", openProfileCreation); heading.append(create);
   const form = document.createElement("form"); form.id = "profile-form"; form.noValidate = true;
   const value = record || { mods: [], extra_arguments: [], runtime_profile: null };
   // Compose the basic profile fields.

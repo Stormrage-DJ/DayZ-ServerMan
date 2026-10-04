@@ -11,7 +11,10 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from dayz_serverman.application.lifecycle_coordinator import LifecycleCoordinator  # noqa: E402
+from dayz_serverman.application.lifecycle_coordinator import (  # noqa: E402
+    OTHER_PROFILE_RUNNING,
+    LifecycleCoordinator,
+)
 from dayz_serverman.application.operations.manager import OperationManager  # noqa: E402
 from dayz_serverman.application.operations.models import OperationState  # noqa: E402
 from dayz_serverman.application.operations.store import OperationStore  # noqa: E402
@@ -30,10 +33,11 @@ class FakeLifecycle:
         """Initialize the call log and the optional failure to inject."""
         self.calls: list[tuple[object, ...]] = []
         self.failure: LifecycleFailure | None = None
+        self.snapshot: LifecycleSnapshot | None = None
 
     def status(self) -> LifecycleSnapshot:
-        """Report a stopped server."""
-        return LifecycleSnapshot(ServerState.STOPPED)
+        """Report a stopped server, or the scripted snapshot of a running one."""
+        return self.snapshot if self.snapshot is not None else LifecycleSnapshot(ServerState.STOPPED)
 
     def start(self, profile_id: str, profile_revision: int, settings_revision: int):
         """Record a start call and return the running result or inject a failure."""
@@ -123,6 +127,12 @@ class LifecycleBridgeTests(unittest.TestCase):
         # The status query answers immediately without an operation
         status = self.dispatch("get_server_status", {})
         self.assertEqual(status["value"]["state"], "STOPPED")
+        # The additive fields are present and empty for a stopped server
+        self.assertEqual(status["value"], {
+            "state": "STOPPED", "process_id": None, "diagnostic_code": None, "readiness": None,
+            "query_port": None, "profile_id": None, "started_at": None,
+        })
+        self.assertEqual(CONTRACT_VERSION, 1)
         # A start request queues and completes on the operation lane
         accepted = self.dispatch(
             "start_server",
@@ -205,11 +215,57 @@ class LifecycleBridgeTests(unittest.TestCase):
         ])
         self.assertEqual(record.terminal_error.code, "STORAGE_FAILURE")
 
+    def test_status_names_the_running_profile_and_its_start_time(self) -> None:
+        """A managed server reports the profile it was started with and when."""
+        self.lifecycle.snapshot = LifecycleSnapshot(
+            ServerState.RUNNING_MANAGED, 700, profile_id="livonia-main",
+            started_at="2026-10-04T07:49:52.000+00:00",
+        )
+        status = self.dispatch("get_server_status", {})["value"]
+        self.assertEqual(status["profile_id"], "livonia-main")
+        self.assertEqual(status["started_at"], "2026-10-04T07:49:52.000+00:00")
+
+    def test_stop_and_restart_for_another_profile_are_refused_before_the_queue(self) -> None:
+        """D11: a request for a profile that is not the running one stops nothing."""
+        self.lifecycle.snapshot = LifecycleSnapshot(
+            ServerState.RUNNING_MANAGED, 700, profile_id="livonia-main",
+            started_at="2026-10-04T07:49:52.000+00:00",
+        )
+        for method in ("stop_server", "restart_server"):
+            for backup in (False, True):
+                with self.subTest(method=method, backup=backup):
+                    refused = self.dispatch(method, self.control_parameters(backup, "other"))
+                    self.assertFalse(refused["success"])
+                    self.assertEqual(refused["error"]["code"], "INVALID_REQUEST")
+                    self.assertEqual(refused["error"]["message"], OTHER_PROFILE_RUNNING)
+        self.assertEqual(self.lifecycle.calls, [])
+        self.assertEqual(self.operations.list_recent(), ())
+        # The same request for the running profile is accepted
+        accepted = self.dispatch("stop_server", self.control_parameters(True))
+        record = self.wait_terminal(accepted["value"]["operation_id"])
+        self.assertEqual(record.state, OperationState.SUCCEEDED)
+        self.assertEqual(self.lifecycle.calls, [("stop", 4), ("backup", "livonia-main", 7, 4)])
+
+    def test_unknown_running_profile_leaves_the_state_rules_in_charge(self) -> None:
+        """Without a known running profile the request is queued as before."""
+        self.lifecycle.snapshot = LifecycleSnapshot(ServerState.RUNNING_MANAGED, 700)
+        accepted = self.dispatch("stop_server", self.control_parameters(False, "other"))
+        self.assertTrue(accepted["success"])
+        self.wait_terminal(accepted["value"]["operation_id"])
+        # A scheduled action calls the plain method and is not changed by the check
+        self.lifecycle.snapshot = LifecycleSnapshot(
+            ServerState.RUNNING_MANAGED, 700, profile_id="livonia-main")
+        coordinator = LifecycleCoordinator(self.lifecycle, self.operations, self.backups)
+        scheduled = coordinator.stop_server(self.control_parameters(False, "other"))
+        self.wait_terminal(scheduled["operation_id"])
+        # The refusal text is plain wording: no identifier that the catalogue would hide
+        self.assertNotRegex(OTHER_PROFILE_RUNNING, r"[A-Z]{2,}|_|[a-z][A-Z]")
+
     @staticmethod
-    def control_parameters(backup: bool) -> dict[str, object]:
-        """Build control parameters for the standard profile at revision seven."""
+    def control_parameters(backup: bool, profile_id: str = "livonia-main") -> dict[str, object]:
+        """Build control parameters for a profile at revision seven."""
         return {
-            "profile_id": "livonia-main",
+            "profile_id": profile_id,
             "expected_profile_revision": 7,
             "expected_settings_revision": 4,
             "backup_after_stop": backup,

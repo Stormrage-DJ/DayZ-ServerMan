@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
+from dayz_serverman.application.log_activity import EVENT_TEXTS
 from dayz_serverman.application.schedules import ScheduleCoordinator
 from dayz_serverman.domain.lifecycle import LifecycleSnapshot, ServerState
 from dayz_serverman.domain.schedules import DailySchedule, ScheduleValidationError
@@ -53,10 +54,14 @@ class FakeLifecycle:
     def __init__(self, state: ServerState = ServerState.RUNNING_MANAGED) -> None:
         """Store the state reported by status."""
         self.state = state
+        # Profile that the server was started with; None when it is not known
+        self.profile_id: str | None = None
 
     def status(self) -> LifecycleSnapshot:
         """Return a snapshot with a process id only while running managed."""
-        return LifecycleSnapshot(self.state, 42 if self.state == ServerState.RUNNING_MANAGED else None)
+        running = self.state == ServerState.RUNNING_MANAGED
+        return LifecycleSnapshot(self.state, 42 if running else None,
+                                 profile_id=self.profile_id if running else None)
 
 
 class FakeLifecycleCoordinator:
@@ -77,10 +82,14 @@ class FakeLifecycleCoordinator:
 
 
 class FakeLogger:
-    """Logger double that discards every emit call."""
-    def emit(self, *_args, **_kwargs) -> None:
-        """Ignore the log record."""
-        return None
+    """Logger double that keeps every emitted event with its fields."""
+    def __init__(self) -> None:
+        """Start with no events."""
+        self.events: list[tuple[str, dict]] = []
+
+    def emit(self, event, *_args, **keywords) -> None:
+        """Keep the event name and its fields."""
+        self.events.append((event, dict(keywords.get("fields") or {})))
 
 
 class ScheduleTests(unittest.TestCase):
@@ -92,6 +101,7 @@ class ScheduleTests(unittest.TestCase):
         self.repository = ScheduleRepository(VersionedJsonRepository(path))
         self.clock = MutableClock(datetime(2026, 9, 29, 3, 0))
         self.lifecycle = FakeLifecycle()
+        self.logger = FakeLogger()
         self.lifecycle_coordinator = FakeLifecycleCoordinator()
         self.coordinator = ScheduleCoordinator(
             self.repository,
@@ -100,7 +110,7 @@ class ScheduleTests(unittest.TestCase):
             FakePreferences(),
             self.lifecycle,
             self.lifecycle_coordinator,
-            FakeLogger(),
+            self.logger,
             clock=self.clock,
             poll_seconds=0.01,
         )
@@ -171,6 +181,41 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(self.lifecycle_coordinator.calls, [])
         view = self.coordinator.get_schedule({"profile_id": "main"})
         self.assertEqual(view["last_status"], "SKIPPED_NOT_RUNNING")
+
+    def test_due_action_is_skipped_while_another_profile_runs(self) -> None:
+        """The schedule of one profile never stops the server of another profile."""
+        self.lifecycle.profile_id = "other"
+        for day, action in ((29, "stop"), (30, "restart")):
+            self.clock.value = datetime(2026, 9, day, 3, 0)
+            self.coordinator.save_schedule({
+                "profile_id": "main", "hour": 4, "minute": 0, "action": action,
+            })
+            self.clock.value = datetime(2026, 9, day, 4, 0)
+            self.assertEqual(self.coordinator.run_due(), 1)
+        self.assertEqual(self.lifecycle_coordinator.calls, [])
+        view = self.coordinator.get_schedule({"profile_id": "main"})
+        self.assertEqual(view["last_status"], "SKIPPED_NOT_RUNNING")
+        # The skip is recorded for the profile of the schedule, as for a stopped server
+        skipped = [fields for event, fields in self.logger.events if event == "schedule.skipped"]
+        self.assertEqual(skipped, [{"profile_id": "main", "server_state": "RUNNING_MANAGED"}] * 2)
+        # The wording of a skipped run is true for a stopped server and for another profile's server
+        self.assertEqual(
+            EVENT_TEXTS["schedule.skipped"],
+            "The scheduled action was skipped because its server was not running under the manager.",
+        )
+
+    def test_due_action_runs_for_the_running_profile_and_for_an_unknown_one(self) -> None:
+        """The own profile is stopped; a server whose profile is not known keeps the earlier rule."""
+        for day, running in ((29, "main"), (30, None)):
+            self.lifecycle.profile_id = running
+            self.lifecycle_coordinator.calls.clear()
+            self.clock.value = datetime(2026, 9, day, 3, 0)
+            self.coordinator.save_schedule({
+                "profile_id": "main", "hour": 4, "minute": 0, "action": "stop",
+            })
+            self.clock.value = datetime(2026, 9, day, 4, 0)
+            self.coordinator.run_due()
+            self.assertEqual([call[0] for call in self.lifecycle_coordinator.calls], ["stop"], running)
 
     def test_start_after_today_time_does_not_catch_up(self) -> None:
         """Starting after today's time schedules the next day."""

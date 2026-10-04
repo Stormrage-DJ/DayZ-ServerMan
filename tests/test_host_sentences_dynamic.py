@@ -61,8 +61,8 @@ same(window.ServerManHostSentences.fieldLabel("constructor"), null, "prototype n
 CONFLICTS_AND_BLOCKS = r"""
 const messages = window.ServerManOperationMessages;
 const same = (actual, expected, name) => check(actual === expected, `${name}: ${actual}`);
-const conflict = (message, reason) => messages.error({code: "MUTATION_CONFLICT", message,
-  retryable: true, ...(reason ? {details: {reason}} : {})});
+const conflict = (message, reason, owner) => messages.error({code: "MUTATION_CONFLICT", message,
+  retryable: true, ...(reason ? {details: {reason, ...(owner ? {owner} : {})}} : {})});
 const QUEUE = "Too many operations are waiting. Wait for one to finish and try again.";
 const CLOSING = "DayZ-ServerMan is closing and starts no new operation.";
 const RESTORE = "A backup restore did not finish cleanly. Open Backups; DayZ-ServerMan checks the unfinished "
@@ -83,21 +83,38 @@ const TAIL = " Changes are blocked until this is resolved. Details are in Logs, 
 for (const [fragment, sentence] of BLOCK_REASONS) {
   same(messages.recoveryNotice(`Mutations are blocked: ${fragment}.`), sentence + TAIL, `block reason ${fragment}`);
 }
+// QF-045: a reason without a catalogue sentence names its way out: a restart, or Backups for a restore.
+const RESTART = " Restart DayZ-ServerMan to check again.";
 same(messages.recoveryNotice("The configured DayZ root is unsafe."),
-  "The configured DayZ server folder is unsafe." + TAIL, "host sentence kept");
+  "The configured DayZ server folder is unsafe." + RESTART + TAIL, "host sentence kept");
 same(messages.recoveryNotice("profile record is unavailable: INTERRUPTED_WRITE"),
-  "An earlier operation did not finish cleanly." + TAIL, "fallback");
+  "An earlier operation did not finish cleanly." + RESTART + TAIL, "fallback");
+same(messages.recoveryNotice("Committed restore targets could not be proven.", "RESTORE_BACKUP"),
+  "Committed restore targets could not be proven. Open Backups to finish the restore." + TAIL, "restore owner");
+same(conflict("Committed restore targets could not be proven.", "RECOVERY_BLOCK", "RESTORE_BACKUP"),
+  "Changes are blocked until recovery is resolved. Committed restore targets could not be proven. "
+  + "Open Backups to finish the restore.", "restore owner in a refusal");
+// QF-048: the way out follows the owner, never the words of the reason.
+same(window.ServerManHostSentences.blockReason("Committed restore targets could not be proven."),
+  "Committed restore targets could not be proven." + RESTART, "restore words without the owner");
+same(window.ServerManHostSentences.blockReason("The launched server ownership could not be verified.", "RESTORE_BACKUP"),
+  "The launched server ownership could not be verified. Open Backups to finish the restore.", "owner without restore words");
 // The Overview notice shows the reason of the snapshot.
 let block = "Direct profile restore recovery requires attention.";
+let owner = null;
 window.pywebview.api.get_application_snapshot = async () => { const value = snapshot([]);
-  value.mutation_block = block; return ok(value); };
+  value.mutation_block = block; value.mutation_block_owner = owner; return ok(value); };
 await start();
 const notice = () => document.querySelector("#content-region .notice-recovery")?.textContent || "";
 same(notice(), "Recovery required" + "A profile restore from a backup archive did not finish. Stop the DayZ server, "
   + "then restart DayZ-ServerMan; it checks the unfinished restore when it starts." + TAIL, "Overview notice");
 block = "journal_state is RECOVERY_REQUIRED";
 await loadSnapshot(); window.clearTimeout(shellState.pollTimer); await wait(40);
-same(notice(), "Recovery required" + "An earlier operation did not finish cleanly." + TAIL, "Overview fallback");
+same(notice(), "Recovery required" + "An earlier operation did not finish cleanly." + RESTART + TAIL,
+  "Overview fallback");
+block = "Committed restore targets could not be proven."; owner = "RESTORE_BACKUP";
+await loadSnapshot(); window.clearTimeout(shellState.pollTimer); await wait(40);
+same(notice(), "Recovery required" + block + " Open Backups to finish the restore." + TAIL, "Overview restore owner");
 // The texts shared with the Manager activity wording are the same in both catalogues.
 for (const [code, text] of Object.entries(ERROR_TEXTS)) same(messages.error({code, message: ""}), text, `code ${code}`);
 for (const [role, label] of Object.entries(ROLE_LABELS)) same(window.ServerManDiagnosticLabels.role(role), label, role);

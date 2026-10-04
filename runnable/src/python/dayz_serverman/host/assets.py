@@ -41,6 +41,8 @@ def compose_shell_html(frontend_root: Path) -> str:
     tokens = (root / "tokens.css").read_text(encoding="utf-8")
     controls = (root / "controls.css").read_text(encoding="utf-8")
     styles = (root / "styles.css").read_text(encoding="utf-8")
+    # Shell chrome (sidebar, navigation, badge, page heading) follows the base styles
+    styles += "\n" + (root / "shell.css").read_text(encoding="utf-8")
     mods_styles = (root / "mods.css").read_text(encoding="utf-8")
     overview_styles = (root / "overview.css").read_text(encoding="utf-8")
     profiles_styles = (root / "profiles.css").read_text(encoding="utf-8")
@@ -80,8 +82,11 @@ def compose_shell_html(frontend_root: Path) -> str:
     migration_script = (root / "migration.js").read_text(encoding="utf-8")
     settings_script = (root / "settings.js").read_text(encoding="utf-8")
     settings_script += "\n" + (root / "settings_render.js").read_text(encoding="utf-8")
+    settings_script += "\n" + (root / "settings_updates.js").read_text(encoding="utf-8")
     update_status_script = (root / "update_status.js").read_text(encoding="utf-8")
+    update_status_script += "\n" + (root / "mods_update_header.js").read_text(encoding="utf-8")
     mods_script = (root / "mods.js").read_text(encoding="utf-8")
+    mods_script += "\n" + (root / "mods_signin.js").read_text(encoding="utf-8")
     mods_script += "\n" + (root / "mods_operations.js").read_text(encoding="utf-8")
     mods_script += "\n" + (root / "mods_update_actions.js").read_text(encoding="utf-8")
     mods_display_script = (root / "mods_display.js").read_text(encoding="utf-8")
@@ -93,10 +98,17 @@ def compose_shell_html(frontend_root: Path) -> str:
     overview_readiness_script = (root / "overview_readiness.js").read_text(encoding="utf-8")
     overview_dialog_script = (root / "overview_lifecycle_dialog.js").read_text(encoding="utf-8")
     overview_script = (root / "overview.js").read_text(encoding="utf-8")
+    overview_script += "\n" + (root / "overview_server.js").read_text(encoding="utf-8")
+    overview_script += "\n" + (root / "overview_cards.js").read_text(encoding="utf-8")
     overview_status_script = (root / "overview_status.js").read_text(encoding="utf-8")
     logs_script = (root / "logs.js").read_text(encoding="utf-8")
     # The section registry follows every page module and precedes the shell loop
     sections_script = (root / "sections.js").read_text(encoding="utf-8")
+    # The shared server state, the heading context and the navigation read the registry
+    sections_script += "".join(
+        "\n" + (root / name).read_text(encoding="utf-8")
+        for name in ("server_state.js", "page_context.js", "navigation.js")
+    )
     app_script = (root / "app.js").read_text(encoding="utf-8")
     # Substitute the style marker with the concatenated stylesheets
     document = document.replace(

@@ -182,6 +182,8 @@ function renderProfileCreateForm() {
   });
   form.addEventListener("input", markProfileCreateDirty);
   form.addEventListener("submit", submitProfileProvision);
+  // The form belongs to no existing server, so the heading line says what it is.
+  window.ServerManPageContext?.setText("New profile");
   updateMissionChoice(form); updateGeneratedProfilePaths(form); display.input.focus();
 }
 

@@ -72,7 +72,7 @@ window.ServerManProfileContext = { selectedId: () => "alpha", select: () => {} }
     relative_path: "new.cfg", fields: [] } });
   await flush();
   check(configurationState.loaded === oldShared, "shared reload overwrote a newer edit");
-  check(!document.getElementById("configuration-profile").disabled, "shared controls stayed disabled");
+  check(!document.getElementById("configuration-discard").disabled, "shared controls stayed disabled");
 
   // Register the guard owner before a terminal event can mark it dirty.
   let sharedDiscard = 0; let sharedFocus = 0; let commits = 0;
@@ -136,7 +136,6 @@ class UiRaceDynamicTests(unittest.TestCase):
         fixture = """<!doctype html><html><body><div id='background'>
 <button id='trigger'>Trigger</button><button id='shared-focus'>Shared</button>
 <div id='content-region'>sentinel</div>
-<select id='configuration-profile'><option value='alpha'>Alpha</option></select>
 <div id='configuration-fields'>shared sentinel</div><div id='configuration-feedback'></div>
 <span id='configuration-unsaved'></span><button id='configuration-apply'></button>
 <button id='configuration-discard'></button><code id='configuration-path'></code></div>

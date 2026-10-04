@@ -12,6 +12,9 @@ TOKENS = (PROJECT_ROOT / "runnable" / "src" / "frontend" / "tokens.css").read_te
 STYLES = (PROJECT_ROOT / "runnable" / "src" / "frontend" / "styles.css").read_text(
     encoding="utf-8"
 )
+SHELL_STYLES = (PROJECT_ROOT / "runnable" / "src" / "frontend" / "shell.css").read_text(
+    encoding="utf-8"
+)
 CONTROLS = (PROJECT_ROOT / "runnable" / "src" / "frontend" / "controls.css").read_text(
     encoding="utf-8"
 )
@@ -62,7 +65,8 @@ class UiPaletteTests(unittest.TestCase):
 
     def test_shell_chrome_consumes_semantic_tokens(self) -> None:
         """Shell chrome consumes semantic tokens instead of literal colors."""
-        self.assertIn("min-height: var(--brand-height)", STYLES)
+        # The sidebar chrome moved to the shell stylesheet
+        self.assertIn("min-height: var(--brand-height)", SHELL_STYLES)
         self.assertIn("background: var(--color-scrim)", STYLES)
         self.assertNotIn("background: rgb(0 0 0 / 55%)", STYLES)
 

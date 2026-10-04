@@ -2,10 +2,14 @@
 // The operation bar shows name, phase, progress, and Cancel; this module keeps the result detail in context.
 "use strict";
 
-// Track a queued host operation and show its start message.
-function acceptModsOperation(result, message) {
+// Operation kinds whose messages belong to the sign-in panel.
+const modsSigninKinds = Object.freeze(["SAVE_STEAM_SETTINGS", "AUTHENTICATE_STEAMCMD"]);
+
+// Track a queued host operation and show its start message in the panel that the action belongs to.
+function acceptModsOperation(result, message, signin = false) {
+  const say = signin ? window.ServerManModsSignin.feedback : modsFeedback;
   // Report failures without leaving any pending state behind.
-  if (!result || !result.success) return modsFeedback(
+  if (!result || !result.success) return say(
     window.ServerManOperationMessages.bridgeError(result, "The request failed safely."), true);
   const profile = selectedProfile();
   // Record the queued operation against the current generation and profile.
@@ -14,7 +18,7 @@ function acceptModsOperation(result, message) {
   setModsBusy(true);
   // A new operation outdates the row marks of the one before it.
   window.ServerManModsProgress.clear();
-  modsFeedback(message);
+  say(message);
   // Hand the accepted operation to the operation bar without waiting for the next poll.
   window.ServerManOperationBar.adopt(result.value.operation_id);
 }
@@ -22,11 +26,13 @@ function acceptModsOperation(result, message) {
 // Apply operation events to the mods workspace and its action states.
 function modsOperationFinished(operation) {
   if (!operation || !modsState.pending || operation.operation_id !== modsState.pending.id) return false;
+  // A sign-in operation reports beside the sign-in form, every other one under the check header.
+  const say = modsSigninKinds.includes(operation.kind) ? window.ServerManModsSignin.feedback : modsFeedback;
   if (!["SUCCEEDED", "FAILED", "CANCELLED", "RECOVERY_REQUIRED"].includes(operation.state)) {
     // Keep the row marks of a verification current; phase, percent, and Cancel are in the operation bar.
     window.ServerManModsVerify.progress(operation);
     window.ServerManModsProgress.changed(operation);
-    if (operation.state === "CANCELLING") modsFeedback(window.ServerManOperationLabels.cancelling(operation.kind));
+    if (operation.state === "CANCELLING") say(window.ServerManOperationLabels.cancelling(operation.kind));
     return true;
   }
   // Clear the pending operation and unlock the controls on terminal states.
@@ -44,14 +50,14 @@ function modsOperationFinished(operation) {
   // Report a failure or a cancellation with the same wording as the operation bar.
   if (operation.state !== "SUCCEEDED") {
     const outcome = window.ServerManOperationBar.pageResult(operation);
-    modsFeedback(outcome.text, outcome.look !== "cancelled");
+    say(outcome.text, outcome.look !== "cancelled");
     return true;
   }
   // Reopen the workspace after settings are saved.
   if (operation.kind === "SAVE_STEAM_SETTINGS") { openMods(); return true; }
   const outcome = window.ServerManOperationBar.pageResult(operation);
   if (operation.kind === "AUTHENTICATE_STEAMCMD") {
-    modsFeedback(`${outcome.sentence} Credentials remain owned by SteamCMD.`);
+    say(`${outcome.sentence} Credentials remain owned by SteamCMD.`);
     return true;
   }
   if (window.ServerManModPublication.operationFinished(operation)) return true;

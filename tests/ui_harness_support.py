@@ -50,7 +50,10 @@ const profiles = [{profile_id: "alpha", display_name: "Alpha", revision: 3,
 // Fake host: tests change its fields; every read method has a neutral answer.
 const host = {events: [], operations: new Map(), snapshotOperations: [], cancelRequests: [],
   cancelAnswer: null, revision: 1,
-  status: {state: "STOPPED", process_id: null, diagnostic_code: null, readiness: null, query_port: null}};
+  status: {state: "STOPPED", process_id: null, diagnostic_code: null, readiness: null, query_port: null,
+    profile_id: null, started_at: null},
+  updates: {mods: {check_state: "OK", checked_at: null, last_success_at: null, error_code: null,
+    update_count: 0, pending_apply_count: 0}, server_build: null, checking: false, revision: 1}};
 window.pywebview = {api: {
   get_application_snapshot: async () => ok(snapshot(host.snapshotOperations)),
   list_profiles: async () => ok(profiles),
@@ -67,6 +70,9 @@ window.pywebview = {api: {
     return host.cancelAnswer ? host.cancelAnswer(id) : ok({...host.operations.get(id), state: "CANCELLING",
       revision: (host.revision += 1)}); },
   read_log: async (source) => ok({source, lines: ["line"], truncated: false, revision: 1}),
+  // The shell reads the update state in every section; the neutral answer shows no badge.
+  get_update_status: async () => ok(host.updates),
+  request_update_check: async () => ok({accepted: false, checking: false}),
 }};
 // Deliver one operation record through the real event poll; the timer is stopped so polls never overlap.
 const push = async (operation) => {

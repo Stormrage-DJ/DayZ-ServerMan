@@ -22,6 +22,12 @@ CLOSING_TEXT = "DayZ-ServerMan is closing and starts no new operation."
 BLOCKED_TEXT = "Changes are blocked until recovery is resolved."
 # Reason shown when a block reason is neither known nor a plain sentence
 BLOCK_FALLBACK = "An earlier operation did not finish cleanly."
+# The way out of a block that has no catalogue sentence: a restart checks again (QF-045)
+BLOCK_RESTART_ACTION = "Restart DayZ-ServerMan to check again."
+# The way out of such a block when a restore owns it: the Backups page finishes the restore
+BLOCK_RESTORE_ACTION = "Open Backups to finish the restore."
+# Operation kind of a restore apply; the blocks it owns are lifted on the Backups page
+BLOCK_RESTORE_OWNER = "RESTORE_BACKUP"
 
 # Per operation kind: name while active, success, failure, and cancellation sentence
 KIND_TEXTS: dict[str, tuple[str, str, str, str]] = {
@@ -134,6 +140,9 @@ BLOCK_REASONS: tuple[tuple[str, str], ...] = (
     ("mod publication recovery", "Applying mods to the server folder was interrupted and could not be undone safely. Restart DayZ-ServerMan; it checks the server folder again when it starts."),
     ("unresolved mod publication", "Applying mods to the server folder was interrupted, and it cannot be checked because no DayZ server folder is set."),
     ("interrupted mod publication", "Applying mods to the server folder was interrupted and must be finished. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then restart DayZ-ServerMan."),
+    ("interrupted backup restore", "A backup restore was interrupted and must be finished. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then open Backups again or restart DayZ-ServerMan."),
+    ("interrupted direct profile restore", "A profile restore from a backup archive was interrupted and must be finished. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then restart DayZ-ServerMan."),
+    ("interrupted profile creation", "Creating a profile was interrupted and must be finished. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then restart DayZ-ServerMan."),
     ("interrupted SteamCMD update", "A mod update was interrupted, so its result is not known. Restart DayZ-ServerMan, then update the mods again."),
     ("process-tree exit", "SteamCMD did not close cleanly, so the mod update cannot be confirmed. Close SteamCMD, restart DayZ-ServerMan, then update the mods again."),
     ("Profile provisioning recovery", "Creating a profile was interrupted and could not be undone safely. Restart DayZ-ServerMan; it checks the unfinished profile again when it starts."),
@@ -206,26 +215,30 @@ def restart_apply_text(
     return RESTART_APPLY_TEXTS[key]
 
 
-def block_reason_text(reason: object) -> str:
-    """Word why changes are blocked: the known sentence, else the host sentence, else the fallback."""
+def block_reason_text(reason: object, owner: object = None) -> str:
+    """Word why changes are blocked: the known sentence, else the host sentence or the fallback with its way out."""
     text = str(reason or "")
     for fragment, sentence in BLOCK_REASONS:
         if fragment in text:
             return sentence
-    return plain_sentence(text) or BLOCK_FALLBACK
+    action = BLOCK_RESTORE_ACTION if owner == BLOCK_RESTORE_OWNER else BLOCK_RESTART_ACTION
+    return f"{plain_sentence(text) or BLOCK_FALLBACK} {action}"
 
 
-def conflict_text(message: object, reason: object = None) -> str:
-    """Word a refused submission by its cause; without a cause the host message decides."""
+def conflict_text(message: object, reason: object = None, owner: object = None) -> str:
+    """Word a refused submission by its cause; without a cause the host message decides.
+
+    The owner of a refusing block chooses the way out, as on the page (QF-047).
+    """
     text = str(message or "")
     if reason == "QUEUE_FULL" or (reason is None and "queue is full" in text):
         return QUEUE_FULL_TEXT
     if reason == "SHUTTING_DOWN" or (reason is None and "lane is draining" in text):
         return CLOSING_TEXT
-    return f"{BLOCKED_TEXT} {block_reason_text(text)}"
+    return f"{BLOCKED_TEXT} {block_reason_text(text, owner)}"
 
 
-def error_text(code: object, message: object) -> str:
+def error_text(code: object, message: object, owner: object = None) -> str:
     """Turn a host error code and message into operator text; a code is never printed."""
     text = str(message or "")
     # A message that names a server state becomes one sentence about that state
@@ -233,7 +246,7 @@ def error_text(code: object, message: object) -> str:
     if states or code == "EXTERNAL_PROCESS":
         return f"This cannot be done while the server is {SERVER_STATES[states[-1] if states else 'RUNNING_EXTERNAL']}."
     if code == "MUTATION_CONFLICT":
-        return conflict_text(text)
+        return conflict_text(text, owner=owner)
     if code in ERROR_TEXTS:
         return ERROR_TEXTS[str(code)]
     # A rejected request with a known host sentence has its own wording

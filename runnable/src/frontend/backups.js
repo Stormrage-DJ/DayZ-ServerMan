@@ -6,25 +6,23 @@ const backupState = {
   // Monotonic counter that discards stale history responses.
   loadSequence: 0,
   pendingOperation: null,
-  // Bumped whenever the profile picker is rebuilt so old captures expire.
+  // Bumped whenever the page is rebuilt so old captures expire.
   profileGeneration: 0,
   profiles: [],
 };
 // Capture the selected profile and current workspace generation for a host request.
 function captureBackupProfile() {
-  const select = document.getElementById("backup-profile");
   return Object.freeze({
     generation: backupState.profileGeneration,
-    profileId: select ? select.value : "",
+    profileId: window.ServerManProfileContext.selectedId() || "",
     workspace: window.ServerManWorkspace.capture("backups"),
   });
 }
-// Report whether a captured token still matches the profile picker and workspace.
+// Report whether a captured token still matches the shared selection, the page, and the workspace.
 function isBackupProfileActive(context) {
-  const select = document.getElementById("backup-profile");
-  return Boolean(context && select
+  return Boolean(context && document.getElementById("backup-history")
     && context.generation === backupState.profileGeneration
-    && context.profileId === select.value
+    && context.profileId === (window.ServerManProfileContext.selectedId() || "")
     && window.ServerManWorkspace.isActive(context.workspace));
 }
 // Create one interface element with an optional class and text.
@@ -164,26 +162,18 @@ function showBackupConfirmation() {
   inerted.forEach(({ element }) => { element.inert = true; });
   cancel.focus();
 }
-// Build the backup panel, wire the profile picker, and start the first load.
+// Build the backup panel for the profile selected in the sidebar and start the first load.
 function renderBackupWorkspace(profiles) {
   backupState.profiles = profiles;
   // Expire old history and captures for the new profile set.
   backupState.history = null;
   backupState.profileGeneration += 1;
+  // A rebuild after a profile change closes an open restore review; it is read-only.
+  window.ServerManRestore?.close();
   const panel = backupNode("section", "panel backup-panel");
   const heading = backupNode("div", "panel-heading");
   heading.append(backupNode("h2", "", "Create backup"),
     backupNode("span", "status-label status-normal", "Manual"));
-  const profileLabel = backupNode("label", "", "Profile");
-  const select = document.createElement("select");
-  select.id = "backup-profile";
-  // Fill the picker with each profile, preferring the shared selection.
-  profiles.forEach((profile) => {
-    const option = backupNode("option", "", profile.display_name);
-    option.value = profile.profile_id; option.selected = profile.profile_id === window.ServerManProfileContext?.selectedId?.();
-    select.append(option);
-  });
-  profileLabel.append(select);
   const destination = backupNode("p", "configuration-path", "Verifying destination…");
   destination.id = "backup-destination";
   const feedback = backupNode("div", "configuration-feedback");
@@ -197,24 +187,20 @@ function renderBackupWorkspace(profiles) {
   const history = backupNode("div", "backup-list");
   history.id = "backup-history";
   history.setAttribute("aria-busy", "true");
-  panel.append(heading, profileLabel, destination, create, feedback,
+  panel.append(heading, destination, create, feedback,
     backupNode("h3", "", "Latest backups"), history);
   document.getElementById("content-region").replaceChildren(panel);
   const catalog = backupNode("section", "panel"); catalog.id = "backup-catalog";
   document.getElementById("content-region").append(catalog);
   if (window.ServerManProfileRestore) void window.ServerManProfileRestore.loadCatalog();
-  // Route profile changes through the shared selection and restore guards.
-  select.addEventListener("change", () => {
-    if (window.ServerManRestore && window.ServerManRestore.blockProfileChange(select)) return;
-    if (backupState.confirmation) {
-      select.value = backupState.confirmation.context.profileId;
-      return;
-    }
-    window.ServerManProfileContext.select(select.value);
-  });
   // Start with the history for the currently selected profile.
   if (profiles.length) loadBackupHistory();
-  else { select.disabled = true; history.textContent = "Create or restore a profile to make new backups."; }
+  else {
+    // Without a profile only the restore from a backup archive is possible.
+    history.setAttribute("aria-busy", "false");
+    history.textContent = "Create or restore a profile to make new backups.";
+    destination.textContent = "";
+  }
 }
 // Open the backup workspace for the profiles reported by the host.
 async function openBackupWorkspace() {

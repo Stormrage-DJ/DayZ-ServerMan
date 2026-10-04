@@ -34,9 +34,9 @@ const dialog = () => byId("mod-publication-confirmation");
 const dialogButton = (label) => [...dialog().querySelectorAll("button")].find((button) => button.textContent === label);
 const statusCells = () => [...document.querySelectorAll(".mods-table tbody .mods-status")];
 const same = (actual, expected, name) => check(actual === expected, `${name}: ${actual}`);
-// Set the server state and let the page read it, as a poll tick does.
+// Set the server state and let the shell read it, as a poll tick does in every section.
 const serverState = async (state) => { host.status = {...host.status, state};
-  document.dispatchEvent(new CustomEvent("serverman:mods-tick")); await wait(10); };
+  await window.ServerManServerState.refresh(); await wait(10); };
 // One item of an update result with its outcome and proof kind.
 const item = (id, outcome, proof, error = null) => ({item: {workshop_id: id}, outcome, error_code: error,
   cache_proof: proof ? {verification_kind: proof} : null});

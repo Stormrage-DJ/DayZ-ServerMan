@@ -48,5 +48,5 @@ class OperationContext:
         self._manager._publication.detail(self._pending, items)
 
     def block_for_recovery(self, message: str) -> None:
-        """Ask the manager to block the lane until recovery completes."""
-        self._manager.block_for_recovery(message)
+        """Ask the manager to block the lane until the recovery of this operation's kind lifts it."""
+        self._manager.block_for_recovery(message, owner=self._pending.record.kind)

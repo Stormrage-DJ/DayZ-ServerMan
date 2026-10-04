@@ -28,6 +28,7 @@ class CheckboxThemeTests(unittest.TestCase):
             "overview_schedule.js",
             "profile_restore.js",
             "profiles.js",
+            "settings_updates.js",
             "tweaks_render.js",
         })
 

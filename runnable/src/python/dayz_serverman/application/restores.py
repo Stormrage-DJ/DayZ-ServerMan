@@ -14,9 +14,15 @@ from ..domain.restores import RestorePreview
 from ..repositories.backups import BackupStorage, BackupStorageError
 from ..repositories.restore_journal import RestoreJournalRepository
 from ..repositories.restore_storage import RestoreStorage, RestoreStorageError
+from .installation_guard import InstallationGuard
 from .lifecycle_ports import InstallationMutexPort
 from .profiles import ProfileService
 from .settings import SettingsService
+
+# Block reason of a restore recovery that the installation guard refused
+RECOVERY_NOT_STOPPED = "Mutations are blocked by an interrupted backup restore while the server is not proven stopped."
+# Operation kind of a restore apply; it owns every block that the restore recovery may lift
+RESTORE_KIND = "RESTORE_BACKUP"
 
 
 class RestoreService:
@@ -123,8 +129,17 @@ class RestoreService:
                     self._journals, operation_id, checkpoint, profile.values.runtime_profile,
                 )
 
+    def recovery_pending(self) -> bool:
+        """Report whether a restore journal exists, without reading settings or taking the mutex."""
+        return bool(self._journals.records())
+
     def inspect_recovery(self) -> dict[str, object]:
-        """Report whether restore recovery state blocks further mutations."""
+        """Finish or undo an interrupted restore and report whether recovery still blocks mutations.
+
+        Recovery copies and renames files in the DayZ root, so it runs only under the
+        installation mutex with a proven stopped server (QF-027, QF-039). A refusal
+        writes nothing, keeps the journal for a later inspection, and names the reason.
+        """
         # Without journal records nothing can be blocking
         if not self._journals.records():
             return {"blocked": False, "diagnostics": []}
@@ -132,9 +147,21 @@ class RestoreService:
             settings = self._settings.load()
             if settings.dayz_root is None:
                 raise RestoreStorageError("PATH_INVALID", "DayZ root is not configured.")
-            return self._storage.inspect(
-                self._journals, Path(settings.dayz_root), self._recovery_root,
-            )
+            root = Path(settings.dayz_root)
+            # The guard refuses before the block runs; the state is read under the mutex
+            with InstallationGuard(self._lifecycle, self._mutex).stopped(root):
+                return self._storage.inspect(self._journals, root, self._recovery_root)
+        except LifecycleFailure as failure:
+            # A busy installation, or a server that is not proven stopped: recover later
+            return {
+                "blocked": True,
+                "reason": RECOVERY_NOT_STOPPED,
+                "diagnostics": [{
+                    "code": failure.code,
+                    "message": "Restore recovery needs a stopped server and the installation mutex.",
+                    "usable": False,
+                }],
+            }
         except (OSError, RecordUnavailable, RestoreStorageError) as error:
             # Fail closed when recovery state cannot be inspected safely
             return {

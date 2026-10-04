@@ -139,6 +139,9 @@ HARNESS = r"""
     assert(document.getElementById("mods-feedback").textContent.startsWith(
       "The mod update could not be confirmed. SteamCMD exited without a verifiable update result (exit code 7)."),
       "failed update guidance");
+    assert(!document.getElementById("mods-signin-form").hidden
+      && document.getElementById("mods-signin-change").getAttribute("aria-expanded") === "true",
+      "an unconfirmed update did not open the sign-in form");
     assert(document.getElementById("mods-feedback").textContent.includes("Workshop 111: Could not verify")
       && !/[A-Z]{2,}_[A-Z_]+/.test(document.getElementById("mods-feedback").textContent),
       "per-mod outcome without a raw code");
@@ -167,8 +170,10 @@ HARNESS = r"""
     window.ServerManMods.operationFinished({operation_id: "auth-one", kind: "AUTHENTICATE_STEAMCMD",
       state: "SUCCEEDED",
       result: {authenticated: true}});
-    assert(document.getElementById("mods-feedback").textContent
+    assert(document.getElementById("mods-signin-feedback").textContent
       === "Steam sign-in completed. Credentials remain owned by SteamCMD.", "auth terminal");
+    assert(!document.getElementById("mods-feedback").textContent.includes("Steam sign-in"),
+      "the sign-in result was written under the check header");
     document.body.replaceChildren(); document.body.style.background = "rgb(0, 255, 0)";
   } catch (error) {
     document.body.replaceChildren(); document.body.style.background = "rgb(255, 0, 0)";

@@ -1,4 +1,4 @@
-// Configuration context helpers: discard, focus, profile switch, and completion handling.
+// Configuration context helpers: discard, focus, and completion handling.
 "use strict";
 
 // Restore the editor to the last loaded configuration values.
@@ -10,14 +10,6 @@ function discardConfigurationChanges() {
 function focusConfigurationEditor() {
   const input = document.querySelector("[data-configuration-field]");
   if (input) input.focus();
-}
-
-// Switch the shared profile context while the editor stays on the loaded target.
-function requestProfile(profileId) {
-  // Keep the picker on the loaded profile until the new target loads.
-  const current = configurationState.loaded?.profile_id || profileId;
-  document.getElementById("configuration-profile").value = current;
-  window.ServerManProfileContext.select(profileId);
 }
 
 // Reload the configuration after a successful apply while the controls stay locked.

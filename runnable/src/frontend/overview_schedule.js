@@ -1,4 +1,4 @@
-// Daily lifecycle schedule controls for the overview workspace.
+// "Next scheduled action" card of the Overview: the daily schedule at a glance, its editor behind a disclosure.
 "use strict";
 
 // Create a UI element through the shared interface helper.
@@ -30,6 +30,14 @@ function scheduleChoice(text) {
   return { label, input };
 }
 
+// Name the scheduled action and its time in one line, or say that none is set.
+function scheduleSummaryText(schedule) {
+  const action = { stop: "Save & Stop", restart: "Save & Restart" }[schedule.action];
+  if (!action) return "No scheduled action";
+  const time = `${String(schedule.hour).padStart(2, "0")}:${String(schedule.minute).padStart(2, "0")}`;
+  return `${action} daily at ${time}`;
+}
+
 // Describe the next run and the result of the last run for the status line.
 function scheduleStatusText(schedule) {
   // Summarize the next scheduled run in local time.
@@ -39,22 +47,27 @@ function scheduleStatusText(schedule) {
   // Map the last host status to a short explanation.
   const last = {
     QUEUED: " Last run was queued.",
-    SKIPPED_NOT_RUNNING: " Last run was skipped because the server was not managed and running.",
+    SKIPPED_NOT_RUNNING: " Last run was skipped because this server was not running under the manager.",
     QUEUE_FAILED: " Last run could not be queued.",
     CLAIMED: " Last run is being prepared.",
   }[schedule.last_status] || "";
   return `${next}${last}`;
 }
 
-// Build the schedule row and wire its load, validation, and save behavior.
+// Build the schedule card and wire its load, validation, and save behavior.
 function createScheduleControl(profile) {
-  const row = scheduleNode("section", "server-schedule-row");
-  row.dataset.profileId = profile?.profile_id || "";
-  const copy = scheduleNode("div", "schedule-copy");
-  copy.append(
-    scheduleNode("strong", "", "Daily schedule"),
-    scheduleNode("small", "", "Runs at local time while DayZ-ServerMan is open."),
-  );
+  const card = scheduleNode("article", "panel overview-card schedule-card"); card.id = "overview-schedule";
+  card.dataset.profileId = profile?.profile_id || "";
+  const summary = scheduleNode("strong", "overview-card-lead schedule-summary", "Checking…");
+  // Announce the next run, the last run, and every problem politely.
+  const status = scheduleNode("small", "schedule-status", "Loading schedule…");
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  // Hour and minute are local time; the note says so also before a schedule exists (QF-031).
+  const note = scheduleNode("p", "overview-card-meta", "Runs at local time, only while DayZ-ServerMan is open.");
+  // The editor stays closed until the operator asks for it; a problem opens it.
+  const editor = scheduleNode("details", "schedule-editor");
+  const toggle = scheduleNode("summary", "", "Set schedule");
   // Offer hour and minute inputs for the daily run time.
   const fields = scheduleNode("div", "schedule-time");
   const hour = scheduleTimeField("Hour", 0, 23);
@@ -66,12 +79,9 @@ function createScheduleControl(profile) {
   const stop = scheduleChoice("Save & Stop");
   const restart = scheduleChoice("Save & Restart");
   choices.append(legend, stop.label, restart.label);
-  // Provide the save control and an announced status line.
   const save = scheduleNode("button", "button", "Save schedule");
   save.type = "button";
-  const status = scheduleNode("small", "schedule-status", "Loading schedule…");
-  status.setAttribute("role", "status");
-  status.setAttribute("aria-live", "polite");
+  editor.append(toggle, fields, choices, save);
   // Enable or disable every interactive control at once.
   const setDisabled = (disabled) => {
     [hour.input, minute.input, stop.input, restart.input, save]
@@ -84,12 +94,14 @@ function createScheduleControl(profile) {
   stop.input.addEventListener("change", () => selectOnly(stop.input, restart.input));
   restart.input.addEventListener("change", () => selectOnly(restart.input, stop.input));
   setDisabled(true);
-  row.append(copy, fields, choices, save, status);
+  card.append(scheduleNode("h2", "", "Next scheduled action"), summary, status, note, editor);
 
-  // Show a stored schedule in the row while it is still current.
+  // Show a stored schedule in the card while it is still current.
   const render = (schedule) => {
-    if (!row.isConnected || row.dataset.profileId !== schedule.profile_id) return;
-    // Mirror the stored schedule into the controls.
+    if (!card.isConnected || card.dataset.profileId !== schedule.profile_id) return;
+    // Mirror the stored schedule into the summary and the controls.
+    summary.textContent = scheduleSummaryText(schedule);
+    toggle.textContent = schedule.action ? "Change schedule" : "Set schedule";
     hour.input.value = String(schedule.hour);
     minute.input.value = String(schedule.minute).padStart(2, "0");
     stop.input.checked = schedule.action === "stop";
@@ -100,11 +112,13 @@ function createScheduleControl(profile) {
   // Load the stored schedule from the host service.
   const load = async () => {
     if (!profile) {
+      summary.textContent = "No scheduled action";
       status.textContent = "Create a server profile before setting a schedule.";
       return;
     }
     const result = await window.pywebview.api.get_lifecycle_schedule(profile.profile_id);
     if (!result.success) {
+      summary.textContent = "No scheduled action";
       status.textContent = "The schedule could not be loaded.";
       window.ServerManUi.renderHostError(result);
       return;
@@ -113,9 +127,10 @@ function createScheduleControl(profile) {
   };
   // Validate the entered time and save the chosen schedule action.
   save.addEventListener("click", async () => {
-    // Refuse invalid time values before saving.
+    // Refuse invalid time values before saving; the editor stays open with the problem.
     if (!hour.input.checkValidity() || !minute.input.checkValidity()) {
       status.textContent = "Enter an hour from 0–23 and a minute from 0–59.";
+      editor.open = true;
       hour.input.reportValidity();
       return;
     }
@@ -127,16 +142,17 @@ function createScheduleControl(profile) {
     );
     if (!result.success) {
       status.textContent = "The schedule could not be saved.";
+      editor.open = true;
       setDisabled(false);
       window.ServerManUi.renderHostError(result);
       return;
     }
     render(result.value);
   });
-  // Start loading the stored schedule as the row is created.
+  // Start loading the stored schedule as the card is created.
   load();
-  return row;
+  return card;
 }
 
-// Publish the schedule control factory for the overview workspace.
+// Publish the schedule card factory for the overview workspace.
 window.ServerManOverviewSchedule = Object.freeze({ create: createScheduleControl });

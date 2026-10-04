@@ -84,6 +84,8 @@ window.ServerManDiagnosticLabels = Object.freeze({
   roleKeys: () => Object.keys(pathRoleLabels),
   process: (code) => diagnosticLookup(processDiagnosticLabels, code, "The server state could not be confirmed."),
   modOutcome: modOutcomeText,
+  // Whether the outcome of one mod is a failed Steam sign-in, which the sign-in form can solve.
+  signInFailed: (entry) => entry?.outcome === "AUTHENTICATION_FAILED",
   restoreReason: (compatibility) => diagnosticLookup(backupRestoreReasons, compatibility,
     "This backup cannot be restored by this version."),
   restoreAction: (action) => diagnosticLookup(restoreActionLabels, action, "change"),

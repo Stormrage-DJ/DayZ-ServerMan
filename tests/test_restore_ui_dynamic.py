@@ -50,11 +50,20 @@ const previewCalls = [];
 const applyCalls = [];
 const eventCalls = [];
 const operationValues = new Map();
-// This isolated workspace harness supplies the shared selection boundary.
-window.ServerManProfileContext = { selectedId: () => null, select: () => { void loadBackupHistory(); } };
+let inspection = { blocked: false, diagnostics: [] };
+// This isolated workspace harness supplies the shared selection: the page has no selector of its own.
+let selected = "alpha";
+const catalog = [{ profile_id: "alpha", display_name: "Alpha" }, { profile_id: "bravo", display_name: "Bravo" }];
+window.ServerManProfileContext = { selectedId: () => selected };
+// A profile change in the sidebar reopens the page for the new selection, as the shell does.
+const choose = (profileId) => { selected = profileId; renderBackupWorkspace(catalog); };
+// The shell modules that the poll loop calls are not part of this page fixture.
+window.ServerManServerState = { refresh: async () => {} };
+window.ServerManUpdateStatus = { poll: async () => {}, open: async () => {} };
+window.ServerManNavigation = { setCurrent: () => {} };
 window.pywebview = { api: {
   list_backups: () => historyCalls.shift().promise,
-  inspect_restore_recovery: async () => ({ success: true, value: { blocked: false, diagnostics: [] } }),
+  inspect_restore_recovery: async () => ({ success: true, value: inspection }),
   preview_restore: () => previewCalls.shift().promise,
   apply_restore: () => applyCalls.shift().promise,
   read_operation_events: async () => eventCalls.shift(),
@@ -74,10 +83,7 @@ window.ServerManOperationBar = {
 (async () => {
   window.ServerManWorkspace.activate("backups");
   const alphaHistory = deferred(); historyCalls.push(alphaHistory);
-  renderBackupWorkspace([
-    { profile_id: "alpha", display_name: "Alpha" },
-    { profile_id: "bravo", display_name: "Bravo" },
-  ]);
+  renderBackupWorkspace(catalog);
   alphaHistory.resolve(history("alpha", 3)); await flush(); await flush();
   const actions = [...document.querySelectorAll("#backup-history .backup-restore-action")];
   check(actions.length === 3, "history did not limit visible archives to three");
@@ -106,9 +112,8 @@ window.ServerManOperationBar = {
   check(document.activeElement === buttons[1], "reverse Tab escaped restore modal");
   buttons[1].dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
   check(document.activeElement === buttons[0], "forward Tab escaped restore modal");
-  const profile = document.getElementById("backup-profile");
-  profile.value = "bravo"; profile.dispatchEvent(new Event("change"));
-  check(profile.value === "alpha", "profile changed behind restore modal");
+  check(!document.querySelector("#content-region select"), "the page still has a profile selector");
+  check(restoreState.preview.context.profile.profileId === "alpha", "the review is not bound to its profile");
   buttons[0].dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   check(!document.getElementById("restore-confirmation"), "Escape did not cancel restore modal");
   check(!document.querySelector("main").inert, "restore modal did not restore background");
@@ -117,10 +122,26 @@ window.ServerManOperationBar = {
   const staleApply = deferred(); applyCalls.push(staleApply);
   document.querySelectorAll("#restore-confirmation button")[1].click();
   const bravoHistory = deferred(); historyCalls.push(bravoHistory);
-  profile.value = "bravo"; profile.dispatchEvent(new Event("change"));
+  choose("bravo");
   staleApply.resolve({ success: true, value: { operation_id: "alpha-stale" } }); await flush();
   check(restoreState.pendingOperation === null, "late apply crossed alpha-to-bravo context");
   bravoHistory.resolve(history("bravo", 7)); await flush(); await flush();
+
+  // A profile change while the review is open closes the review; nothing pins the selection (D13).
+  const closingPreview = deferred(); previewCalls.push(closingPreview);
+  document.querySelector('[data-backup-id="bravo-one"]').click();
+  closingPreview.resolve(preview("bravo", "bravo-one", 7)); await flush();
+  check(restoreState.preview && !document.getElementById("restore-panel").hidden, "the review did not open");
+  const alphaAgain = deferred(); historyCalls.push(alphaAgain);
+  choose("alpha");
+  check(restoreState.preview === null && restoreState.backupId === null
+    && !document.getElementById("restore-panel"), "a profile change did not close the restore review");
+  alphaAgain.resolve(history("alpha", 3)); await flush(); await flush();
+  check(document.getElementById("restore-panel").hidden && backupState.history.profile_id === "alpha",
+    "the page did not follow the new selection with a closed review");
+  const bravoBack = deferred(); historyCalls.push(bravoBack);
+  choose("bravo");
+  bravoBack.resolve(history("bravo", 7)); await flush(); await flush();
 
   const bravoPreview = deferred(); previewCalls.push(bravoPreview);
   document.querySelector('[data-backup-id="bravo-one"]').click(); bravoPreview.resolve(preview("bravo", "bravo-one", 7)); await flush();
@@ -185,6 +206,25 @@ window.ServerManOperationBar = {
   check(backupState.pendingOperation === null, "backup-second event was not dispatched");
   check(document.getElementById("backup-operation").classList.contains("notice-recovery"),
     "backup recovery terminal state was not rendered");
+
+  // A recovery inspection that the guard refused names its reason; the notice says what to do (QF-039).
+  for (const [value, start] of [
+    [{ blocked: true, diagnostics: [],
+      reason: "Mutations are blocked by an interrupted backup restore while the server is not proven stopped." },
+    "A backup restore was interrupted and must be finished. This is possible only while the server is stopped"],
+    [{ blocked: true, diagnostics: [] }, "Recovery required. Changes are blocked until an unfinished restore"],
+    // A running operation holds the installation (QF-042): a neutral status, no claim of an interrupted restore.
+    [{ blocked: true, deferred: true, diagnostics: [] },
+      "Restore recovery is checked again when the running operation finishes."]]) {
+    inspection = value;
+    const reopened = deferred(); historyCalls.push(reopened);
+    choose(selected === "alpha" ? "bravo" : "alpha");
+    reopened.resolve(history(selected, selected === "alpha" ? 3 : 7)); await flush(); await flush(); await flush();
+    check(document.getElementById("restore-feedback").textContent.startsWith(start)
+      && !document.getElementById("restore-panel").hidden, `blocked inspection notice is wrong: ${start}`);
+    check((document.querySelector("#restore-feedback .notice").getAttribute("role") === "status") === !!value.deferred,
+      "a deferred check must be a status, an interrupted restore an alert");
+  }
   output.textContent = "PASS";
 })().catch((error) => { output.textContent = `FAIL: ${error.stack || error.message}`; });
 """
@@ -200,7 +240,8 @@ class RestoreUiDynamicTests(unittest.TestCase):
         # Concatenate the frontend modules that implement the scenario
         scripts = "\n".join(
             (FRONTEND / name).read_text(encoding="utf-8")
-            for name in ("operation_labels.js", "operation_messages.js", "diagnostic_labels.js", "workspace_context.js",
+            for name in ("operation_labels.js", "operation_messages.js", "diagnostic_labels.js", "host_sentences.js",
+                         "workspace_context.js",
                          "backup_display.js", "backups.js", "backup_history.js", "restore.js",
                          "sections.js", "app.js")
         )
@@ -219,7 +260,7 @@ class RestoreUiDynamicTests(unittest.TestCase):
             completed = subprocess.run(
                 [str(EDGE), "--headless=new", "--disable-gpu", "--no-first-run",
                  f"--user-data-dir={root / 'edge-data'}", "--dump-dom", page.as_uri()],
-                capture_output=True, text=True, timeout=20, check=False,
+                capture_output=True, text=True, encoding="utf-8", timeout=20, check=False,
             )
         # Keep both streams so browser errors surface in assertion messages
         evidence = completed.stdout + completed.stderr

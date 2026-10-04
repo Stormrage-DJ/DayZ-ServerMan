@@ -111,6 +111,10 @@ class LifecycleSnapshot:
     diagnostic_code: str | None = None
     readiness: ServerReadiness | None = None
     query_port: int | None = None
+    # Profile that this manager started the server with; None when stopped, external or not known
+    profile_id: str | None = None
+    # UTC time of that start, ISO-8601 with milliseconds; None when the profile is None
+    started_at: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Return the snapshot as its persisted object."""
@@ -120,6 +124,8 @@ class LifecycleSnapshot:
             "diagnostic_code": self.diagnostic_code,
             "readiness": self.readiness.value if self.readiness is not None else None,
             "query_port": self.query_port,
+            "profile_id": self.profile_id,
+            "started_at": self.started_at,
         }
 
 

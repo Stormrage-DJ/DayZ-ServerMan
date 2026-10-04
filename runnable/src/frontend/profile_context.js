@@ -1,4 +1,4 @@
-// Shared profile selection state for every workspace selector.
+// Shared profile selection state: the one selector in the sidebar and the selection that every page reads.
 "use strict";
 
 // Known profiles, the remembered selection, and per-profile safety flags.
@@ -6,11 +6,8 @@ const profileContextState = {
   profiles: [], selectedId: null, initialized: false, generation: 0,
   backupAfterStopProfiles: new Set(),
 };
-// Element identifiers of every profile selector in the shell.
-const profileSelectorIds = [
-  "global-profile", "overview-profile", "configuration-profile",
-  "backup-profile", "profile-workspace-selector",
-];
+// Element identifiers of every profile selector in the shell: the sidebar holds the only one.
+const profileSelectorIds = ["global-profile"];
 
 // Align every visible selector with the remembered profile when it is offered.
 function syncVisibleProfileSelectors() {
@@ -41,6 +38,14 @@ function renderGlobalProfileSelector() {
     option.selected = profile.profile_id === profileContextState.selectedId; select.append(option);
   });
   select.disabled = !profileContextState.profiles.length;
+  // The closed selector cuts a long name, so the full name is also the tooltip.
+  const chosen = profileContextState.profiles.find(
+    (profile) => profile.profile_id === profileContextState.selectedId,
+  );
+  if (chosen) select.title = chosen.display_name; else select.removeAttribute("title");
+  // Without a profile the sidebar offers the way to the first one.
+  const create = document.getElementById("sidebar-create-profile");
+  if (create) create.hidden = !profileContextState.initialized || profileContextState.profiles.length > 0;
   // Keep the remaining selectors in step with the same choice.
   syncVisibleProfileSelectors();
 }

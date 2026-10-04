@@ -1,4 +1,4 @@
-// Overview workspace: server state, lifecycle actions, and profile selection.
+// Overview workspace: notices, the server panel, and the cards for the profile selected in the sidebar.
 "use strict";
 
 // Tracks the last snapshot, profiles, server status, and pending lifecycle operation.
@@ -23,15 +23,6 @@ function selectedOverviewProfile() {
   ) || null;
 }
 
-// Build one metric card with a label, value, and detail line.
-function overviewMetric(label, value, detail) {
-  const card = overviewNode("article", "metric-card");
-  card.append(overviewNode("small", "", label));
-  card.append(overviewNode("strong", "metric-value", value));
-  card.append(overviewNode("p", "", detail));
-  return card;
-}
-
 // Build a notice panel with a title and message.
 function overviewNotice(title, message, kind = "warning") {
   const notice = overviewNode("section", `notice notice-${kind}`);
@@ -39,128 +30,105 @@ function overviewNotice(title, message, kind = "warning") {
   return notice;
 }
 
+// Build the buttons of a notice; each opens a section through the guarded section switch.
+function overviewNoticeActions(targets) {
+  const row = overviewNode("div", "action-row");
+  targets.forEach(([label, section]) => {
+    const button = overviewNode("button", "button", label); button.type = "button";
+    // The identifier lets a redraw give the focus back to the same button.
+    button.id = `overview-notice-${section}`;
+    button.addEventListener("click", () => setSection(section));
+    row.append(button);
+  });
+  return row;
+}
+
+// Collect what the server panel and the notice depend on: state, profile, setup, and a recovery block.
+function overviewContext() {
+  const settings = overviewState.snapshot.settings;
+  return {
+    status: overviewState.status,
+    profile: selectedOverviewProfile(),
+    configured: Boolean(settings.dayz_root && settings.dayz_executable),
+    blocked: Boolean(overviewState.snapshot.mutation_block),
+  };
+}
+
+// Build the one notice of the page, in the order recovery, setup, first profile, another profile running.
+function renderOverviewNotice(context) {
+  if (context.blocked) {
+    return overviewNotice("Recovery required",
+      window.ServerManOperationMessages.recoveryNotice(overviewState.snapshot.mutation_block,
+        overviewState.snapshot.mutation_block_owner), "recovery");
+  }
+  if (!context.configured) {
+    const notice = overviewNotice("Complete application setup",
+      "Configure the DayZ installation and executable in Settings before starting a server.");
+    notice.append(overviewNoticeActions([["Open Settings", "settings"]]));
+    return notice;
+  }
+  if (!context.profile) {
+    const notice = overviewNotice("Create a server profile",
+      "At least one profile is required before DayZ can be started.");
+    // Both ways to the first profile stay one press away.
+    notice.append(overviewNoticeActions([
+      ["Create profile", "profiles"], ["Restore profile from backup\u2026", "backups"],
+    ]));
+    return notice;
+  }
+  // A stop or restart acts with the selected profile, so the page says which profile runs.
+  const other = window.ServerManServerState.otherRunningProfile();
+  if (!other) return null;
+  const notice = overviewNotice(`The running server was started with ${other.display_name}`,
+    `Select ${other.display_name} in the sidebar before you stop or restart it.`);
+  notice.lastElementChild.id = "overview-running-notice";
+  return notice;
+}
+
+// Give the focus back to the control that held it before a redraw; a control that is now off leaves it on
+// the panel heading, so the focus stays in the panel (QF-032).
+function restoreOverviewFocus(focusedId) {
+  if (!focusedId) return;
+  const control = document.getElementById(focusedId);
+  const target = control && !control.disabled ? control : document.getElementById("overview-server-title");
+  target?.focus({ preventScroll: true });
+}
+
+// Draw the notice and the server panel; the cards below them keep their state.
+function renderOverviewTop() {
+  const top = document.getElementById("overview-top");
+  if (!top) return;
+  const context = overviewContext();
+  // Keep the process details open and the focus where it was across a redraw that the operator did not ask for.
+  const open = document.getElementById("overview-process")?.open === true;
+  const active = document.activeElement;
+  const focusedId = active && top.contains(active) ? active.id : "";
+  const notice = renderOverviewNotice(context);
+  top.replaceChildren(...(notice ? [notice] : []));
+  top.append(window.ServerManOverviewServer.render(context));
+  document.getElementById("overview-process").open = open;
+  restoreOverviewFocus(focusedId);
+}
+
 // Build the overview workspace for the selected profile and server state.
 function renderOverview() {
   const region = document.getElementById("content-region");
-  region.textContent = "";
-  const [stateLabel, stateClass, stateDetail] = window.ServerManOverviewReadiness.presentation(
-    overviewState.status,
-  );
   const profile = selectedOverviewProfile();
-  const settings = overviewState.snapshot.settings;
-  const configured = Boolean(settings.dayz_root && settings.dayz_executable);
-
-  // Build the profile selection bar first so the choice stays visible.
-  const selection = overviewNode("section", "panel overview-profile-bar");
-  const selectionCopy = overviewNode("div", "overview-profile-copy");
-  selectionCopy.append(overviewNode("strong", "", "Server profile"));
-  selectionCopy.append(overviewNode("small", "", "Select the server this workspace controls."));
-  const profileLabel = overviewNode("label", "overview-profile-select");
-  profileLabel.append(overviewNode("span", "sr-only", "Server profile"));
-  const selector = document.createElement("select");
-  selector.id = "overview-profile";
-  // Offer an explicit unavailable choice when no profiles exist.
-  if (!overviewState.profiles.length) {
-    const option = overviewNode("option", "", "No profiles available");
-    option.value = ""; selector.append(option);
-  }
-  overviewState.profiles.forEach((item) => {
-    const option = overviewNode("option", "", item.display_name);
-    option.value = item.profile_id;
-    option.selected = item.profile_id === overviewState.selectedProfileId;
-    selector.append(option);
-  });
-  selector.disabled = !overviewState.profiles.length;
-  selector.addEventListener("change", () => window.ServerManProfileContext.select(selector.value));
-  profileLabel.append(selector); selection.append(selectionCopy, profileLabel); region.append(selection);
-
-  // Surface recovery, setup, or profile blockers above the live state.
-  if (overviewState.snapshot.mutation_block) {
-    region.append(overviewNotice(
-      "Recovery required",
-      window.ServerManOperationMessages.recoveryNotice(overviewState.snapshot.mutation_block), "recovery",
-    ));
-  } else if (!configured) {
-    region.append(overviewNotice(
-      "Complete application setup",
-      "Configure the DayZ installation and executable in Settings before starting a server.",
-    ));
-  } else if (!profile) {
-    region.append(overviewNotice(
-      "Create a server profile",
-      "At least one profile is required before DayZ can be started.",
-    ));
-  }
-
-  const panel = overviewNode("section", "panel overview-panel");
-  const heading = overviewNode("div", "panel-heading");
-  const headingCopy = overviewNode("div");
-  headingCopy.append(overviewNode("span", "section-label", "Live state"));
-  headingCopy.append(overviewNode("h2", "", "Server at a glance"));
-  heading.append(headingCopy, overviewNode("span", `status-label ${stateClass}`, stateLabel));
-  panel.append(heading);
-  const metrics = overviewNode("div", "metric-grid");
-  metrics.append(
-    overviewMetric("Server state", stateLabel, stateDetail),
-    overviewMetric(
-      "Managed process",
-      overviewState.status.process_id ? `PID ${overviewState.status.process_id}` : "None",
-      window.ServerManOverviewReadiness.processDetail(overviewState.status),
-    ),
-    overviewMetric(
-      "Recent operations",
-      String(overviewState.snapshot.operations.length),
-      "Manager operations retained in the current history.",
-    ),
-  );
-  panel.append(metrics);
-
-  const controls = overviewNode("section", "panel overview-controls");
-  const controlsHeading = overviewNode("div", "panel-heading");
-  controlsHeading.append(overviewNode("h2", "", "Server control"));
-  controls.append(controlsHeading);
-
-  // Build the lifecycle controls and gate each action on the proven state.
-  const actions = overviewNode("div", "action-row");
-  const blocked = Boolean(overviewState.snapshot.mutation_block);
-  const start = overviewAction("Start server", "start", "button button-primary");
-  const stop = overviewAction("Save & Stop", "stop", "button");
-  const restart = overviewAction("Save & Restart", "restart", "button");
-  const backupChoice = window.ServerManOverviewBackup.choice(profile);
-  start.disabled = blocked || !configured || !profile || overviewState.status.state !== "STOPPED";
-  stop.disabled = blocked || overviewState.status.state !== "RUNNING_MANAGED";
-  restart.disabled = blocked || !profile || overviewState.status.state !== "RUNNING_MANAGED";
-  actions.append(backupChoice, start, stop, restart);
-  controls.append(actions, window.ServerManOverviewSchedule.create(profile));
-
-  const details = overviewNode("section", "panel");
-  details.append(overviewNode("h2", "", "Active locations"));
-  const list = overviewNode("dl", "detail-list");
-  [
-    ["DayZ installation", settings.dayz_root || "Not configured"],
-    ["DayZ executable", settings.dayz_executable || "Not configured"],
-    ["Backup destination", settings.custom_backup_root || overviewState.snapshot.portable_backup_root],
-  ].forEach(([term, description]) => {
-    list.append(overviewNode("dt", "", term), overviewNode("dd", "", description));
-  });
-  // Finish with the active locations and release the busy state.
-  details.append(list);
-  region.append(panel, controls, details);
+  const top = overviewNode("div", "overview-top"); top.id = "overview-top";
+  // Three cards follow the server panel: updates, the newest backup, and the daily schedule.
+  const cards = overviewNode("div", "overview-cards");
+  cards.append(window.ServerManOverviewCards.updates(), window.ServerManOverviewCards.backup(profile),
+    window.ServerManOverviewSchedule.create(profile));
+  region.replaceChildren(top, cards);
+  renderOverviewTop();
   region.setAttribute("aria-busy", "false");
-}
-
-// Build one lifecycle button wired to the shared confirmation.
-function overviewAction(label, action, className) {
-  const button = overviewNode("button", className, label);
-  button.type = "button";
-  button.addEventListener("click", () => confirmLifecycleAction(action));
-  // A lifecycle action submits an operation, so it is locked while another one runs or waits.
-  return window.ServerManBusy?.mark(button) || button;
 }
 
 // Confirm and submit the requested lifecycle action for the selected profile.
 async function confirmLifecycleAction(action) {
   const profile = selectedOverviewProfile();
+  // The lock is checked again at the press: the running profile may have changed since the page was drawn.
+  if (action !== "start" && window.ServerManServerState.lockReason()) return;
   const backupAfterStop = window.ServerManOverviewBackup.enabled(profile);
   // Stop when the confirmation dialog is declined.
   if (!await window.ServerManLifecycleDialog.confirm(action, backupAfterStop)) return;
@@ -192,6 +160,8 @@ async function confirmLifecycleAction(action) {
 async function openOverview(snapshot = null) {
   const generation = ++overviewState.generation;
   const workspace = window.ServerManWorkspace.capture("overview");
+  // While this load runs, a state change event must not redraw the page from the earlier data.
+  overviewState.status = null;
   window.ServerManUi.renderLoading("Loading server state", "Reconciling DayZ and manager state.");
   try {
     // Load the snapshot, profiles, and server status together.
@@ -199,7 +169,8 @@ async function openOverview(snapshot = null) {
       snapshot ? Promise.resolve({ success: true, value: snapshot })
         : window.pywebview.api.get_application_snapshot(),
       window.pywebview.api.list_profiles(),
-      window.pywebview.api.get_server_status(),
+      // The one read of this page goes through the shared state, so the sidebar sees it too.
+      window.ServerManServerState.read(),
     ]);
     // Ignore the batch when the workspace or generation moved on.
     if (generation !== overviewState.generation
@@ -220,9 +191,15 @@ async function openOverview(snapshot = null) {
   }
 }
 
-// React to tracked lifecycle and scheduled server operations.
+// React to tracked lifecycle and scheduled server operations, and to a finished backup.
 function overviewOperationFinished(operation) {
   const tracked = operation.operation_id === overviewState.pendingOperationId;
+  // A backup that ended elsewhere changes only the "Last backup" card; the event is not consumed here.
+  if (!tracked && operation.kind === "CREATE_BACKUP"
+      && !["QUEUED", "RUNNING", "CANCELLING"].includes(operation.state)) {
+    void window.ServerManOverviewCards.reloadBackup(selectedOverviewProfile());
+    return false;
+  }
   const scheduledLifecycle = ["STOP_SERVER", "RESTART_SERVER"].includes(operation.kind);
   if (!tracked && !scheduledLifecycle) return false;
   const terminal = !["QUEUED", "RUNNING", "CANCELLING"].includes(operation.state);
@@ -239,4 +216,6 @@ window.ServerManOverview = Object.freeze({
   open: openOverview,
   operationFinished: overviewOperationFinished,
   track: (operationId) => { overviewState.pendingOperationId = operationId; },
+  // A changed server state redraws the notice and the server panel only.
+  refreshServer: renderOverviewTop,
 });

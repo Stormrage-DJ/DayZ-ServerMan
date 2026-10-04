@@ -86,8 +86,11 @@ class BridgeFacade:
             return BridgeResult.failed(request_id, error.code, error.safe_message).to_dict()
         except ApplicationCallError as error:
             # Application failures map to their declared code and retryable flag
+            owner = (error.details or {}).get("owner")
             self._log("bridge.failure", request_id, {
                 "method": method, "error_code": error.code.value, "message": error.safe_message,
+                # Additive: the owner of a refusing block, so Manager activity names the same way out as the page
+                **({"owner": owner} if owner else {}),
             }, "WARNING")
             return BridgeResult.failed(
                 request_id,

@@ -49,6 +49,15 @@ class ScheduleDispatcher:
                 ScheduleStatus.SKIPPED_NOT_RUNNING,
                 server_state=status.state,
             )
+        # A schedule belongs to one profile: while the server runs with another profile, this
+        # profile's server is not running, so the run is skipped. A server whose profile is not
+        # known (started in another manager session) keeps the earlier behaviour.
+        running = getattr(status, "profile_id", None)
+        if running is not None and running != schedule.profile_id:
+            return ScheduleDispatchResult(
+                ScheduleStatus.SKIPPED_NOT_RUNNING,
+                server_state=status.state,
+            )
         # Resolve current revisions so a stale claim cannot act
         profile = self._profiles.read(schedule.profile_id)
         settings = self._settings.load()

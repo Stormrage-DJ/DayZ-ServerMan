@@ -100,7 +100,8 @@ function captureModRowsSignature() {
 
 // Word the count beside the panel heading.
 function modsCountText() {
-  return `${modsState.inventory.length} · ${selectedProfile()?.display_name || "No server selected"}`;
+  const count = modsState.inventory.length;
+  return `${count} ${count === 1 ? "mod" : "mods"}`;
 }
 
 // Build the configured-mod panel for the selected profile: heading, check header, and table.
@@ -112,9 +113,11 @@ function renderModInventory() {
   // Show the update check state and the file verification only for a selected profile.
   // The header order is: Check now, Verify files, the start action, Update all.
   if (selectedProfile()) panel.append(window.ServerManModsActions.attach(window.ServerManModsVerify.attach(
-    window.ServerManUpdateStatus.renderHeader(modsState.inventory))));
+    window.ServerManUpdateHeader.render(modsState.inventory))));
+  // Results of update, verify, and apply are shown beside the actions that start them.
+  const feedback = modsNode("div", "mods-feedback"); feedback.id = "mods-feedback";
   const body = modsNode("div", "mods-inventory-body");
-  body.append(renderModRows()); panel.append(body);
+  body.append(renderModRows()); panel.append(feedback, body);
   modsRowsSignature = captureModRowsSignature();
   return panel;
 }
@@ -127,7 +130,7 @@ function updateModInventory() {
   // Refresh the count and the check header without replacing their elements.
   const count = panel.querySelector(".mods-count");
   if (count.textContent !== modsCountText()) count.textContent = modsCountText();
-  window.ServerManUpdateStatus.refreshHeader(modsState.inventory);
+  window.ServerManUpdateHeader.refresh(modsState.inventory);
   window.ServerManModsVerify.sync();
   // Replace the table only when a visible value changed, and keep its sideways scroll.
   const signature = captureModRowsSignature();

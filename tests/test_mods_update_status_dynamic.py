@@ -55,7 +55,7 @@ HARNESS = r"""
   const text = (id) => document.getElementById(id).textContent;
   // Land a new host state and run one shell poll after the idle interval.
   const land = async (next, rows) => { host.status = next; if (rows) host.rows = rows;
-    updateStatusState.readAt -= 6000; await window.ServerManUpdateStatus.poll(); await wait(20); };
+    updateStatusState.readAt -= 6000; await window.ServerManUpdateStatus.poll(true); await wait(20); };
   try {
     shellState.hostReady = true;
     commitSection("mods");
@@ -70,7 +70,8 @@ HARNESS = r"""
     assert(document.getElementById("check-updates-now").disabled, "check now locked while checking");
     assert(document.querySelector("#mods-update-header [role=status]"), "polite status region");
 
-    // The operator types an account name while the check lands.
+    // The operator opens the sign-in form and types an account name while the check lands.
+    document.getElementById("mods-signin-change").click();
     const account = document.getElementById("steam-account-name");
     account.value = "typed-name"; account.focus();
     const header = document.getElementById("mods-update-header");
@@ -118,7 +119,7 @@ HARNESS = r"""
 
     // Polling: no read inside the idle interval, no redraw without a change.
     const statusReads = host.statusReads.length;
-    await window.ServerManUpdateStatus.poll();
+    await window.ServerManUpdateStatus.poll(true);
     assert(host.statusReads.length === statusReads, "status read at most every five seconds");
     const body = document.querySelector(".mods-table tbody");
     const idleReads = host.inventoryReads;

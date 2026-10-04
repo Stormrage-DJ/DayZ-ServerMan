@@ -21,6 +21,10 @@ const modReviewTexts = Object.freeze({
   changed: "The server state changed. The mods are downloaded; nothing was applied.",
   short: "No mod folder is copied. Missing key files are added.",
   cancelled: "Apply review cancelled. Downloaded content was not copied to the server.",
+  title: "Apply downloaded mods and keys?",
+  lead: "Review the server folders that will be updated. Changes use verified rollback protection.",
+  notAppliedTitle: "Mods were not applied",
+  notAppliedLead: "The reviewed plan was not applied:",
   keepsRunning: " The server keeps running.",
 });
 
@@ -48,18 +52,26 @@ function reviewStateSentence(state) {
   return known ? modReviewServerStates[state] : MOD_REVIEW_STATE_UNCONFIRMED;
 }
 
+// Report whether "Update & restart" is offered: the manager runs the server with the selected profile.
+function restartOffered(state) {
+  return state === "RUNNING_MANAGED" && !window.ServerManServerState.lockReason();
+}
+
 // Word the plain apply to a server that is not stopped: the state as it was read, the risk, and the advice.
 function unstoppedApplySentence(state) {
   // Only a server that this manager runs can use the restart action.
   return `${reviewStateSentence(state)}${modReviewTexts.inUse}`
-    + (state === "RUNNING_MANAGED" ? modReviewTexts.useRestart : modReviewTexts.whenStopped);
+    + (restartOffered(state) ? modReviewTexts.useRestart : modReviewTexts.whenStopped);
 }
 
 // Word the refusal of a writing apply while the server is not proven stopped: state, refusal, and true advice.
 function refusedApplySentence(state) {
   const known = typeof state === "string" && Object.hasOwn(modReviewRefusedAdvice, state);
+  // While another profile runs, the restart is not offered, so the advice is to stop the server first.
+  const advice = state === "RUNNING_MANAGED" && !restartOffered(state)
+    ? modReviewRefusedAdvice.RUNNING_EXTERNAL : modReviewRefusedAdvice[state];
   return `${reviewStateSentence(state)}${modReviewTexts.refused}`
-    + (known ? modReviewRefusedAdvice[state] : MOD_REVIEW_REFUSED_UNCONFIRMED);
+    + (known ? advice : MOD_REVIEW_REFUSED_UNCONFIRMED);
 }
 
 // Report whether the reviewed plan would write into the server folder.
@@ -70,7 +82,7 @@ function publicationPlanWrites(preview) {
 // Choose the row of the review: its sentence and what the confirm button submits (null: only "Close").
 function publicationVariant(start, state, preview, backup) {
   if (start && state === "STOPPED") return { key: "start", sentence: modReviewTexts.start, submit: "publish" };
-  if (start && state === "RUNNING_MANAGED") {
+  if (start && restartOffered(state)) {
     return { key: backup ? "restart-backup" : "restart", submit: "restart",
       sentence: backup ? modReviewTexts.restartBackup : modReviewTexts.restart };
   }
@@ -177,11 +189,12 @@ function showModPublicationReview(review, options = {}) {
   dialog.setAttribute("aria-labelledby", "mod-publication-title");
   dialog.returnFocus = document.activeElement;
   dialog.frozen = review; dialog.variant = variant; dialog.options = options;
-  const title = modsNode("h2", "", "Apply downloaded mods and keys?");
+  // A row that offers no action asks no question: it says what happened, then shows the plan.
+  const title = modsNode("h2", "", variant.submit ? modReviewTexts.title : modReviewTexts.notAppliedTitle);
   title.id = "mod-publication-title";
-  dialog.append(title, modsNode("p", "",
-    "Review the server folders that will be updated. Changes use verified rollback protection."));
-  dialog.append(modsNode("p", "mod-publication-variant", variant.sentence));
+  const sentence = modsNode("p", "mod-publication-variant", variant.sentence);
+  if (variant.submit) dialog.append(title, modsNode("p", "", modReviewTexts.lead), sentence);
+  else dialog.append(title, sentence, modsNode("p", "", modReviewTexts.notAppliedLead));
   // Describe the update targets and the verified key files, or say that no folder is copied.
   const list = modsNode("ul", "restore-targets");
   if (options.short) list.append(modsNode("li", "", modReviewTexts.short));

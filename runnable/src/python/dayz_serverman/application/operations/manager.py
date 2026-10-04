@@ -26,6 +26,7 @@ from .models import (
     utc_now,
 )
 from .publication import OperationPublication
+from .recovery_blocks import RecoveryBlockAccess, RecoveryBlocks
 from .store import OperationStore
 from ...observability.structured_log import StructuredLogger, current_correlation_id
 
@@ -34,7 +35,7 @@ from ...observability.structured_log import StructuredLogger, current_correlatio
 OperationWork = Callable[["OperationContext"], Mapping[str, Any] | None]
 
 
-class OperationManager:
+class OperationManager(RecoveryBlockAccess):
     """Serialize exclusive mutations through one bounded FIFO worker lane."""
     def __init__(
         self,
@@ -66,9 +67,9 @@ class OperationManager:
         self._accepting = True
         self._stopping = False
         self._active: PendingOperation | None = None
-        self._recovery_block: str | None = None
         self._worker: threading.Thread | None = None
         self._log = OperationLog(logger)
+        self._recovery_blocks = RecoveryBlocks(self._condition, self._log)
         # Progress, evidence, detail and transitions are published in one place
         self._publication = OperationPublication(
             store, self._event_history, self._log, self._session_id,
@@ -95,8 +96,9 @@ class OperationManager:
         """
         with self._condition:
             # Refuse new work while recovery or shutdown blocks the lane
-            if self._recovery_block is not None:
-                raise QueueUnavailable(self._recovery_block, RECOVERY_BLOCK)
+            reason, owner = self._recovery_blocks.latest()
+            if reason is not None:
+                raise QueueUnavailable(reason, RECOVERY_BLOCK, owner)
             if not self._accepting:
                 raise QueueUnavailable("operation lane is draining", SHUTTING_DOWN)
             if len(self._queue) >= self._queue_limit:
@@ -123,22 +125,6 @@ class OperationManager:
             self._queue.append(pending)
             self._condition.notify()
             return record.snapshot()
-
-    def block_for_recovery(self, message: str) -> None:
-        """Block the lane and refuse new submissions until recovery completes."""
-        with self._condition:
-            self._recovery_block = message
-        # Record every block reason, so Manager diagnostics explains why changes are refused
-        self._log.emit("operation_lane.recovery_block", fields={"reason": message}, level="ERROR")
-    def clear_recovery_block(self) -> None:
-        """Allow the lane to accept work again after recovery."""
-        with self._condition:
-            self._recovery_block = None
-    @property
-    def recovery_block(self) -> str | None:
-        """Return the current recovery block message, if any."""
-        with self._condition:
-            return self._recovery_block
 
     def get(self, operation_id: str) -> OperationRecord:
         """Return a snapshot of the record for the given operation identifier."""

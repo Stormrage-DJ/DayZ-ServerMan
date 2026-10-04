@@ -71,6 +71,8 @@ class ApplicationCoordinator:
         # Collect settings and path diagnostics for the snapshot
         settings = self._settings.load()
         diagnostics = self._settings.diagnostics(settings)
+        # The shown block's reason and owner are read together, so they always belong to one block
+        block, block_owner = self._operations.recovery_block_pair()
         return {
             "settings": self._settings_value(settings),
             "portable_backup_root": str(self._settings.portable_backup_root()),
@@ -87,7 +89,9 @@ class ApplicationCoordinator:
             "operations": [self._operation_value(record) for record in self._operations.list_recent()],
             "operation_session_id": self._operations.session_id,
             "shutdown_state": self._shutdown.snapshot().state.value,
-            "mutation_block": self._operations.recovery_block,
+            "mutation_block": block,
+            # Additive: the operation kind that owns the block, so the notice names the way out
+            "mutation_block_owner": block_owner,
         }
 
     def get_operation(self, parameters: Mapping[str, Any]) -> dict[str, Any]:

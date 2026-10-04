@@ -42,8 +42,10 @@ await push(busyOperation);
 locked(button("Start server"), "Start server");
 locked(button("Save & Stop"), "Save & Stop");
 locked(button("Save & Restart"), "Save & Restart");
-check(button("Save & Stop").disabled && !button("Save & Stop").title, "a natively disabled control lost its own state");
-free(document.getElementById("overview-profile"), "profile selector");
+check(button("Save & Stop").disabled && button("Save & Stop").title === "The server is not running.",
+  "a natively disabled control lost its own state or its own reason");
+free(document.getElementById("global-profile"), "profile selector");
+check(!document.querySelector("#content-region select"), "Overview still has a profile selector");
 free(button("Save schedule"), "Save schedule");
 free(document.querySelector(".nav-item"), "navigation");
 check(document.getElementById("busy-reason").textContent === REASON, "reason text");
@@ -160,7 +162,8 @@ dialog.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}
 check(!document.getElementById("backup-confirmation"), "Escape did not close the confirmation while busy");
 free(document.querySelector(".backup-restore-action"), "restore review icon");
 free(button("Restore profile from backup…"), "ZIP browse");
-free(document.getElementById("backup-profile"), "profile selector");
+free(document.getElementById("global-profile"), "profile selector");
+check(!document.querySelector("#content-region select"), "Backups still has a profile selector");
 create().click(); await wait(10);
 check(!document.getElementById("backup-confirmation"), "a locked Create backup opened its confirmation");
 await push(idleOperation); await wait(30);

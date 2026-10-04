@@ -1,4 +1,4 @@
-// Mods workspace: Steam access settings, the mod inventory, and the requests that queue mod operations.
+// Mods workspace: the Steam sign-in panel, the mod inventory, and the requests that queue mod operations.
 "use strict";
 
 // Tracks the loaded profiles, inventory, settings, and pending workshop operation.
@@ -27,9 +27,10 @@ function modsNode(tag, className, text) {
   return node;
 }
 
-// Replace the feedback area with a status or alert notice.
-function modsFeedback(message, error = false) {
-  const region = document.getElementById("mods-feedback");
+// Replace a feedback area with a status or alert notice: update, verify, and apply results go under the
+// check header, sign-in results into the sign-in panel.
+function modsFeedback(message, error = false, regionId = "mods-feedback") {
+  const region = document.getElementById(regionId);
   if (!region) return;
   const notice = modsNode("div", `notice ${error ? "notice-error" : ""}`.trim(), message);
   notice.setAttribute("role", error ? "alert" : "status");
@@ -55,58 +56,12 @@ function selectedProfile() {
   return modsState.profiles.find((profile) => profile.profile_id === selectedId) || null;
 }
 
-// Build the Steam access panel and the configured-mod inventory.
+// Build the sign-in panel and the configured-mod inventory.
 function renderMods() {
-  const settings = modsState.settings;
-  const panel = modsNode("section", "panel mods-panel");
-  const heading = modsNode("div", "panel-heading");
-  heading.append(modsNode("h2", "", "Steam access"), modsNode("span", "mods-selected-server",
-    selectedProfile()?.display_name || "No server selected"));
-  panel.append(heading);
-
-  const form = modsNode("div", "mods-access-row");
-  const modeLabel = modsNode("label", "mods-field");
-  modeLabel.append(modsNode("span", "mods-field-label", "Sign-in"));
-  const mode = modsNode("select"); mode.id = "steam-auth-mode";
-  // Offer the saved sign-in modes with the current one selected.
-  [["", "Choose mode"], ["ACCOUNT", "Steam account"], ["ANONYMOUS", "Anonymous"]]
-    .forEach(([value, label]) => { const option = modsNode("option", "", label); option.value = value;
-      option.selected = settings.steam_authentication_mode === value; mode.append(option); });
-  modeLabel.append(mode);
-  const accountLabel = modsNode("label", "mods-field");
-  accountLabel.append(modsNode("span", "mods-field-label", "Steam account name"));
-  const account = modsNode("input"); account.id = "steam-account-name"; account.type = "text";
-  account.autocomplete = "off"; account.maxLength = 64; account.value = settings.steam_account_name || "";
-  accountLabel.append(account);
-  form.append(modeLabel, accountLabel);
-
-  // Explain where Steam credentials are entered and who owns them.
-  const safety = modsNode("div", "notice notice-warning"); safety.setAttribute("role", "status");
-  safety.append(modsNode("strong", "", "Credential safety"), modsNode("p", "",
-    "Enter passwords and Steam Guard codes only in the visible SteamCMD window. DayZ-ServerMan never asks for them."));
-  const actions = modsNode("div", "mods-actions");
-  const authenticationActions = modsNode("div", "mods-action-group");
-  // Wire the sign-in and login actions; each submits an operation and is locked while one runs.
-  // The update actions are in the check header of "Configured mods".
-  [["save-steam-settings", "Save sign-in settings"],
-    ["authenticate-steamcmd", "Open SteamCMD login"]].forEach(([id, label]) => {
-      const button = modsNode("button", "button", label);
-      button.id = id; button.type = "button"; authenticationActions.append(window.ServerManBusy.mark(button));
-    });
-  actions.append(authenticationActions);
-  panel.append(form, safety, actions, modsNode("div", "", ""));
-  panel.lastChild.id = "mods-feedback";
-  // Replace the workspace with the rebuilt panel and inventory.
-  document.getElementById("content-region").replaceChildren(panel, renderModInventory());
-  mode.addEventListener("change", () => {
-    // Clear the saved account name when anonymous sign-in is chosen.
-    if (mode.value === "ANONYMOUS") account.value = "";
-    setModsBusy(modsState.busy);
-  });
+  // Replace the workspace with the rebuilt panels; the update actions are in the check header.
+  document.getElementById("content-region").replaceChildren(
+    window.ServerManModsSignin.render(modsState.settings), renderModInventory());
   setModsBusy(Boolean(modsState.pending));
-  document.getElementById("save-steam-settings").addEventListener("click", saveSteamSettings);
-  document.getElementById("authenticate-steamcmd").addEventListener("click", authenticateSteamCmd);
-  if (modsState.pending) setModsBusy(true);
 }
 
 // Open the mods workspace with a fresh snapshot, profiles, and inventory.
@@ -170,7 +125,7 @@ async function saveSteamSettings() {
     modsState.settings.revision, mode, account,
   );
   if (!isModsContextActive(context)) return;
-  acceptModsOperation(result, "Saving Steam authentication settings");
+  acceptModsOperation(result, "Saving Steam authentication settings", true);
 }
 
 // Open the visible SteamCMD login window through the shared operation flow.
@@ -178,7 +133,7 @@ async function authenticateSteamCmd() {
   const context = captureModsContext();
   const result = await window.pywebview.api.authenticate_steamcmd(modsState.settings.revision);
   if (!isModsContextActive(context)) return;
-  acceptModsOperation(result, "Opening visible SteamCMD authentication");
+  acceptModsOperation(result, "Opening visible SteamCMD authentication", true);
 }
 
 // Redraw the inventory panel whenever the update state of the selected profile changes.
