@@ -211,7 +211,7 @@ class ApplicationCoordinator:
             raise ApplicationCallError(
                 ErrorCode.MUTATION_CONFLICT,
                 str(error),
-                retryable=True,
+                retryable=True, details=error.details,
             ) from error
         return {"operation_id": operation.operation_id, "state": operation.state.value}
 

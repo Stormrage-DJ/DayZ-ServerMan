@@ -88,7 +88,8 @@ class DirectRestoreUiTests(unittest.TestCase):
     def test_empty_catalog_review_confirmation_and_selection(self):
         """Verify independent access, stale edit guards and selected profile after commit."""
         scripts = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in
-            ("workspace_context.js", "transition_guard.js", "profile_context.js", "backup_display.js", "backups.js", "backup_history.js", "profile_restore.js"))
+            ("operation_labels.js", "operation_messages.js", "diagnostic_labels.js", "workspace_context.js", "transition_guard.js",
+             "profile_context.js", "backup_display.js", "backups.js", "backup_history.js", "profile_restore.js"))
         page = '<!doctype html><html><body><select id="global-profile"></select><div id="content-region"></div><pre id="result">PENDING</pre><script>' + scripts + HARNESS + '</script></body></html>'
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

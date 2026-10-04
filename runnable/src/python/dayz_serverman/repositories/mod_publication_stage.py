@@ -27,7 +27,9 @@ from .backup_verification import is_reparse
 from .mod_publication_inventory import PublicationInventoryError, inventory_tree
 from .mod_publication_journal import PublicationJournalRepository
 from .mod_publication_recovery import PublicationRecovery
-from .mod_publication_staging import StagingError, stage_keys_group, stage_mod_group
+from .mod_publication_staging import (
+    StagingError, measured_fingerprint, stage_keys_group, stage_mod_group,
+)
 
 
 class PublicationStorageError(RuntimeError):
@@ -56,9 +58,17 @@ class ModPublicationStorage:
         # Default observers keep checkpoint reporting optional
         self._fault = fault_hook or (lambda _phase, _index: None)
         self._checkpoint = checkpoint or (lambda _phase, _index: None)
+        # Fingerprint of each copied target, measured directly before its post-commit hash
+        self.hashed_fingerprints: dict[str, str | None] = {}
 
-    def stage(self, intent: PublicationIntent, dayz_root: Path) -> PublicationJournal:
-        """Validate an intent and stage every group beside its live target."""
+    def stage(
+        self, intent: PublicationIntent, dayz_root: Path, *, writes_allowed: bool = True,
+    ) -> PublicationJournal:
+        """Validate an intent and stage every group beside its live target.
+
+        With `writes_allowed` false the run is read-only in the DayZ root: a
+        group that needs a copy ends the staging as PUBLICATION_PREVIEW_STALE.
+        """
         validate_intent(intent)
         # An unsigned intent cannot be tied to a preview
         if not intent.fingerprint:
@@ -72,6 +82,9 @@ class ModPublicationStorage:
             # Stage each managed mod directory beside its live target
             for source in intent.managed_sources:
                 target = self._prepare_target(intent, root, source.target_relative, len(groups))
+                # A run without the write guard must not stage a copy
+                if not writes_allowed and not source.target_current:
+                    raise StagingError("PUBLICATION_PREVIEW_STALE: managed target needs a copy")
                 groups.append(stage_mod_group(
                     operation=intent.publication_id, ordinal=len(groups),
                     relative=source.target_relative, source=Path(source.source_path),
@@ -87,6 +100,7 @@ class ModPublicationStorage:
                 groups.append(stage_keys_group(
                     intent=intent, ordinal=len(groups), target=target,
                     checkpoint=self._checkpoint, fault=self._fault,
+                    writes_allowed=writes_allowed,
                 ))
             # Assemble the prepared journal with its publication fingerprint
             journal = PublicationJournal(
@@ -165,17 +179,19 @@ class ModPublicationStorage:
             journal.committed = True
             repository.save(journal)
             self._fault("AFTER_COMMITTED_SAVE", -1)
-            # Re-verify all changed targets after the commit marker
-            if any(
-                inventory_tree(resolve_artifacts(
-                    root, group.target_relative, group.stage_name, group.recovery_name,
-                )[0]) != group.output_digest
-                for group in journal.groups if group.state != GroupState.UNCHANGED_VERIFIED
-            ):
-                raise PublicationStorageError(
-                    "PUBLICATION_VERIFICATION_FAILED", "committed target changed",
-                    recovery_required=True,
-                )
+            # Re-verify all changed targets after the commit marker; the fingerprint that
+            # is measured first lets a proof record be tied to this hash later
+            for group in journal.groups:
+                if group.state == GroupState.UNCHANGED_VERIFIED:
+                    continue
+                target = resolve_artifacts(
+                    root, group.target_relative, group.stage_name, group.recovery_name)[0]
+                self.hashed_fingerprints[group.target_relative] = measured_fingerprint(target)
+                if inventory_tree(target) != group.output_digest:
+                    raise PublicationStorageError(
+                        "PUBLICATION_VERIFICATION_FAILED", "committed target changed",
+                        recovery_required=True,
+                    )
             # Remove stage and recovery artifacts after the commit proof
             self._cleanup_groups(journal.groups, root)
             self._fault("AFTER_CLEANUP", -1)

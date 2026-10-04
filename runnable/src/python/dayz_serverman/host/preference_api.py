@@ -23,3 +23,7 @@ class PreferenceHostMethods:
             "profile_id": profile_id,
             "enabled": enabled,
         })
+
+    def save_automatic_update_checks(self, enabled: object) -> dict[str, Any]:
+        """Persist the switch of the automatic Steam update checks."""
+        return self._invoke("save_automatic_update_checks", {"enabled": enabled})

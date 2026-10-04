@@ -16,6 +16,12 @@ from .operations.models import OperationCancelled, OperationFailure, QueueUnavai
 
 # Lowercase SHA-256 hex digest expected for review proofs
 DIGEST = re.compile(r"[0-9a-f]{64}")
+# Checkpoints of a publication at which a cancellation stops the work
+PUBLICATION_SAFE_POINTS = frozenset((
+    "PUBLICATION_PREFLIGHT", "DISCOVER_ITEM", "CACHE_PROOF_RECHECK",
+    "STAGE_TARGET", "CHECK_TARGET", "COPY_FILE", "COPY_KEY",
+    "BEFORE_PUBLICATION",
+))
 
 
 class ModPublicationCoordinator:
@@ -54,32 +60,21 @@ class ModPublicationCoordinator:
                 return self._service.publish(request, fingerprint, context)
             except OperationCancelled:
                 raise
-            except ModPublicationError as error:
-                call = _call_error(error)
-                raise OperationFailure(
-                    call.code.value, call.safe_message, retryable=call.retryable,
-                    recovery_required=error.recovery_required,
-                ) from error
             except Exception as error:
-                call = _call_error(error)
-                raise OperationFailure(
-                    call.code.value, call.safe_message, retryable=call.retryable,
-                    recovery_required=call.code == ErrorCode.RECOVERY_REQUIRED,
-                ) from error
+                raise operation_failure(error) from error
 
         # Queue the publication and surface a busy lane immediately
         try:
             record = self._operations.submit(
-                "PUBLISH_MODS_AND_KEYS", work,
-                safe_points=frozenset((
-                    "PUBLICATION_PREFLIGHT", "DISCOVER_ITEM", "CACHE_PROOF_RECHECK",
-                    "STAGE_TARGET", "CHECK_TARGET", "COPY_FILE", "COPY_KEY",
-                    "BEFORE_PUBLICATION",
-                )),
+                "PUBLISH_MODS_AND_KEYS", work, safe_points=PUBLICATION_SAFE_POINTS,
                 log_fields={"profile_id": request.profile_id},
+                target_profile_id=request.profile_id,
             )
         except QueueUnavailable as error:
-            raise ApplicationCallError(ErrorCode.MUTATION_CONFLICT, str(error), retryable=True) from error
+            raise ApplicationCallError(
+                ErrorCode.MUTATION_CONFLICT, str(error), retryable=True,
+                details=error.details,
+            ) from error
         return {"operation_id": record.operation_id, "state": record.state.value}
 
 
@@ -121,6 +116,17 @@ def _request(parameters: Mapping[str, Any], *, include_fingerprint: bool) -> Pub
     return PublicationRequest(profile_id, revisions[0], digest, revisions[1], operation_id)
 
 
+def operation_failure(error: Exception) -> OperationFailure:
+    """Map a publication exception onto the failure of its lane operation."""
+    call = _call_error(error)
+    # A publication error says itself whether recovery is required
+    recovery = (error.recovery_required if isinstance(error, ModPublicationError)
+                else call.code == ErrorCode.RECOVERY_REQUIRED)
+    return OperationFailure(
+        call.code.value, call.safe_message, retryable=call.retryable, recovery_required=recovery,
+    )
+
+
 def _call_error(error: Exception) -> ApplicationCallError:
     """Map a publication exception onto the matching bridge error call."""
     if isinstance(error, ModPublicationError):
@@ -132,6 +138,10 @@ def _call_error(error: Exception) -> ApplicationCallError:
             "KEY_COLLISION": ErrorCode.PUBLICATION_FAILED,
             "PATH_INVALID": ErrorCode.PATH_INVALID,
             "RECOVERY_REQUIRED": ErrorCode.RECOVERY_REQUIRED,
+            # Refusals of the write guard keep their lifecycle codes
+            "CONTROL_CONFLICT": ErrorCode.CONTROL_CONFLICT,
+            "EXTERNAL_PROCESS": ErrorCode.EXTERNAL_PROCESS,
+            "PROCESS_STATE_UNKNOWN": ErrorCode.PROCESS_STATE_UNKNOWN,
         }.get(error.code, ErrorCode.PUBLICATION_FAILED)
         return ApplicationCallError(code, str(error), retryable=code == ErrorCode.REVISION_CONFLICT)
     return ApplicationCallError(ErrorCode.INTERNAL_FAILURE, "Publication processing failed.")

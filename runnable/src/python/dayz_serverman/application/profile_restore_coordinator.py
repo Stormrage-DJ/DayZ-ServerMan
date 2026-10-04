@@ -68,5 +68,8 @@ class ProfileRestoreCoordinator:
                 safe_points=frozenset({"VERIFYING_BACKUP", "PREPARING", "PREPARED"}),
                 log_fields={"backup_id": str(captured["backup_id"]), "target_role": "profile_restore"})
         except QueueUnavailable as error:
-            raise ApplicationCallError(ErrorCode.MUTATION_CONFLICT, str(error), retryable=True) from error
+            raise ApplicationCallError(
+                ErrorCode.MUTATION_CONFLICT, str(error), retryable=True,
+                details=error.details,
+            ) from error
         return {"operation_id": operation.operation_id, "state": operation.state.value}

@@ -91,6 +91,17 @@ class WorkshopCacheTests(unittest.TestCase):
         self.assertEqual(installed.latest_manifest_id, "10")
         self.assertEqual(installed.installed_time_updated, 1)
 
+    def test_observe_without_a_details_block_raises_the_verification_error(self) -> None:
+        """A manifest without the latest-details block fails closed, not with a parser error."""
+        # The fixture manifest has installed records but no WorkshopItemDetails block
+        with self.assertRaises(CacheVerificationError):
+            WorkshopCacheVerifier(self.root).observe(("111",))
+        # A manifest without the installed block degrades the same way
+        self.manifest.write_text(
+            '"AppWorkshop" { "appid" "221100" "WorkshopItemDetails" { } }', encoding="utf-8")
+        with self.assertRaises(CacheVerificationError):
+            WorkshopCacheVerifier(self.root).observe(("111",))
+
     def test_link_inside_item_is_rejected_when_supported(self) -> None:
         """A link inside an item is rejected when links are available."""
         # Plant a symbolic link that points outside the item

@@ -183,7 +183,6 @@ select { padding-right: 34px; }
   border-top: 1px solid var(--color-border);
 }
 .mods-action-group { display: flex; flex-wrap: wrap; gap: var(--primitive-space-3); }
-.mods-update-actions { justify-content: flex-end; }
 /* Profiles workspace: editor fields, runtime toggles, and mod table */
 .configuration-panel .action-row { align-items: center; justify-content: flex-end; }
 .profile-panel textarea { width: 100%; min-height: 8rem; resize: vertical; font: 13px/1.45 Consolas, monospace; }
@@ -229,7 +228,6 @@ select { padding-right: 34px; }
 .log-description { max-width: 42rem; font-size: 13px; }
 .log-output { max-height: 55vh; margin: 0; overflow: auto; padding: var(--primitive-space-4); border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--primitive-slate-950); color: var(--color-text); font: 12px/1.55 Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .log-note, .empty-log { margin-bottom: 0; }
-.operation-error { color: var(--color-status-error); }
 /* Backups workspace: history list and restore targets */
 .backup-panel > label { display: grid; max-width: 28rem; gap: var(--primitive-space-2); }
 .backup-list { display: grid; gap: var(--primitive-space-3); }
@@ -268,7 +266,6 @@ select { padding-right: 34px; }
   .profile-basics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .mods-profile-field { grid-column: auto; }
   .mods-actions { align-items: stretch; flex-direction: column; }
-  .mods-update-actions { justify-content: flex-start; }
   .overview-controls { align-items: stretch; flex-direction: column; }
   .overview-controls .action-row { justify-content: flex-start; margin-left: 0; }
   .backup-options { grid-template-columns: 1fr; }

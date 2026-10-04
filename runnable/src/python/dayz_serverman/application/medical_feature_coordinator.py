@@ -70,9 +70,13 @@ class MedicalFeatureCoordinator:
             record = self._operations.submit("APPLY_MEDICAL_FEATURE", work,
                 safe_points=frozenset(("loaded", "validated")),
                 log_fields={"profile_id": str(parameters["profile_id"]),
-                            "feature": str(parameters["feature"])})
+                            "feature": str(parameters["feature"])},
+                target_profile_id=str(parameters["profile_id"]))
         except QueueUnavailable as error:
-            raise ApplicationCallError(ErrorCode.MUTATION_CONFLICT, str(error), retryable=True) from error
+            raise ApplicationCallError(
+                ErrorCode.MUTATION_CONFLICT, str(error), retryable=True,
+                details=error.details,
+            ) from error
         return {"operation_id": record.operation_id, "state": record.state.value}
 
 

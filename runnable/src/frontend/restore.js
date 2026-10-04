@@ -10,6 +10,10 @@ const restoreState = {
   preview: null,
 };
 
+// Notice for a restore that did not finish cleanly, after a restore and when the history opens.
+const RESTORE_RECOVERY_TEXT = "Recovery required. Changes are blocked until an unfinished restore is resolved. "
+  + "Details are in Logs, Manager diagnostics.";
+
 // Build one element for the restore workspace.
 function restoreNode(tag, className, text) {
   const node = document.createElement(tag);
@@ -58,7 +62,8 @@ async function previewRestore(backupId) {
   const result = await window.pywebview.api.preview_restore(context.profile.profileId, backupId);
   if (!restoreContextActive(context)) return;
   if (!result.success) {
-    return restoreFeedback(result.error.message, "notice-error", "alert");
+    return restoreFeedback(window.ServerManOperationMessages.bridgeError(result, "The backup could not be reviewed."),
+      "notice-error", "alert");
   }
   const preview = result.value;
   if (preview.profile_id !== context.profile.profileId || preview.backup_id !== backupId) return;
@@ -73,11 +78,13 @@ async function previewRestore(backupId) {
   const list = restoreNode("ul", "restore-targets");
   preview.targets.forEach((target) => {
     const kind = target.target_kind === "RUNTIME_PROFILE" ? "Runtime profile" : "DayZ configuration";
-    list.append(restoreNode("li", "", `${kind} — ${target.action}: ${target.target_relative}`));
+    const action = window.ServerManDiagnosticLabels.restoreAction(target.action);
+    list.append(restoreNode("li", "", `${kind} — ${action}: ${target.target_relative}`));
   });
   const apply = restoreNode("button", "button button-danger", "Restore this backup");
   apply.type = "button";
   apply.addEventListener("click", showRestoreConfirmation);
+  window.ServerManBusy?.mark(apply);
   summary.append(list, apply);
   // Show the reviewed summary and focus its apply action.
   document.getElementById("restore-feedback").replaceChildren(summary);
@@ -137,11 +144,14 @@ function showRestoreConfirmation() {
   const confirm = restoreNode("button", "button button-danger", "Restore now");
   confirm.type = "button";
   confirm.addEventListener("click", applyRestore);
+  window.ServerManBusy?.mark(confirm, true);
   actions.append(cancel, confirm);
   dialog.append(title, warning, actions);
   dialog.addEventListener("keydown", trapRestoreDialog);
   // Suspend the page, record the dialog state, and focus the safe choice.
-  const inerted = [...document.body.children].map((element) => ({ element, inert: element.inert }));
+  const inerted = [...document.body.children]
+    .filter((element) => !element.hasAttribute("data-announcer"))
+    .map((element) => ({ element, inert: element.inert }));
   document.body.append(dialog);
   restoreState.dialog = Object.freeze({
     inerted: Object.freeze(inerted), node: dialog, returnFocus: document.activeElement,
@@ -164,12 +174,16 @@ async function applyRestore() {
     value.manifest_digest, value.fingerprint,
   );
   if (!restoreContextActive(reviewed.context) || reviewed !== restoreState.preview) return;
-  if (!result.success) return restoreFeedback(result.error.message, "notice-error", "alert");
-  // Record the queued operation and report the waiting state.
+  if (!result.success) {
+    return restoreFeedback(window.ServerManOperationMessages.bridgeError(result, "The restore could not be started."),
+      "notice-error", "alert");
+  }
+  // Record the queued operation; the operation bar shows the waiting state and the progress.
   restoreState.pendingOperation = Object.freeze({
     context: reviewed.context, operationId: result.value.operation_id,
   });
-  restoreFeedback("Restore queued. Waiting for source verification.", "notice-busy");
+  document.getElementById("restore-feedback").replaceChildren();
+  window.ServerManOperationBar?.adopt(result.value.operation_id);
 }
 
 // Track the restore operation until it reaches a terminal state.
@@ -179,23 +193,20 @@ function restoreOperationFinished(operation) {
   const terminal = ["SUCCEEDED", "FAILED", "CANCELLED", "RECOVERY_REQUIRED"].includes(operation.state);
   const active = restoreContextActive(pending.context);
   if (terminal) restoreState.pendingOperation = null;
-  if (!active) return true;
-  // Report progress while the restore is still running.
-  if (!terminal) {
-    restoreFeedback(`${operation.progress_phase} — ${operation.progress_percent}%`, "notice-busy");
-  } else if (operation.state === "SUCCEEDED") {
+  if (!active || !terminal) return true;
+  // The page shows the result itself, so the operation bar does not announce it again.
+  const outcome = window.ServerManOperationBar?.pageResult(operation);
+  if (operation.state === "SUCCEEDED") {
     // Confirm success only after every target verified.
     restoreFeedback("Restore completed and every published target verified.", "notice-success");
     restoreState.preview = null;
   } else if (operation.state === "RECOVERY_REQUIRED") {
     // Explain the blocked state when recovery is required.
-    restoreFeedback(
-      "Recovery required. New mutations are blocked; inspect restore recovery diagnostics.",
-      "notice-recovery", "alert",
-    );
+    restoreFeedback(RESTORE_RECOVERY_TEXT, "notice-recovery", "alert");
   } else {
-    const message = operation.terminal_error ? operation.terminal_error.message : "Restore did not complete.";
-    restoreFeedback(message, "notice-error", "alert");
+    const message = outcome?.text || "Restore did not complete.";
+    restoreFeedback(message, operation.state === "CANCELLED" ? "" : "notice-error",
+      operation.state === "CANCELLED" ? "status" : "alert");
   }
   return true;
 }
@@ -224,10 +235,7 @@ async function renderRestore(history) {
       || !isBackupProfileActive(profileContext) || !inspection.success) return;
   if (inspection.value.blocked) {
     panel.hidden = false;
-    restoreFeedback(
-      "Recovery required. Restore journals are uncertain and all new mutations are blocked.",
-      "notice-recovery", "alert",
-    );
+    restoreFeedback(RESTORE_RECOVERY_TEXT, "notice-recovery", "alert");
   }
 }
 

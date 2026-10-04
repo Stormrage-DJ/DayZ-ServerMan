@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING
 
 from .models import OperationCancelled, PendingOperation
@@ -34,14 +34,18 @@ class OperationContext:
         if not 0 <= progress_percent <= 100:
             raise ValueError("progress_percent must be from 0 through 100")
         # Forward the checkpoint to the owning manager for publication
-        self._manager._progress(self._pending, phase, progress_percent)
+        self._manager._publication.progress(self._pending, phase, progress_percent)
         # Stop only at declared safe points so partial work stays recoverable
         if self._pending.cancellation.is_set() and phase in self._pending.safe_points:
             raise OperationCancelled("operation cancelled at a declared safe point")
 
     def record_evidence(self, evidence: Mapping[str, object]) -> None:
         """Persist bounded operation evidence before an external wait."""
-        self._manager._evidence(self._pending, evidence)
+        self._manager._publication.evidence(self._pending, evidence)
+
+    def publish_detail(self, items: Iterable[Mapping[str, object]]) -> None:
+        """Offer advisory per-item progress; at most one value per second is published."""
+        self._manager._publication.detail(self._pending, items)
 
     def block_for_recovery(self, message: str) -> None:
         """Ask the manager to block the lane until recovery completes."""

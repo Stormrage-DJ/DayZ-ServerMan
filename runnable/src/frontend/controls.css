@@ -78,18 +78,28 @@ input[type="radio"] {
 .button-primary { border-color: var(--color-action); background: var(--color-action); color: var(--primitive-slate-950); font-weight: 700; }
 .button-danger { border-color: var(--color-status-error); color: var(--color-status-error); }
 .button-danger:hover { background: color-mix(in srgb, var(--color-status-error) 12%, transparent); }
-.button[disabled] { color: var(--color-text-subtle); cursor: not-allowed; opacity: .72; }
+.button[disabled], .button[aria-disabled="true"] { color: var(--color-text-subtle); cursor: not-allowed; opacity: .72; }
+/* A locked primary button keeps a readable label: light text on the darkened action colour (5.1:1 on a panel) */
+.button-primary[disabled], .button-primary[aria-disabled="true"] { border-color: transparent; background: color-mix(in srgb, var(--color-action) 45%, var(--color-surface)); color: var(--color-text); }
 .tab-button { border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface-raised); color: var(--color-text-muted); padding: .55rem .8rem; cursor: pointer; }
 .tab-button:hover, .tab-button.is-active { color: var(--color-text); border-color: var(--color-action); background: var(--nav-background-current); }
-.menu-button { display: none; width: 40px; height: 40px; padding: 10px; border: 1px solid var(--control-border); border-radius: var(--radius-control); background: var(--control-background); }
-.menu-button span { display: block; height: 2px; margin: 3px 0; background: var(--color-text); }
+.menu-button { position: relative; display: none; width: 40px; height: 40px; padding: 10px; border: 1px solid var(--control-border); border-radius: var(--radius-control); background: var(--control-background); }
+.menu-button span:not(.status-dot) { display: block; height: 2px; margin: 3px 0; background: var(--color-text); }
+.menu-button .status-dot { position: absolute; top: -3px; right: -3px; }
+.menu-button .status-dot[hidden] { display: none; }
 
 /* Keyboard-only skip link that slides in while focused */
 .skip-link { position: fixed; z-index: 100; left: var(--primitive-space-4); top: -60px; padding: var(--primitive-space-3) var(--primitive-space-4); border-radius: var(--radius-control); background: var(--color-action); color: var(--primitive-slate-950); font-weight: 700; }
 .skip-link:focus { top: var(--primitive-space-3); }
 
-/* Let the operating system provide the strongest high-contrast checkbox */
+/* Forced colours: system checkbox, and system colours for the operation bar, progress, and locked buttons */
 @media (forced-colors: active) {
   input[type="checkbox"] { appearance: auto; accent-color: auto; }
   input[type="checkbox"]::before { content: none; }
+  .operation-bar { border: 1px solid CanvasText; }
+  .progress-track, .progress-bar { forced-color-adjust: none; }
+  .progress-track { border: 1px solid CanvasText; background: Canvas; }
+  .progress-track .progress-bar { background: Highlight; }
+  .operation-dot { background: CanvasText; }
+  .button[aria-disabled="true"] { border-color: GrayText; color: GrayText; }
 }

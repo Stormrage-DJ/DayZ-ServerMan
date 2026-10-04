@@ -150,7 +150,9 @@ window.ServerManProfileContext = { selectedId: () => null, select: () => { void 
     "history exposed an internal profile digest");
   check(!document.getElementById("backup-history").textContent.includes("verified-1"),
     "history exposed an internal backup identifier");
-  check(document.getElementById("backup-history").textContent.includes("Restore support pending"),
+  check(document.getElementById("backup-history").textContent.includes("Cannot be restored")
+    && document.getElementById("backup-history").textContent.includes(
+      "This backup has content that this version cannot restore."),
     "history did not expose the restore dependency state without color");
   output.textContent = "PASS";
 })().catch((error) => { output.textContent = `FAIL: ${error.stack || error.message}`; });
@@ -166,7 +168,8 @@ class BackupUiDynamicTests(unittest.TestCase):
         # Assemble the page from the real frontend scripts and the harness
         scripts = "\n".join(
             (FRONTEND / name).read_text(encoding="utf-8")
-            for name in ("workspace_context.js", "backup_display.js", "backups.js", "backup_history.js")
+            for name in ("operation_labels.js", "operation_messages.js", "diagnostic_labels.js", "workspace_context.js",
+                         "backup_display.js", "backups.js", "backup_history.js")
         )
         page_text = (
             "<!doctype html><html><body><main><div id='content-region'></div></main>"

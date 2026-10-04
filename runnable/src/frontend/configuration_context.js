@@ -44,7 +44,6 @@ function configurationOperationFinished(operation) {
   else {
     setConfigurationControlsDisabled(false);
     configurationState.reviewed = null;
-    document.getElementById("configuration-apply").textContent = "Review changes";
     updateUnsavedState();
   }
   return true;

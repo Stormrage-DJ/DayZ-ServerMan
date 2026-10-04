@@ -170,12 +170,13 @@ class LifecycleCoordinator:
         try:
             operation = self._operations.submit(
                 kind, work, safe_points=safe_points, log_fields=log_fields,
+                target_profile_id=log_fields.get("profile_id"),
             )
         except QueueUnavailable as error:
             raise ApplicationCallError(
                 ErrorCode.MUTATION_CONFLICT,
                 str(error),
-                retryable=True,
+                retryable=True, details=error.details,
             ) from error
         return {"operation_id": operation.operation_id, "state": operation.state.value}
 

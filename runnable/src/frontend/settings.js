@@ -57,105 +57,6 @@ function settingsFeedback(message, error = false) {
   if (error) notice.focus();
 }
 
-// Look up the diagnostic that belongs to a path role.
-function diagnosticFor(role) {
-  // The custom backup folder shares the backup root diagnostic.
-  return settingsState.diagnostics.get(role === "custom_backup_root" ? "backup_root" : role);
-}
-
-// Turn one path diagnostic into display text and a status class.
-function diagnosticCopy(role) {
-  const diagnostic = diagnosticFor(role);
-  // Describe unchecked paths and what to do next.
-  if (!diagnostic) return ["Not checked", "Choose a location to validate it.", "status-warning"];
-  const ready = diagnostic.status === "READY";
-  return [diagnostic.status, `${diagnostic.message}. ${diagnostic.action}`, ready ? "status-normal" : "status-warning"];
-}
-
-// Build one read-only path field with browse button and diagnostic line.
-function pathEditor(role, labelText, description) {
-  const field = settingsNode("article", "settings-path");
-  const label = settingsNode("label", "", labelText);
-  label.htmlFor = `settings-${role}`;
-  const descriptionNode = settingsNode("p", "configuration-path", description);
-  descriptionNode.id = `settings-${role}-description`;
-  const input = document.createElement("input");
-  input.id = `settings-${role}`;
-  input.readOnly = true;
-  // Show the stored path or a placeholder.
-  input.value = settingsState.paths[role] || "Not configured";
-  input.setAttribute("aria-describedby", descriptionNode.id);
-  // Offer folder selection through the host dialog.
-  const browse = settingsNode("button", "button", "Choose folder");
-  browse.type = "button";
-  browse.dataset.settingsBrowse = role;
-  browse.disabled = settingsState.busy;
-  const [status, copy, statusClass] = diagnosticCopy(role);
-  const statusNode = settingsNode("p", `status-label ${statusClass}`, `${status}: ${copy}`);
-  field.append(label, descriptionNode, input, browse, statusNode);
-  return field;
-}
-
-// Build one backup destination choice with its stored path.
-function backupChoice(input, title, description, path, browse = null) {
-  const choice = settingsNode("article", `backup-choice${input.checked ? " is-selected" : ""}`);
-  choice.dataset.backupChoice = input.value;
-  const label = settingsNode("label", "backup-choice-heading"); label.htmlFor = input.id;
-  const copy = settingsNode("span", "backup-choice-copy");
-  copy.append(settingsNode("strong", "", title), settingsNode("small", "", description));
-  label.append(input, copy);
-  const location = settingsNode("code", "backup-choice-path", path);
-  choice.append(label, location);
-  if (browse) choice.append(browse);
-  return choice;
-}
-
-// Build the backup destination selector.
-function backupEditor() {
-  const fieldset = settingsNode("fieldset", "settings-path settings-backup");
-  // Explain what the choice controls and offer both destinations.
-  fieldset.append(settingsNode("legend", "", "Backup destination"));
-  fieldset.append(settingsNode("p", "configuration-path",
-    "Choose where this manager stores new verified backups."));
-  const portable = document.createElement("input");
-  portable.type = "radio"; portable.name = "backup-mode"; portable.value = "portable";
-  portable.id = "backup-mode-portable"; portable.checked = settingsState.backupMode === "portable";
-  portable.disabled = settingsState.busy;
-  const custom = document.createElement("input");
-  custom.type = "radio"; custom.name = "backup-mode"; custom.value = "custom";
-  custom.id = "backup-mode-custom"; custom.checked = settingsState.backupMode === "custom";
-  custom.disabled = settingsState.busy;
-  const browse = settingsNode("button", "button", "Choose folder");
-  browse.type = "button"; browse.dataset.settingsBrowse = "custom_backup_root";
-  browse.disabled = settingsState.busy || !custom.checked;
-  const options = settingsNode("div", "backup-options");
-  options.append(
-    backupChoice(portable, "Portable default", "Moves with the DayZ-ServerMan folder.", settingsState.defaultBackup),
-    backupChoice(custom, "Custom folder", "Uses a fixed folder elsewhere on this computer.",
-      settingsState.paths.custom_backup_root || "No custom folder selected", browse),
-  );
-  const [status, copy, statusClass] = diagnosticCopy("custom_backup_root");
-  fieldset.append(options, settingsNode("p", `status-label ${statusClass}`, `${status}: ${copy}`));
-  return fieldset;
-}
-
-// List the automatically resolved paths.
-function resolvedLocations() {
-  const section = settingsNode("section", "settings-resolved");
-  section.append(settingsNode("h3", "", "Resolved automatically"), settingsNode(
-    "p", "configuration-path",
-    "These paths follow the selected folders and are checked when settings are saved.",
-  ));
-  const list = settingsNode("dl", "detail-list");
-  // Show each resolved path or a prompt to choose its folder.
-  resolvedSettingsFields.forEach(([role, label]) => {
-    list.append(settingsNode("dt", "", label),
-      settingsNode("dd", "", settingsState.paths[role] || "Select the related folder"));
-  });
-  section.append(list);
-  return section;
-}
-
 // Render the settings workspace for the current state.
 function renderSettings() {
   const panel = settingsNode("section", "panel settings-panel");
@@ -179,7 +80,7 @@ function renderSettings() {
   const save = settingsNode("button", "button button-primary", "Save locations");
   save.type = "button"; save.id = "save-path-settings";
   save.disabled = settingsState.busy || !dirty;
-  actions.append(indicator, save);
+  actions.append(indicator, window.ServerManBusy.mark(save));
   const feedback = settingsNode("div", "configuration-feedback");
   feedback.id = "settings-feedback";
   panel.append(fields, actions, feedback);
@@ -227,7 +128,10 @@ async function chooseSettingsPath(role) {
   const result = await window.pywebview.api.select_settings_path(role);
   if (!settingsActive(context)) return;
   settingsState.busy = false;
-  if (!result.success) { renderSettings(); return settingsFeedback(result.error.message, true); }
+  if (!result.success) {
+    renderSettings();
+    return settingsFeedback(window.ServerManOperationMessages.bridgeError(result, "The folder could not be selected."), true);
+  }
   if (result.value.cancelled) { renderSettings(); return settingsFeedback("Path selection was cancelled."); }
   // Adopt the chosen path and its resolved companions.
   settingsState.paths[role] = result.value.path;
@@ -252,10 +156,14 @@ async function savePathSettings() {
   settingsState.busy = true; renderSettings();
   const result = await window.pywebview.api.save_settings(payload, settingsState.revision);
   if (!settingsActive(context) || generation !== settingsState.generation) return;
-  if (!result.success) { settingsState.busy = false; renderSettings(); return settingsFeedback(result.error.message, true); }
-  // Record the queued save so progress can be tracked.
+  if (!result.success) {
+    settingsState.busy = false; renderSettings();
+    return settingsFeedback(window.ServerManOperationMessages.bridgeError(result, "Settings could not be saved."), true);
+  }
+  // Record the queued save; the operation bar shows its progress.
   settingsState.pending = Object.freeze({ operationId: result.value.operation_id, context });
   settingsFeedback("Saving application locations.");
+  window.ServerManOperationBar.adopt(result.value.operation_id);
 }
 
 // Open the legacy import through the transition guard.
@@ -302,10 +210,8 @@ function settingsOperationFinished(operation) {
   const pending = settingsState.pending;
   if (!pending || pending.operationId !== operation.operation_id) return false;
   if (!settingsActive(pending.context)) { settingsState.pending = null; return true; }
-  // Keep showing progress while the save continues.
-  if (!["SUCCEEDED", "FAILED", "CANCELLED", "RECOVERY_REQUIRED"].includes(operation.state)) {
-    settingsFeedback(`${operation.progress_phase} — ${operation.progress_percent}%`); return true;
-  }
+  // The operation bar shows the progress while the save continues.
+  if (!["SUCCEEDED", "FAILED", "CANCELLED", "RECOVERY_REQUIRED"].includes(operation.state)) return true;
   settingsState.pending = null; settingsState.busy = false;
   if (operation.state === "SUCCEEDED") {
     // Reload after a successful save.
@@ -314,8 +220,7 @@ function settingsOperationFinished(operation) {
   } else {
     // Return the form and report the failure.
     renderSettings();
-    const message = operation.terminal_error?.message || "Settings could not be saved.";
-    settingsFeedback(message, true);
+    settingsFeedback(window.ServerManOperationBar.pageResult(operation).text, true);
   }
   return true;
 }

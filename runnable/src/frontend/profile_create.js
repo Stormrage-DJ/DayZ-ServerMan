@@ -170,7 +170,7 @@ function renderProfileCreateForm() {
   const cancel = profileNode("button", "button", "Cancel"); cancel.type = "button";
   cancel.addEventListener("click", cancelProfileCreation);
   const create = profileNode("button", "button button-primary", "Create profile"); create.type = "submit";
-  actions.append(unsaved, cancel, create);
+  actions.append(unsaved, cancel, window.ServerManBusy?.mark(create) || create);
   form.append(basics, missionSection, generated, advanced, feedback, actions);
   panel.append(heading, form); region.append(panel);
   display.input.addEventListener("input", (event) => {
@@ -235,6 +235,7 @@ async function submitProfileProvision(event) {
     });
     [...form.elements].forEach((element) => { element.disabled = true; });
     document.getElementById("profile-feedback").textContent = "Creating profile and server files…";
+    window.ServerManOperationBar?.adopt(result.value.operation_id);
   } catch (error) {
     document.getElementById("profile-feedback").textContent = error.message;
   }

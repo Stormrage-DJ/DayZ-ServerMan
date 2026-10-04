@@ -44,9 +44,7 @@ function migrationFeedback(text, kind = "") {
 
 // Show a migration failure using the host message, or a safe fallback.
 function migrationError(result, fallback) {
-  const message = result && result.error && typeof result.error.message === "string"
-    ? result.error.message : fallback;
-  migrationFeedback(message, "notice-error");
+  migrationFeedback(window.ServerManOperationMessages.bridgeError(result, fallback), "notice-error");
 }
 
 // List the item identifiers selected for import.
@@ -91,7 +89,7 @@ function renderMigrationPreview(preview) {
     settings,
     "DayZ installation settings",
     settings.fields.length
-      ? `Set ${settings.fields.map((field) => field.role).join(" and ")}.`
+      ? `Set the ${settings.fields.map((field) => window.ServerManDiagnosticLabels.role(field.role)).join(" and the ")}.`
       : "Current installation settings already have values.",
   ));
   // Describe each importable profile with its mods and runtime profile.
@@ -106,7 +104,7 @@ function renderMigrationPreview(preview) {
   results.append(migrationItem(
     preview.backup_inventory,
     "Legacy backup external references",
-    `${preview.backup_inventory.count} archives (${preview.backup_inventory.size} bytes) will be indexed by safe label, digest, and opaque ID. Policy: ${preview.backup_inventory.status}. External reference only — source remains in legacy folder. Not restorable by DayZ-ServerMan. No archive bytes will be copied.`,
+    `${preview.backup_inventory.count} archives (${preview.backup_inventory.size} bytes) will be indexed by safe label, digest, and opaque ID. The archives stay where they are and are only listed. External reference only — source remains in legacy folder. Not restorable by DayZ-ServerMan. No archive bytes will be copied.`,
   ));
   results.append(migrationNode(
     "p", "notice", "The source remains unchanged. Legacy UI state and authentication settings are ignored.",
@@ -175,10 +173,11 @@ async function submitMigration(argumentsCopy, context) {
   // Ignore the response when the workspace moved on.
   if (!migrationActive(context)) return;
   if (!result.success) return migrationError(result, "Legacy import could not be queued.");
-  // Track the queued import and clear the dirty marker.
+  // Track the queued import and clear the dirty marker; the operation bar shows the progress.
   migrationState.pending = Object.freeze({ context, operationId: result.value.operation_id });
   window.ServerManTransitions.setDirty("migration", false);
-  migrationFeedback("Legacy import queued. Source files remain read-only.", "notice-busy");
+  migrationFeedback("Source files remain read-only.", "notice-busy");
+  window.ServerManOperationBar?.adopt(result.value.operation_id);
 }
 
 // Open the reviewed confirmation for the selected import items.
@@ -209,11 +208,13 @@ function confirmMigration() {
   const apply = migrationNode("button", "button button-primary", "Import selected items");
   apply.type = "button";
   apply.addEventListener("click", () => submitMigration(argumentsCopy, context));
+  window.ServerManBusy?.mark(apply, true);
   actions.append(cancel, apply);
   dialog.append(actions);
   dialog.addEventListener("keydown", trapMigrationConfirmation);
   // Make the rest of the page inert while the dialog is open.
-  const inerted = [...document.body.children].map((element) => ({ element, inert: element.inert }));
+  const inerted = [...document.body.children].filter((element) => !element.hasAttribute("data-announcer"))
+    .map((element) => ({ element, inert: element.inert }));
   document.body.append(dialog);
   migrationState.confirmation = Object.freeze({
     context, dialog, inerted: Object.freeze(inerted), returnFocus: document.activeElement,
@@ -241,6 +242,7 @@ function renderMigrationWorkspace() {
   apply.id = "migration-apply";
   apply.disabled = true;
   apply.addEventListener("click", confirmMigration);
+  window.ServerManBusy?.mark(apply);
   const actions = migrationNode("div", "action-row");
   const back = migrationNode("button", "button", "Back to application locations");
   back.type = "button";
@@ -258,7 +260,7 @@ function renderMigrationWorkspace() {
   document.getElementById("content-region").replaceChildren(panel);
 }
 
-// Apply progress and terminal events to the queued legacy import.
+// Show the result of the queued legacy import; the operation bar shows its progress.
 function migrationOperationFinished(operation) {
   const pending = migrationState.pending;
   // Ignore events for operations this workspace did not queue.
@@ -268,13 +270,13 @@ function migrationOperationFinished(operation) {
     if (terminal) migrationState.pending = null;
     return true;
   }
-  const message = operation.terminal_error && operation.terminal_error.message
-    ? operation.terminal_error.message
-    : `${operation.progress_phase} — ${operation.progress_percent}%`;
-  // Show the latest progress or terminal message for the queued import.
-  migrationFeedback(message, operation.state === "FAILED" ? "notice-error" : "notice-busy");
-  // Release the pending marker once the operation is terminal.
-  if (terminal) migrationState.pending = null;
+  if (!terminal) return true;
+  // Release the pending marker and word the result like the operation bar.
+  migrationState.pending = null;
+  const outcome = window.ServerManOperationBar?.pageResult(operation)
+    || { look: "failed", text: "The legacy import did not complete." };
+  migrationFeedback(outcome.text, ["failed", "recovery"].includes(outcome.look) ? "notice-error"
+    : outcome.look === "success" ? "notice-success" : "");
   return true;
 }
 

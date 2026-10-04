@@ -30,12 +30,15 @@ class UiShellStaticTests(unittest.TestCase):
         cls.script = "\n".join(
             (FRONTEND / name).read_text(encoding="utf-8")
             for name in (
-                "shell_ui.js", "workspace_context.js", "transition_guard.js", "profile_context.js",
+                "shell_ui.js", "operation_labels.js", "operation_messages.js",
+                "operation_announcer.js", "operation_bar_view.js", "operation_bar.js",
+                "busy_controls.js", "workspace_context.js", "transition_guard.js", "profile_context.js",
                 "configuration_catalog.js", "tweaks_catalog.js", "tweaks_render.js", "tweaks.js",
-                "configuration_edit.js", "configuration_context.js",
-                "configuration.js", "backup_display.js", "backups.js", "app.js",
+                "tweaks_dialog.js", "configuration_edit.js", "configuration_context.js",
+                "configuration_fields.js", "configuration.js", "backup_display.js", "backups.js",
+                "sections.js", "app.js",
                 "restore.js", "profiles_mods.js", "profiles.js", "profile_delete.js", "migration.js",
-                "settings.js", "overview_backup.js", "overview_readiness.js",
+                "settings.js", "settings_render.js", "overview_backup.js", "overview_readiness.js",
                 "overview_lifecycle_dialog.js", "overview.js", "logs.js",
             )
         )
@@ -76,7 +79,7 @@ class UiShellStaticTests(unittest.TestCase):
             '"is-error": 4',
             'statuses.every((item) => item.kind === "")',
             'const text = healthy ? "Ready" : overall.text',
-            "syncOperationStatus(operation)",
+            "syncOperationBarStatus(model)",
         ):
             self.assertIn(contract, self.script)
 
@@ -146,14 +149,21 @@ class UiShellStaticTests(unittest.TestCase):
 
     def test_backend_progress_cancellation_and_shutdown_use_named_safe_hooks(self) -> None:
         """Progress, cancellation, and shutdown use the named safe hooks."""
-        self.assertIn("renderOperation(operation.value)", self.script)
-        self.assertIn("renderOperation(active)", self.script)
+        # The operation bar replaced the whole-workspace operation panel
+        self.assertNotIn("renderOperation", self.script)
+        self.assertNotIn("operation-panel", self.script)
+        self.assertIn("ServerManOperationBar.sync(operation.value)", self.script)
+        self.assertIn("ServerManOperationBar.reset(operations)", self.script)
+        self.assertIn("ServerManOperationBar.settle(operation.value)", self.script)
         self.assertIn("request_operation_cancellation", self.script)
         self.assertIn('role", "progressbar"', self.script)
         self.assertIn("aria-valuenow", self.script)
-        self.assertIn("operation.terminal_error?.message", self.script)
+        # Only the wording catalogue reads the terminal error; no page prints the host message itself
+        self.assertIn("operation?.terminal_error", self.script)
+        self.assertNotIn("terminal_error?.message", self.script)
         self.assertIn("renderShutdown", self.script)
-        self.assertIn("declared safe point", self.script)
+        self.assertIn("Work in progress finishes or stops at a safe moment.", self.script)
+        self.assertNotIn("declared safe point", self.script)
         self.assertNotIn("request_shutdown({", self.script)
 
     def test_configuration_has_explicit_preview_apply_discard_and_unsaved_state(self) -> None:

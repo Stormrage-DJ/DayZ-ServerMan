@@ -8,6 +8,7 @@ from typing import Any
 from ..domain.migrations import ConvertedProfile, MigrationConflict, migration_fingerprint
 from ..domain.models import ManagerSettings
 from ..repositories.legacy_source import LegacyInventory
+from .activity_wording import ROLE_LABELS
 from .settings import SETTINGS_FIELDS
 
 
@@ -47,14 +48,16 @@ def settings_proposal(
     warnings: list[str] = []
     for field, value in proposed.items():
         existing = getattr(current, field)
+        # Name the setting by its label on the Settings page, never by its field name
+        label = ROLE_LABELS.get(field, "location")
         if existing is None:
             updates[field] = value
         elif existing.casefold() == value.casefold():
-            warnings.append(f"Current {field} already matches the legacy installation.")
+            warnings.append(f"The current {label} already matches the legacy installation.")
         else:
             conflicts.append(MigrationConflict(
                 "DESTINATION_CONFLICT", "settings:dayz-installation",
-                f"Current {field} is already configured differently.",
+                f"The current {label} is already configured differently.",
             ))
     return updates, tuple(conflicts), tuple(warnings)
 

@@ -49,7 +49,10 @@ class BackupErrorClassificationTests(unittest.TestCase):
         self.dayz = self.root / "dayz"
         config = self.dayz / "Config Files" / "serverDZ.cfg"
         config.parent.mkdir(parents=True)
-        config.write_text("fixture", encoding="utf-8")
+        config.write_text(
+            'class Missions { class DayZ { template = "dayzOffline.chernarusplus"; }; };\n',
+            encoding="utf-8",
+        )
         create_runtime_profile(self.dayz)
         mission = self.dayz / "mpmissions" / "dayzOffline.chernarusplus"
         mission.mkdir(parents=True)
@@ -115,7 +118,7 @@ class BackupErrorClassificationTests(unittest.TestCase):
     def test_staged_payload_verification_is_retryable_storage_failure(self) -> None:
         """A staged payload verification error is a retryable storage failure."""
         with patch(
-            "dayz_serverman.repositories.backups.verify_directory",
+            "dayz_serverman.repositories.backup_publication.verify_directory",
             side_effect=BackupVerificationError("synthetic staged verification"),
         ):
             current = self.run_operation(self.coordinator(BackupStorage()))
@@ -139,7 +142,9 @@ class BackupErrorClassificationTests(unittest.TestCase):
                 raise BackupArchiveError("synthetic published verification")
             real_verify_archive(archive, manifest)  # type: ignore[arg-type]
 
-        with patch("dayz_serverman.repositories.backups.verify_archive", side_effect=fail_second):
+        with patch(
+            "dayz_serverman.repositories.backup_publication.verify_archive", side_effect=fail_second,
+        ):
             current = self.run_operation(self.coordinator(BackupStorage()))
         self.assertEqual(current.state, OperationState.RECOVERY_REQUIRED)
         self.assertEqual(current.terminal_error.code, "RECOVERY_REQUIRED")

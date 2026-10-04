@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .adapters.windows.diagnostics import WindowsPathDiagnostics
-from .adapters.windows.steamcmd import SteamCmdPreflight, WindowsSteamCmdAdapter
 from .adapters.windows.process_tree import WindowsChildProbe
 from .application.coordinator import ApplicationCoordinator
 from .application.backup_coordinator import BackupCoordinator
@@ -31,7 +30,6 @@ from .application.legacy_backups import LegacyBackupService
 from .application.operations.manager import OperationManager
 from .application.operations.store import OperationStore
 from .application.profile_coordinator import ProfileCoordinator
-from .application.profile_deletion import ProfileDeletionService
 from .application.preferences import PreferenceCoordinator
 from .application.profiles import ProfileService
 from .application.restore_coordinator import RestoreCoordinator
@@ -39,6 +37,9 @@ from .application.restores import RestoreService
 from .application.schedules import ScheduleCoordinator
 from .application.settings import SettingsService
 from .application.shutdown import ShutdownCoordinator
+from .application.update_check import UpdateCheckService
+from .application.update_check_coordinator import UpdateCheckCoordinator
+from .application.update_check_scheduler import UpdateCheckScheduler
 from .application.workshop_coordinator import WorkshopCoordinator
 from .application.workshop_updates import WorkshopUpdateService
 from .bridge.facade import BridgeFacade
@@ -50,7 +51,6 @@ from .repositories.migration_journal import MigrationJournalRepository
 from .repositories.migration_publication import MigrationPublication
 from .repositories.mod_publication_journal import PublicationJournalRepository
 from .repositories.mod_publication_recovery import PublicationRecovery
-from .repositories.mod_publication_stage import ModPublicationStorage
 from .repositories.backups import BackupStorage
 from .repositories.restore_journal import RestoreJournalRepository
 from .repositories.restore_storage import RestoreStorage
@@ -58,10 +58,13 @@ from .repositories.schedules import ScheduleRepository
 from .repositories.paths import PortablePaths
 from .repositories.profiles import ProfileRepository
 from .repositories.workshop_recovery import inspect_workshop_recovery
-from .repositories.applied_mod_state import AppliedModStateRepository
 from .profile_provisioning_composition import build_profile_provisioning
 from .lifecycle_composition import build_lifecycle
 from .profile_restore_composition import build_profile_restore
+from .update_check_composition import (
+    build_update_check, build_update_check_scheduler, build_update_status,
+)
+from .workshop_composition import build_workshop
 
 
 @dataclass(frozen=True)
@@ -103,6 +106,9 @@ class ApplicationComposition:
     mod_inventory_coordinator: ModInventoryCoordinator
     mod_publication: ModPublicationService
     mod_publication_coordinator: ModPublicationCoordinator
+    update_check: UpdateCheckService
+    update_check_scheduler: UpdateCheckScheduler
+    update_check_coordinator: UpdateCheckCoordinator
     coordinator: ApplicationCoordinator
     bridge: BridgeFacade
     host_bridge: BridgeFacade
@@ -205,32 +211,21 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
         ScheduleRepository(VersionedJsonRepository(paths.schedules)),
         profiles, settings, preferences, lifecycle, lifecycle_coordinator, logger,
     )
+    # Build the remote update check; it never runs on the operation lane
+    update_check = build_update_check(paths, profiles, profile_repository, preferences, logger)
+    update_check_scheduler = build_update_check_scheduler(update_check, preferences, logger)
     # Build SteamCMD update, inventory, and publication services
-    steamcmd_preflight = SteamCmdPreflight()
-    applied_mod_state = AppliedModStateRepository(paths.applied_mod_state)
-    profile_deletion = ProfileDeletionService(
-        profiles, settings, lifecycle, preferences, schedules, applied_mod_state,
+    workshop = build_workshop(
+        paths, profiles, settings, operations, lifecycle, preferences, schedules,
+        publication_journals, update_check, logger, backups,
     )
-    profile_coordinator = ProfileCoordinator(profiles, operations, profile_deletion)
-    workshop_updates = WorkshopUpdateService(
-        profiles, settings, steamcmd_preflight, WindowsSteamCmdAdapter(steamcmd_preflight),
-        applied_state=applied_mod_state,
-    )
-    workshop_coordinator = WorkshopCoordinator(workshop_updates, settings, operations)
-    mod_inventory = ModInventoryService(profiles, settings)
-    mod_inventory_coordinator = ModInventoryCoordinator(mod_inventory)
-    mod_publication = ModPublicationService(
-        profiles, settings, operations,
-        lambda checkpoint: ModPublicationStorage(checkpoint=checkpoint),
-        publication_journals, lifecycle, applied_mod_state,
-    )
-    mod_publication_coordinator = ModPublicationCoordinator(mod_publication, operations)
+    update_check_coordinator = build_update_status(update_check, workshop.mod_inventory)
     # Assemble every coordinator's handlers into the bridge facade
     coordinator = ApplicationCoordinator(settings, operations, shutdown)
     logs = LogQueryService(paths.logs / "manager.jsonl", paths.logs / "dayz-server.log")
     handlers = {
         **coordinator.handlers(),
-        **profile_coordinator.handlers(),
+        **workshop.profile_coordinator.handlers(),
         **profile_provisioning_coordinator.handlers(),
         **preferences.handlers(),
         **backup_coordinator.handlers(),
@@ -243,9 +238,12 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
         **legacy_backup_coordinator.handlers(),
         **lifecycle_coordinator.handlers(),
         **schedules.handlers(),
-        **workshop_coordinator.handlers(),
-        **mod_inventory_coordinator.handlers(),
-        **mod_publication_coordinator.handlers(),
+        **workshop.workshop_coordinator.handlers(),
+        **workshop.mod_inventory_coordinator.handlers(),
+        **workshop.mod_publication_coordinator.handlers(),
+        **workshop.mod_restart_coordinator.handlers(),
+        **workshop.verification_coordinator.handlers(),
+        **update_check_coordinator.handlers(),
         **logs.handlers(),
     }
     bridge = BridgeFacade(handlers, logger)
@@ -261,7 +259,7 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
         shutdown=shutdown,
         profile_repository=profile_repository,
         profiles=profiles,
-        profile_coordinator=profile_coordinator,
+        profile_coordinator=workshop.profile_coordinator,
         preferences=preferences,
         backups=backups,
         backup_coordinator=backup_coordinator,
@@ -281,12 +279,15 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
         lifecycle_coordinator=lifecycle_coordinator,
         schedules=schedules,
         logs=logs,
-        workshop_updates=workshop_updates,
-        workshop_coordinator=workshop_coordinator,
-        mod_inventory=mod_inventory,
-        mod_inventory_coordinator=mod_inventory_coordinator,
-        mod_publication=mod_publication,
-        mod_publication_coordinator=mod_publication_coordinator,
+        workshop_updates=workshop.workshop_updates,
+        workshop_coordinator=workshop.workshop_coordinator,
+        mod_inventory=workshop.mod_inventory,
+        mod_inventory_coordinator=workshop.mod_inventory_coordinator,
+        mod_publication=workshop.mod_publication,
+        mod_publication_coordinator=workshop.mod_publication_coordinator,
+        update_check=update_check,
+        update_check_scheduler=update_check_scheduler,
+        update_check_coordinator=update_check_coordinator,
         coordinator=coordinator,
         bridge=bridge,
         host_bridge=bridge,

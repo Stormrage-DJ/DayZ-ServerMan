@@ -96,6 +96,28 @@ class PublicationDomainTests(unittest.TestCase):
                 **vars(base), "managed_sources": (*base.managed_sources, duplicate), "fingerprint": "",
             }).signed())
 
+    def test_stored_source_kind_is_accepted_only_with_a_null_target_digest(self) -> None:
+        """Verify the stored-source proof kind validates, but not with a target digest."""
+        base = intent()
+
+        def with_proof(**changes: object) -> PublicationIntent:
+            """Return the signed intent whose only source carries a changed proof."""
+            changed = CacheProof(**{**proof().to_dict(), **changes})
+            return PublicationIntent(**{**vars(base), "managed_sources": (
+                ManagedModSource("123", 0, "mods\\alpha", "C:\\cache\\123", changed, "e" * 64),
+            ), "fingerprint": ""}).signed()
+
+        validate_intent(with_proof(verification_kind="STORED_SOURCE"))
+        # That kind makes no statement about the target, so a target digest is refused
+        with self.assertRaisesRegex(PublicationValidationError, "target digest"):
+            validate_intent(with_proof(
+                verification_kind="STORED_SOURCE", target_metadata_digest="a" * 64))
+        with self.assertRaisesRegex(PublicationValidationError, "proof kind"):
+            validate_intent(with_proof(verification_kind="OTHER"))
+        # The applied-state kind still validates with its target digest
+        validate_intent(with_proof(
+            verification_kind="APPLIED_STATE", target_metadata_digest="a" * 64))
+
     def test_journal_rejects_illegal_state_without_mutation(self) -> None:
         """Verify an illegal group state is rejected without mutating the journal."""
         value = journal()

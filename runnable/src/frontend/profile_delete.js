@@ -70,11 +70,13 @@ function showDeleteConfirmation() {
   cancel.addEventListener("click", closeDeleteDialog);
   const confirm = profileNode("button", "button button-danger", "Delete profile data");
   confirm.type = "button"; confirm.addEventListener("click", confirmDeleteProfile);
+  window.ServerManBusy?.mark(confirm, true);
   actions.append(cancel, confirm); dialog.append(title, copy, actions);
   dialog.addEventListener("keydown", containDeleteFocus);
   document.body.append(dialog); profileDeleteDialog = dialog;
   // Suspend the page behind the dialog and focus the safe choice first.
-  profileDeleteInert = [...document.body.children].filter((item) => item !== dialog)
+  profileDeleteInert = [...document.body.children]
+    .filter((item) => item !== dialog && !item.hasAttribute("data-announcer"))
     .map((element) => ({ element, inert: element.inert }));
   profileDeleteInert.forEach(({ element }) => { element.inert = true; }); cancel.focus();
 }
@@ -92,4 +94,5 @@ async function confirmDeleteProfile() {
     operationId: result.value.operation_id, kind: "delete", context,
     editGeneration: profileState.editGeneration, preferredProfileId: replacementProfileId,
   });
+  window.ServerManOperationBar?.adopt(result.value.operation_id);
 }

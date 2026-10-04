@@ -33,3 +33,19 @@ class ModPublicationHostMethods:
             "update_operation_id": update_operation_id,
             "publication_fingerprint": publication_fingerprint,
         })
+
+    def apply_mods_and_restart(
+        self, profile_id: object, expected_profile_revision: object,
+        expected_semantic_profile_digest: object, expected_settings_revision: object,
+        update_operation_id: object, publication_fingerprint: object,
+        backup_after_stop: object,
+    ) -> dict[str, Any]:
+        """Stop the server, apply the reviewed mods and keys, and start it again."""
+        return self._invoke("apply_mods_and_restart", {
+            "profile_id": profile_id, "expected_profile_revision": expected_profile_revision,
+            "expected_semantic_profile_digest": expected_semantic_profile_digest,
+            "expected_settings_revision": expected_settings_revision,
+            "update_operation_id": update_operation_id,
+            "publication_fingerprint": publication_fingerprint,
+            "backup_after_stop": backup_after_stop,
+        })

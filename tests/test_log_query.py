@@ -61,11 +61,11 @@ class LogQueryTests(unittest.TestCase):
             self.record("bridge.request", fields={"method": "read_log"}),
             self.record("bridge.success", fields={"method": "read_log"}),
             self.record("operation.progress", fields={"phase": "copy", "progress_percent": 50}),
-            self.record("operation.state", fields={"kind": "CREATE_PROFILE", "state": "RUNNING"}),
-            self.record("operation.state", fields={"kind": "CREATE_PROFILE", "state": "SUCCEEDED"}),
+            self.record("operation.state", fields={"kind": "PROVISION_PROFILE", "state": "RUNNING"}),
+            self.record("operation.state", fields={"kind": "PROVISION_PROFILE", "state": "SUCCEEDED"}),
             self.record(
                 "operation.state", level="ERROR",
-                fields={"kind": "BACKUP", "state": "FAILED", "error_message": "Disk is full."},
+                fields={"kind": "CREATE_BACKUP", "state": "FAILED", "error_message": "Disk is full."},
             ),
             self.record(
                 "bridge.failure", level="WARNING",
@@ -79,9 +79,11 @@ class LogQueryTests(unittest.TestCase):
         result = self.service.read_log({"source": "manager", "maximum_lines": 20})
 
         self.assertEqual(len(result["lines"]), 3)
-        self.assertIn("Create Profile completed.", result["lines"][0])
-        self.assertIn("Backup failed: Disk is full.", result["lines"][1])
-        self.assertIn("Save Settings failed: The settings are invalid.", result["lines"][2])
+        self.assertTrue(result["lines"][0].endswith("Info     Profile created."), result["lines"][0])
+        self.assertTrue(result["lines"][1].endswith(
+            "Error    The backup could not be created. Disk is full."), result["lines"][1])
+        self.assertTrue(result["lines"][2].endswith(
+            "Warning  Saving application locations failed: The settings are invalid."), result["lines"][2])
 
     def test_manager_diagnostics_returns_raw_structured_records(self) -> None:
         """Technical diagnostics remain available as an explicit source."""

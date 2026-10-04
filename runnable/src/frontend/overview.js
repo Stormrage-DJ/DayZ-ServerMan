@@ -78,8 +78,7 @@ function renderOverview() {
   if (overviewState.snapshot.mutation_block) {
     region.append(overviewNotice(
       "Recovery required",
-      String(overviewState.snapshot.mutation_block),
-      "recovery",
+      window.ServerManOperationMessages.recoveryNotice(overviewState.snapshot.mutation_block), "recovery",
     ));
   } else if (!configured) {
     region.append(overviewNotice(
@@ -155,7 +154,8 @@ function overviewAction(label, action, className) {
   const button = overviewNode("button", className, label);
   button.type = "button";
   button.addEventListener("click", () => confirmLifecycleAction(action));
-  return button;
+  // A lifecycle action submits an operation, so it is locked while another one runs or waits.
+  return window.ServerManBusy?.mark(button) || button;
 }
 
 // Confirm and submit the requested lifecycle action for the selected profile.
@@ -181,11 +181,11 @@ async function confirmLifecycleAction(action) {
     );
   }
   if (!result.success) return window.ServerManUi.renderHostError(result);
-  // Track the queued operation and show its initial state.
+  // Track the queued operation and hand its first record to the operation bar; the page stays.
   overviewState.pendingOperationId = result.value.operation_id;
   const operation = await window.pywebview.api.get_operation(result.value.operation_id);
   if (!operation.success) return window.ServerManUi.renderHostError(operation);
-  window.ServerManUi.renderOperation(operation.value);
+  window.ServerManOperationBar?.sync(operation.value);
 }
 
 // Load the overview state and render it for the selected profile.
@@ -226,11 +226,8 @@ function overviewOperationFinished(operation) {
   const scheduledLifecycle = ["STOP_SERVER", "RESTART_SERVER"].includes(operation.kind);
   if (!tracked && !scheduledLifecycle) return false;
   const terminal = !["QUEUED", "RUNNING", "CANCELLING"].includes(operation.state);
-  // Keep rendering progress while the operation is still active.
-  if (!terminal) {
-    window.ServerManUi.renderOperation(operation);
-    return true;
-  }
+  // The operation bar shows the progress; the server state follows the status poll.
+  if (!terminal) return true;
   // Reload the overview when the tracked operation finishes.
   if (tracked) overviewState.pendingOperationId = null;
   openOverview();

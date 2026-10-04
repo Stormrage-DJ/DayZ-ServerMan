@@ -26,6 +26,7 @@ class CheckboxThemeTests(unittest.TestCase):
             "migration.js",
             "overview_backup.js",
             "overview_schedule.js",
+            "profile_restore.js",
             "profiles.js",
             "tweaks_render.js",
         })

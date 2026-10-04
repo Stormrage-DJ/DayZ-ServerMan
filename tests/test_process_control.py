@@ -1,6 +1,7 @@
 """Process-control tests for the installation mutex and launch reconciliation."""
 from __future__ import annotations
 
+import importlib.util
 import sys
 import unittest
 from dataclasses import dataclass, field
@@ -10,6 +11,9 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
+# The prototypes this module exercised are not part of this repository.
+if importlib.util.find_spec("reference") is None:
+    raise unittest.SkipTest("reference prototypes are not available")
 from reference.prototypes.process_control import (  # noqa: E402
     InstallationMutex,
     InventorySnapshot,

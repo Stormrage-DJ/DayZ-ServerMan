@@ -171,11 +171,12 @@ function renderProfileForm(record) {
   const actions = profileNode("div", "action-row");
   const unsaved = profileNode("span", "unsaved-indicator", "No unsaved profile changes");
   unsaved.id = "profile-unsaved"; const save = profileNode("button", "button button-primary", "Save profile");
-  save.type = "submit"; actions.append(unsaved, save);
+  save.type = "submit"; actions.append(unsaved, window.ServerManBusy?.mark(save) || save);
   if (record) { const preview = profileNode("button", "button", "Preview launch command"); preview.type = "button";
     preview.addEventListener("click", previewProfileCommand); actions.append(preview);
     const remove = profileNode("button", "button button-danger", "Delete profile"); remove.type = "button";
-    remove.addEventListener("click", requestDeleteProfile); actions.append(remove); }
+    remove.addEventListener("click", requestDeleteProfile);
+    actions.append(window.ServerManBusy?.mark(remove) || remove); }
   form.append(fields, runtime, mods, extras, feedback, actions);
   // Track edits and queue saves through the transition-aware handlers.
   form.addEventListener("input", setProfileDirty); form.addEventListener("change", setProfileDirty);
@@ -196,10 +197,11 @@ async function saveProfile(event) {
     const result = await window.pywebview.api.save_profile(profile, context.revision);
     if (!profileContextActive(context)) return;
     if (!result.success) return window.ServerManUi.renderHostError(result);
-    // Record the queued save and tell the operator it is pending.
+    // Record the queued save; the operation bar shows it from here on.
     profileState.pending = Object.freeze({ operationId: result.value.operation_id,
       kind: "save", context, editGeneration, preferredProfileId: profile.profile_id });
-    document.getElementById("profile-feedback").textContent = "Profile save queued.";
+    document.getElementById("profile-feedback").textContent = "";
+    window.ServerManOperationBar?.adopt(result.value.operation_id);
   } catch (error) { document.getElementById("profile-feedback").textContent = error.message;
     form.querySelector("input")?.focus(); }
 }
@@ -256,12 +258,13 @@ function profileOperationFinished(operation) {
       const form = document.getElementById("profile-form");
       [...(form?.elements || [])].forEach((element) => { element.disabled = false; });
       const feedback = document.getElementById("profile-feedback");
-      const message = operation.terminal_error?.message || "Profile creation failed.";
+      const message = window.ServerManOperationBar?.pageResult(operation).text || "Profile creation failed.";
       if (feedback) { feedback.textContent = message; feedback.classList.add("notice", "notice-error"); }
       window.ServerManUi.setHostStatus("Profile creation needs attention", "is-error", "operation");
       return true;
     }
-    window.ServerManUi.renderOperation(operation); return true;
+    // A failed save or delete keeps the form and its values; the operation bar reads the result.
+    return true;
   }
   if (pending.kind === "provision") { void finishProfileProvision(pending, operation); return true; }
   // Explain when newer edits blocked the automatic reload.

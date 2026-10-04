@@ -1,4 +1,4 @@
-// Backup workspace: profile-scoped history, confirmation, and creation progress.
+// Backup workspace: profile-scoped history, confirmation, and the result of a backup creation.
 "use strict";
 // Tracks the loaded history, pending operation, and profile generation for this workspace.
 const backupState = {
@@ -36,9 +36,8 @@ function backupNode(tag, className, text) {
 }
 // Show a backup failure notice with the host message or a safe fallback.
 function backupError(result, fallback) {
-  const error = result && result.error ? result.error : {};
   const notice = backupNode("div", "notice notice-error",
-    window.ServerManBackupDisplay.text(typeof error.message === "string" ? error.message : fallback));
+    window.ServerManBackupDisplay.text(window.ServerManOperationMessages.bridgeError(result, fallback)));
   // Present the failure as an alert and move focus to the notice.
   notice.setAttribute("role", "alert");
   notice.tabIndex = -1;
@@ -113,22 +112,9 @@ async function confirmBackupCreation(argumentsCopy, context) {
     context,
     operationId: result.value.operation_id,
   });
-  const status = backupNode("div", "notice notice-busy", "Backup queued. Preparing files.");
-  status.id = "backup-operation";
-  status.setAttribute("role", "status");
-  status.tabIndex = -1;
-  // Build the progress meter for the queued operation.
-  const progress = backupNode("div", "progress-track");
-  progress.id = "backup-progress";
-  progress.setAttribute("role", "progressbar");
-  progress.setAttribute("aria-label", "Backup creation progress");
-  progress.setAttribute("aria-valuemin", "0");
-  progress.setAttribute("aria-valuemax", "100");
-  progress.setAttribute("aria-valuenow", "0");
-  progress.append(backupNode("div", "progress-bar"));
-  status.append(progress);
-  document.getElementById("backup-feedback").replaceChildren(status);
-  status.focus();
+  // The operation bar shows the waiting state, the phase, and the progress from here on.
+  document.getElementById("backup-feedback").replaceChildren();
+  window.ServerManOperationBar?.adopt(result.value.operation_id);
 }
 // Open the reviewed confirmation dialog before a backup is created.
 function showBackupConfirmation() {
@@ -160,11 +146,13 @@ function showBackupConfirmation() {
   const create = backupNode("button", "button button-primary", "Create backup");
   create.type = "button";
   create.addEventListener("click", () => confirmBackupCreation(argumentsCopy, context));
+  window.ServerManBusy?.mark(create, true);
   actions.append(cancel, create);
   dialog.append(actions);
   dialog.addEventListener("keydown", containBackupConfirmationFocus);
   // Make the rest of the page inert while the dialog is open.
   const inerted = [...document.body.children]
+    .filter((element) => !element.hasAttribute("data-announcer"))
     .map((element) => ({ element, inert: element.inert }));
   document.body.append(dialog);
   backupState.confirmation = Object.freeze({
@@ -205,6 +193,7 @@ function renderBackupWorkspace(profiles) {
   create.type = "button";
   create.disabled = true;
   create.addEventListener("click", showBackupConfirmation);
+  window.ServerManBusy?.mark(create);
   const history = backupNode("div", "backup-list");
   history.id = "backup-history";
   history.setAttribute("aria-busy", "true");
@@ -237,7 +226,7 @@ async function openBackupWorkspace() {
   if (!Array.isArray(result.value)) return window.ServerManUi.renderHostError(result);
   renderBackupWorkspace(result.value);
 }
-// Apply operation events to the queued backup request and its progress meter.
+// Apply operation events to the queued backup request and show its result in the page.
 function backupOperationFinished(operation) {
   const pending = backupState.pendingOperation;
   // Ignore events for operations this workspace did not queue.
@@ -246,23 +235,15 @@ function backupOperationFinished(operation) {
   const active = isBackupProfileActive(pending.context);
   // Clear the pending operation once it reaches a terminal state.
   if (terminal) backupState.pendingOperation = null;
-  if (!active) return true;
-  const status = document.getElementById("backup-operation");
-  // Update progress text and the meter while the operation element exists.
-  if (status) {
-    const message = operation.terminal_error && typeof operation.terminal_error.message === "string"
-      ? operation.terminal_error.message : `Backup ${operation.state.toLowerCase()}.`;
-    status.firstChild.textContent = terminal ? message
-      : `${operation.progress_phase} — ${operation.progress_percent}%`;
-    const progress = document.getElementById("backup-progress");
-    if (progress) {
-      progress.setAttribute("aria-valuenow", String(operation.progress_percent));
-      progress.firstChild.style.width = `${operation.progress_percent}%`;
-    }
-    if (operation.state === "FAILED") status.className = "notice notice-error";
-    if (operation.state === "RECOVERY_REQUIRED") status.className = "notice notice-recovery";
-  }
-  if (!terminal) return true;
+  if (!active || !terminal) return true;
+  // Show the result with the wording of the operation bar; the bar then leaves the announcement to this notice.
+  const outcome = window.ServerManOperationBar?.pageResult(operation)
+    || { look: operation.state === "SUCCEEDED" ? "success" : "failed", text: "The backup did not complete." };
+  const status = backupNode("div", `notice ${({ success: "notice-success", failed: "notice-error",
+    recovery: "notice-recovery" })[outcome.look] || ""}`.trim(), outcome.text);
+  status.id = "backup-operation";
+  status.setAttribute("role", ["failed", "recovery"].includes(outcome.look) ? "alert" : "status");
+  document.getElementById("backup-feedback").replaceChildren(status);
   // Reload the history after success, or re-enable creation after a failure.
   if (operation.state === "SUCCEEDED") void loadBackupHistory(pending.context);
   else document.getElementById("backup-create").disabled = false;

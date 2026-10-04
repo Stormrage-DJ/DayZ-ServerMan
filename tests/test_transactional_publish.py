@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import sys
 import tempfile
 import unittest
@@ -11,6 +12,9 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
+# The prototypes this module exercised are not part of this repository.
+if importlib.util.find_spec("reference") is None:
+    raise unittest.SkipTest("reference prototypes are not available")
 from reference.prototypes.transactional_publish import (  # noqa: E402
     FailurePoint,
     RecoveryState,

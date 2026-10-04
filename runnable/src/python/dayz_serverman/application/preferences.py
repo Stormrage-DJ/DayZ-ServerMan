@@ -21,6 +21,8 @@ class PreferenceCoordinator:
         """Store the preference repository and the profile validator."""
         self._repository = repository
         self._profiles = profiles
+        # Callback that tells the update-check scheduler about a changed switch
+        self._automatic_checks_listener: Callable[[], None] | None = None
 
     def handlers(self) -> dict[str, Callable[[Mapping[str, Any]], Any]]:
         """Return the bridge handler table for UI preference calls."""
@@ -28,6 +30,7 @@ class PreferenceCoordinator:
             "get_ui_preferences": self.get_ui_preferences,
             "save_selected_profile": self.save_selected_profile,
             "save_backup_after_stop": self.save_backup_after_stop,
+            "save_automatic_update_checks": self.save_automatic_update_checks,
         }
 
     def get_ui_preferences(self, parameters: Mapping[str, Any]) -> dict[str, object]:
@@ -35,18 +38,19 @@ class PreferenceCoordinator:
         self._exact_fields(parameters, set())
         inspection = self._repository.inspect()
         # Report the stored state without fields when the document is not valid
+        automatic = self._automatic_checks(inspection)
         if inspection.state != RecordState.VALID or inspection.document is None:
-            return self._view(None, (), inspection.state.value)
+            return self._view(None, (), inspection.state.value, automatic)
         fields = inspection.document.fields
         value = fields.get("selected_profile_id")
         raw_backups = fields.get("backup_after_stop_profiles", [])
         # Reject stored field shapes that do not match the expected types
         if value is not None and not isinstance(value, str):
-            return self._view(None, (), "INVALID")
+            return self._view(None, (), "INVALID", automatic)
         if (not isinstance(raw_backups, list)
                 or any(not isinstance(item, str) for item in raw_backups)
                 or len(raw_backups) != len(set(raw_backups))):
-            return self._view(None, (), "INVALID")
+            return self._view(None, (), "INVALID", automatic)
         selected = None
         backups: list[str] = []
         # Re-validate every referenced profile so stale identifiers surface
@@ -55,8 +59,8 @@ class PreferenceCoordinator:
                 selected = self._require_profile(value)
             backups = [self._require_profile(item) for item in raw_backups]
         except (ProfileValidationError, ProfileNotFound, ProfileStorageError):
-            return self._view(selected, backups, "STALE")
-        return self._view(selected, backups, "VALID")
+            return self._view(selected, backups, "STALE", automatic)
+        return self._view(selected, backups, "VALID", automatic)
 
     def save_selected_profile(self, parameters: Mapping[str, Any]) -> dict[str, str]:
         """Store the selected profile after proving it exists."""
@@ -91,6 +95,27 @@ class PreferenceCoordinator:
         # Save the updated list under the inspected revision
         self._save({"backup_after_stop_profiles": sorted(profiles)}, inspection=inspection)
         return {"profile_id": profile_id, "backup_after_stop": enabled}
+
+    def save_automatic_update_checks(self, parameters: Mapping[str, Any]) -> dict[str, bool]:
+        """Switch the automatic Steam update checks on or off."""
+        self._exact_fields(parameters, {"enabled"})
+        enabled = parameters.get("enabled")
+        # Require an explicit boolean flag for the preference change
+        if not isinstance(enabled, bool):
+            raise ApplicationCallError(ErrorCode.INVALID_REQUEST, "enabled is invalid")
+        self._save({"automatic_update_checks": enabled})
+        # Let the scheduler evaluate the new switch without waiting for its timer
+        if self._automatic_checks_listener is not None:
+            self._automatic_checks_listener()
+        return {"automatic_update_checks": enabled}
+
+    def automatic_update_checks(self) -> bool:
+        """Return the effective switch of the automatic Steam update checks."""
+        return self._automatic_checks(self._repository.inspect())
+
+    def on_automatic_update_checks_saved(self, listener: Callable[[], None]) -> None:
+        """Register the callback that runs after the switch was stored."""
+        self._automatic_checks_listener = listener
 
     def backup_after_stop(self, profile_id: str) -> bool:
         """Return a valid saved preference, failing closed when storage is stale."""
@@ -162,12 +187,27 @@ class PreferenceCoordinator:
         return profile_id
 
     @staticmethod
-    def _view(selected: str | None, backups, status: str) -> dict[str, object]:
+    def _automatic_checks(inspection) -> bool:
+        """Derive the effective automatic-check switch from the stored record."""
+        # No record yet: automatic checks are on by default
+        if inspection.state == RecordState.MISSING:
+            return True
+        # An unreadable record switches automatic checks off
+        if inspection.state != RecordState.VALID or inspection.document is None:
+            return False
+        # An absent key is on; a stored value counts only when it is a true boolean
+        return inspection.document.fields.get("automatic_update_checks", True) is True
+
+    @staticmethod
+    def _view(
+        selected: str | None, backups, status: str, automatic: bool,
+    ) -> dict[str, object]:
         """Shape the preference view returned to the operator interface."""
         return {
             "selected_profile_id": selected,
             "backup_after_stop_profiles": sorted(backups),
             "storage_status": status,
+            "automatic_update_checks": automatic,
         }
 
     @staticmethod

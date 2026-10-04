@@ -1,10 +1,76 @@
-// Apply-mod flow: reviewed publication of downloaded mods and keys into the server folder.
+// Apply-mod flow: reviewed publication of downloaded mods and keys into the server folder,
+// alone, followed by a server start, or between a stop and a start of a running server.
 "use strict";
 
 // Open apply-review dialog, or null when no review is active.
 let modPublicationDialog = null;
 // Elements made inert while the apply review is open, with their previous state.
 let modPublicationInert = [];
+// Sentences of the review, per start request and server state.
+const modReviewTexts = Object.freeze({
+  noStart: "No server start was requested.",
+  start: "After the mods are verified in the server folder, DayZ-ServerMan will start this server.",
+  inUse: " A mod folder that is in use cannot be replaced; the apply then stops and puts the folders back.",
+  useRestart: " Use Update & restart instead.",
+  whenStopped: " To be safe, apply the mods when the server is stopped.",
+  refused: "The server is not stopped. Mods cannot be applied to the server folder now. "
+    + "Use Update & restart, or stop the server first.",
+  restart: "DayZ-ServerMan will save and stop the server, apply the mods, and start the server again. "
+    + "The server is offline during these steps.",
+  restartBackup: "DayZ-ServerMan will save and stop the server, create a verified backup, apply the mods, "
+    + "and start the server again. The server is offline during these steps.",
+  changed: "The server state changed. The mods are downloaded; nothing was applied.",
+  short: "No mod folder is copied. Missing key files are added.",
+  cancelled: "Apply review cancelled. Downloaded content was not copied to the server.",
+  keepsRunning: " The server keeps running.",
+});
+
+// What the review says about a server that is not stopped, per state that the page read.
+const modReviewServerStates = Object.freeze({
+  RUNNING_MANAGED: "The server is running.",
+  RUNNING_EXTERNAL: "The server is running outside DayZ-ServerMan.",
+  STARTING: "The server is starting.",
+  STOPPING: "The server is stopping.",
+});
+// The same for a state that is not known or could not be read.
+const MOD_REVIEW_STATE_UNCONFIRMED = "The server state could not be confirmed.";
+
+// Word the plain apply to a server that is not stopped: the state as it was read, the risk, and the advice.
+function unstoppedApplySentence(state) {
+  const known = typeof state === "string" && Object.hasOwn(modReviewServerStates, state);
+  // Only a server that this manager runs can use the restart action.
+  return `${known ? modReviewServerStates[state] : MOD_REVIEW_STATE_UNCONFIRMED}${modReviewTexts.inUse}`
+    + (state === "RUNNING_MANAGED" ? modReviewTexts.useRestart : modReviewTexts.whenStopped);
+}
+
+// Report whether the reviewed plan would write into the server folder.
+function publicationPlanWrites(preview) {
+  return (preview.targets || []).some((target) => target.current !== true) || preview.missing_key_count > 0;
+}
+
+// Choose the row of the review: its sentence and what the confirm button submits (null: only "Close").
+function publicationVariant(start, state, preview, backup) {
+  if (start && state === "STOPPED") return { key: "start", sentence: modReviewTexts.start, submit: "publish" };
+  if (start && state === "RUNNING_MANAGED") {
+    return { key: backup ? "restart-backup" : "restart", submit: "restart",
+      sentence: backup ? modReviewTexts.restartBackup : modReviewTexts.restart };
+  }
+  if (start) return { key: "changed", sentence: modReviewTexts.changed, submit: null };
+  if (state === "STOPPED") return { key: "plain", sentence: modReviewTexts.noStart, submit: "publish" };
+  // A plain apply while the server is not stopped follows the policy that the host reports.
+  if (preview.plain_apply_guarded !== true) {
+    return { key: "attempt", sentence: unstoppedApplySentence(state), submit: "publish" };
+  }
+  return publicationPlanWrites(preview)
+    ? { key: "refused", sentence: modReviewTexts.refused, submit: null }
+    : { key: "plain", sentence: modReviewTexts.noStart, submit: "publish" };
+}
+
+// Return the variant of a frozen review for the server state that the page read last.
+function currentPublicationVariant(frozen) {
+  return publicationVariant(frozen.arguments.startRequested, window.ServerManModsActions.serverState(),
+    frozen.preview, window.ServerManProfileContext.backupAfterStop(frozen.arguments.profileId) === true);
+}
 
 // Close the apply review and restore focus and inert state.
 function closeModPublicationReview() {
@@ -15,14 +81,16 @@ function closeModPublicationReview() {
   if (returnFocus?.isConnected) returnFocus.focus();
 }
 
+// Cancel the review and say that nothing was copied; a running server is named as untouched.
+function cancelModPublicationReview() {
+  const restart = modPublicationDialog?.variant?.submit === "restart";
+  closeModPublicationReview();
+  modsFeedback(`${modReviewTexts.cancelled}${restart ? modReviewTexts.keepsRunning : ""}`);
+}
+
 // Keep keyboard focus inside the apply review and treat escape as cancel.
 function containModPublicationFocus(event) {
-  // Cancel the review on escape; downloaded content was not copied to the server.
-  if (event.key === "Escape") {
-    event.preventDefault(); closeModPublicationReview();
-    modsFeedback("Apply review cancelled. Downloaded content was not copied to the server.");
-    return;
-  }
+  if (event.key === "Escape") { event.preventDefault(); cancelModPublicationReview(); return; }
   if (event.key !== "Tab" || !modPublicationDialog) return;
   // Wrap focus between the first and last dialog buttons.
   const buttons = [...modPublicationDialog.querySelectorAll("button")];
@@ -52,104 +120,122 @@ function publicationContextActive(frozen) {
     && selectedProfile()?.profile_id === frozen.arguments.profileId;
 }
 
-// Build the apply preview for a finished download before any file is copied.
-async function reviewModPublication(operation) {
+// Read the apply preview of a finished download; null when the view moved on or the read failed.
+async function previewModPublication(operation) {
   const args = publicationArguments(operation);
-  const frozen = Object.freeze({ context: captureModsContext(), arguments: args });
+  const frozen = { context: captureModsContext(), arguments: args };
   // Require a profile and start intent from an operation that still matches this view.
   if (!args.profileId || typeof args.startRequested !== "boolean"
-      || !publicationContextActive(frozen)) return;
+      || !publicationContextActive(frozen)) return null;
   modsFeedback("Checking which downloaded mods need to be applied.");
-  // Ask the host which downloaded mods need to be applied.
   const response = await window.pywebview.api.preview_mod_publication(
     args.profileId, args.profileRevision, args.profileDigest,
     args.settingsRevision, args.updateOperationId,
   );
-  if (!publicationContextActive(frozen)) return;
+  if (!publicationContextActive(frozen)) return null;
   // Report a failed preview without touching the server folder.
   if (!response?.success) {
-    modsFeedback(response?.error?.message || "The apply preview failed safely.", true);
-    return;
+    modsFeedback(window.ServerManOperationMessages.bridgeError(response, "The apply preview failed safely."), true);
+    return null;
   }
-  showModPublicationReview(frozen, response.value);
+  return Object.freeze({ ...frozen, preview: Object.freeze(response.value) });
 }
 
-// Show the reviewed apply dialog with its targets, keys, and actions.
-function showModPublicationReview(frozen, preview) {
-  if (!publicationContextActive(frozen) || modPublicationDialog) return;
+// Read the preview and open the review for it.
+async function reviewModPublication(operation) {
+  const review = await previewModPublication(operation);
+  if (review) showModPublicationReview(review);
+}
+
+// Show the reviewed apply dialog with its sentence, targets, keys, and actions.
+function showModPublicationReview(review, options = {}) {
+  if (!publicationContextActive(review) || modPublicationDialog) return;
+  const preview = review.preview;
+  const variant = currentPublicationVariant(review);
   const dialog = modsNode("section", "panel notice notice-warning");
   dialog.id = "mod-publication-confirmation"; dialog.setAttribute("role", "alertdialog");
   dialog.setAttribute("aria-modal", "true");
   dialog.setAttribute("aria-labelledby", "mod-publication-title");
   dialog.returnFocus = document.activeElement;
-  dialog.frozen = Object.freeze({ ...frozen, preview: Object.freeze(preview) });
+  dialog.frozen = review; dialog.variant = variant; dialog.options = options;
   const title = modsNode("h2", "", "Apply downloaded mods and keys?");
   title.id = "mod-publication-title";
   dialog.append(title, modsNode("p", "",
     "Review the server folders that will be updated. Changes use verified rollback protection."));
-  dialog.append(modsNode("p", "", frozen.arguments.startRequested
-    ? "After the mods are verified in the server folder, DayZ-ServerMan will start this server."
-    : "No server start was requested."));
-  // Describe the update targets and the verified key files.
+  dialog.append(modsNode("p", "mod-publication-variant", variant.sentence));
+  // Describe the update targets and the verified key files, or say that no folder is copied.
   const list = modsNode("ul", "restore-targets");
-  (preview.targets || []).forEach((target) => list.append(
-    modsNode("li", "", `Workshop ${target.workshop_id}: ${target.target_relative}`),
-  ));
+  if (options.short) list.append(modsNode("li", "", modReviewTexts.short));
+  else (preview.targets || []).forEach((target) => list.append(
+    modsNode("li", "", `Workshop ${target.workshop_id}: ${target.target_relative}`)));
   list.append(modsNode("li", "", `${preview.key_count} verified key file(s)`));
-  // Wire cancel and confirm actions for the review.
+  // A row that submits nothing has only "Close".
   const actions = modsNode("div", "action-row");
-  const cancel = modsNode("button", "button", "Cancel"); cancel.type = "button";
-  cancel.addEventListener("click", closeModPublicationReview);
-  const confirm = modsNode("button", "button button-primary", "Apply mods and keys");
-  confirm.type = "button"; confirm.addEventListener("click", confirmModPublication);
-  actions.append(cancel, confirm); dialog.append(list, actions);
+  const cancel = modsNode("button", "button", variant.submit ? "Cancel" : "Close"); cancel.type = "button";
+  cancel.addEventListener("click", cancelModPublicationReview);
+  actions.append(cancel);
+  if (variant.submit) {
+    const confirm = modsNode("button", "button button-primary",
+      variant.submit === "restart" ? "Stop server, apply and restart" : "Apply mods and keys");
+    confirm.type = "button"; confirm.addEventListener("click", confirmModPublication);
+    actions.append(window.ServerManBusy.mark(confirm, true));
+  }
+  dialog.append(list, actions);
   dialog.addEventListener("keydown", containModPublicationFocus);
   document.body.append(dialog); modPublicationDialog = dialog;
   // Make the rest of the page inert while the dialog is open.
-  modPublicationInert = [...document.body.children].filter((item) => item !== dialog)
+  modPublicationInert = [...document.body.children]
+    .filter((item) => item !== dialog && !item.hasAttribute("data-announcer"))
     .map((element) => ({ element, inert: element.inert }));
   modPublicationInert.forEach(({ element }) => { element.inert = true; });
   cancel.focus();
 }
 
-// Submit the confirmed apply request through the shared operation flow.
+// Submit the confirmed apply; a server state that changed since the review redraws it and submits nothing.
 async function confirmModPublication() {
-  const frozen = modPublicationDialog?.frozen;
-  if (!frozen || !publicationContextActive(frozen)) {
-    closeModPublicationReview(); return;
-  }
-  const { arguments: args, preview } = frozen;
+  const dialog = modPublicationDialog;
+  const frozen = dialog?.frozen;
+  if (!frozen || !publicationContextActive(frozen)) { closeModPublicationReview(); return; }
+  const reviewed = dialog.variant;
+  await window.ServerManModsActions.read();
+  if (modPublicationDialog !== dialog) return;
+  if (!publicationContextActive(frozen)) { closeModPublicationReview(); return; }
+  const variant = currentPublicationVariant(frozen);
   closeModPublicationReview();
-  // Publish against the reviewed fingerprint of the server folders.
-  const response = await window.pywebview.api.publish_mods_and_keys(
-    args.profileId, args.profileRevision, args.profileDigest, args.settingsRevision,
-    args.updateOperationId, preview.publication_fingerprint,
-  );
+  if (variant.key !== reviewed.key) { showModPublicationReview(frozen, dialog.options); return; }
+  const { arguments: args, preview } = frozen;
+  const fields = [args.profileId, args.profileRevision, args.profileDigest, args.settingsRevision,
+    args.updateOperationId, preview.publication_fingerprint];
+  // A running server is stopped, updated, and started again by one host operation.
+  const restart = variant.submit === "restart";
+  const response = restart
+    ? await window.pywebview.api.apply_mods_and_restart(...fields, variant.key === "restart-backup")
+    : await window.pywebview.api.publish_mods_and_keys(...fields);
   if (!publicationContextActive(frozen)) return;
-  acceptModsOperation(response, "Applying downloaded mods and keys");
+  acceptModsOperation(response, restart ? "Stopping the server, applying mods and starting it again"
+    : "Applying downloaded mods and keys");
+  // Mark the reviewed targets that are copied in their rows while the apply runs.
+  if (response?.success) window.ServerManModsProgress.applying(preview.targets);
 }
 
-// Report the result of an apply operation, including the server start outcome.
+// Report the result of an apply or restart operation, including the server start outcome.
 function modPublicationFinished(operation) {
-  if (operation.kind !== "PUBLISH_MODS_AND_KEYS") return false;
+  if (!["PUBLISH_MODS_AND_KEYS", "APPLY_MODS_AND_RESTART"].includes(operation.kind)) return false;
   if (operation.state !== "SUCCEEDED") return false;
   const result = operation.result || {};
   // Leave other profiles' results to their own workspace.
   if (result.profile_id !== selectedProfile()?.profile_id) return true;
-  const start = result.start_state === "STARTED"
-    ? " Server start was authorized and completed."
-    : result.start_state === "FAILED"
-      ? ` Mods are verified, but server start failed: ${result.start_error}.`
-      : result.start_state === "CANCELLED"
-        ? " Mods are verified, but server start was cancelled before launch."
-      : " Server start was not requested.";
-  modsFeedback(`Mods and keys are applied and verified.${start}`, result.start_state === "FAILED");
+  // Word the apply and the outcome of the requested server start like the operation bar.
+  const outcome = window.ServerManOperationBar.pageResult(operation);
+  modsFeedback(outcome.text, outcome.look === "failed");
   return true;
 }
 
 // Publish the apply review controls used by the mods workspace.
 window.ServerManModPublication = Object.freeze({
   reviewFromUpdate: reviewModPublication,
+  preview: previewModPublication,
+  show: showModPublicationReview,
   operationFinished: modPublicationFinished,
   closeReview: closeModPublicationReview,
 });

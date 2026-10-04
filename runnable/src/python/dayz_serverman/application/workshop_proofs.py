@@ -34,7 +34,8 @@ def verify_result(
         # Otherwise verify the installed cache content directly
         try:
             proof = verifier.verify(item.workshop_id)
-        except CacheVerificationError:
+        except (CacheVerificationError, OSError):
+            # A hash that cannot read the cache is a failed verification, never a crash
             return ItemResult(item, ItemOutcome.UNKNOWN_FAILED,
                               error_code="CACHE_VERIFICATION_FAILED")
     # A proof without a manifest id cannot confirm the installed build

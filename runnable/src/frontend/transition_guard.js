@@ -166,7 +166,7 @@ function showGuard(message, commit, owners) {
   guardDialog = dialog;
   // Suspend the page behind the dialog and focus the safe choice.
   inertedElements = [...document.body.children]
-    .filter((element) => element !== dialog)
+    .filter((element) => element !== dialog && !element.hasAttribute("data-announcer"))
     .map((element) => ({ element, inert: element.inert }));
   inertedElements.forEach(({ element }) => { element.inert = true; });
   stayButton.focus();

@@ -32,7 +32,7 @@ def _smoke_probe(
     while time.monotonic() < deadline:
         ready = window.evaluate_js("document.body.dataset.shellReady === 'true'") is True
         operational_ready = window.evaluate_js(
-            "Boolean(document.querySelector('.overview-controls, .operation-panel'))"
+            "Boolean(document.querySelector('.overview-controls, .operation-bar:not([hidden])'))"
         ) is True
         if ready and operational_ready:
             break
@@ -163,6 +163,8 @@ def launch_application(
     ) if smoke else None
     # Keep scheduled lifecycle actions running while the window lives
     composition.schedules.start()
+    # Check Steam for mod updates at start and on the interval
+    composition.update_check_scheduler.start()
     try:
         # Start the embedded Edge Chromium window and block until it closes
         webview.start(
@@ -175,5 +177,6 @@ def launch_application(
         )
     finally:
         # Stop scheduling after the window closes
+        composition.update_check_scheduler.stop()
         composition.schedules.stop()
     return 0

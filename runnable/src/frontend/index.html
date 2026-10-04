@@ -39,10 +39,13 @@
 
     <!-- Workspace: page heading and live content region -->
     <div class="workspace">
+      <!-- Operation bar: stays above the page while an operation runs or a result waits -->
+      <section class="operation-bar" id="operation-bar" aria-label="Current operation" hidden></section>
       <main id="main-content" tabindex="-1">
         <div class="page-heading">
           <button class="menu-button" id="menu-button" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Open navigation">
             <span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span>
+            <span class="status-dot" id="menu-status-dot" aria-hidden="true" hidden></span>
           </button>
           <div>
             <h1 id="page-title">Overview</h1>
@@ -70,6 +73,11 @@
   </div>
   <!-- Scrim shown behind the open mobile sidebar drawer -->
   <div class="drawer-scrim" id="drawer-scrim" hidden></div>
+  <!-- Operation announcements for assistive technology; modal dialogs leave these two elements active -->
+  <div class="sr-only" id="operation-announcer" role="status" data-announcer></div>
+  <div class="sr-only" id="operation-alert" role="alert" data-announcer></div>
+  <!-- Reason text that every busy-locked control refers to -->
+  <span id="busy-reason" hidden></span>
   <!-- INLINE_SCRIPT -->
 </body>
 </html>

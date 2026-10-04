@@ -18,7 +18,7 @@ from ...repositories.steam_vdf import VdfError, field, parse_vdf
 from .process_tree import ChildEvidence, OwnedProcessTree, safe_child_environment
 
 
-# Steam application id of the DayZ dedicated server
+# Steam application id of the DayZ game, which owns the Workshop content
 APP_ID = "221100"
 # Retained console output is capped at 1 MiB to bound memory use during runs
 OUTPUT_LIMIT = 1_048_576

@@ -76,7 +76,7 @@ def parse_publication_gate(gate, request, profile, settings) -> tuple[dict[str, 
     # Require the download state that matches the required item set
     if result["download_state"] != state:
         raise PublicationGateError("Workshop update did not produce a verified cache set.")
-    if required and (process_id is None or exit_code != 0 or summary is not None):
+    if required and not _process_evidence_valid(process_id, exit_code, summary, result["items"]):
         raise PublicationGateError("SteamCMD completion evidence is contradictory.")
     if not required and (process_id is not None or exit_code is not None or summary is not None):
         raise PublicationGateError("Empty Workshop evidence is contradictory.")
@@ -96,6 +96,19 @@ def parse_publication_gate(gate, request, profile, settings) -> tuple[dict[str, 
             raw.get("cache_proof"), expected_item.workshop_id,
         )
     return proofs, start_requested
+
+
+def _process_evidence_valid(
+    process_id: object, exit_code: object, summary: object, items: object,
+) -> bool:
+    """Return whether the process evidence of a non-empty item set is consistent."""
+    # A SteamCMD run must have ended with exit code 0 and without a failure summary
+    if process_id is not None:
+        return exit_code == 0 and summary is None
+    # Without a process, all three fields are null and every item is verified current
+    return (exit_code is None and summary is None and isinstance(items, list)
+            and all(isinstance(raw, dict) and raw.get("outcome") == "VERIFIED_CURRENT"
+                    for raw in items))
 
 
 def _parse_proof(raw: object, workshop_id: str) -> CacheProof:
@@ -123,9 +136,12 @@ def _parse_proof(raw: object, workshop_id: str) -> CacheProof:
     if (not isinstance(proof.installed_manifest_id, str)
             or not proof.installed_manifest_id.isdecimal()):
         raise PublicationGateError("Workshop manifest identifier is invalid.")
-    # Accept only full-content and applied-state verification kinds
-    if proof.verification_kind not in ("FULL_CONTENT", "APPLIED_STATE"):
+    # Accept only full-content, stored-source and applied-state verification kinds
+    if proof.verification_kind not in ("FULL_CONTENT", "STORED_SOURCE", "APPLIED_STATE"):
         raise PublicationGateError("Workshop proof kind is invalid.")
+    # A stored source proof makes no statement about the target
+    if proof.verification_kind == "STORED_SOURCE" and proof.target_metadata_digest is not None:
+        raise PublicationGateError("Stored source proof carries a target digest.")
     if (proof.verification_kind == "APPLIED_STATE"
             and (not isinstance(proof.target_metadata_digest, str)
                  or SHA256.fullmatch(proof.target_metadata_digest) is None)):

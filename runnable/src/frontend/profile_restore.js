@@ -31,7 +31,7 @@ async function browseDirectArchive(action, panel) {
   try {
     const result = await window.pywebview.api.select_backup_archive();
     if (sequence !== directRestoreState.sequence || !window.ServerManWorkspace.isActive(workspace) || !panel.isConnected) return;
-    if (!result.success) panel.append(directNode("p", result.error?.message || "Archive selection failed.", "notice notice-error"));
+    if (!result.success) panel.append(directNode("p", window.ServerManOperationMessages.bridgeError(result, "Archive selection failed."), "notice notice-error"));
     else if (!result.value.cancelled) openDirectRestore(result.value, action);
   } catch (_) {
     if (panel.isConnected && window.ServerManWorkspace.isActive(workspace))
@@ -103,6 +103,8 @@ function openDirectRestore(backup, trigger) {
   const apply = directNode("button", "Restore profile", "button button-primary");
   apply.id = "direct-apply"; apply.type = "button"; apply.disabled = true;
   apply.addEventListener("click", applyDirectRestore);
+  // The restore submits an operation: lock the button and explain why while another operation runs.
+  window.ServerManBusy?.mark(apply, true);
   actions.append(cancel, review, apply); dialog.append(actions);
   dialog.addEventListener("cancel", (event) => { event.preventDefault(); closeDirectRestore(); });
   document.body.append(dialog); directRestoreState.dialog = dialog;
@@ -127,13 +129,13 @@ async function reviewDirectRestore(backupId) {
   if (sequence !== directRestoreState.sequence || !directRestoreState.dialog
       || !window.ServerManWorkspace.isActive(directRestoreState.workspace)) return;
   const review = document.getElementById("direct-review"); review.replaceChildren();
-  if (!result.success) { review.append(directNode("p", result.error?.message || "Preview failed.", "notice notice-error")); return; }
+  if (!result.success) { review.append(directNode("p", window.ServerManOperationMessages.bridgeError(result, "Preview failed."), "notice notice-error")); return; }
   const preview = result.value;
   directRestoreState.preview = { request: Object.freeze(request), value: preview };
   const list = directNode("dl", "");
   [["Profile", `${preview.profile.display_name} (${preview.profile.profile_id})`], ["Configuration", preview.profile.server_config],
     ["Runtime", preview.profile.runtime_profile], ["Mission", preview.mission_root], ["Storage", `storage_${preview.instance_id}`],
-    ["Ports", `${preview.game_port} / query ${preview.steam_query_port}`], ["Destination policy", preview.storage_policy]].forEach(([label, value]) => {
+    ["Ports", `${preview.game_port} / query ${preview.steam_query_port}`], ["Destination policy", window.ServerManDiagnosticLabels.storagePolicy(preview.storage_policy)]].forEach(([label, value]) => {
     list.append(directNode("dt", label), directNode("dd", value));
   });
   review.append(list, directNode("p", "Restore creates the profile. Start it separately after checking readiness."));
@@ -167,10 +169,11 @@ async function applyDirectRestore() {
   if (!result.success) {
     directRestoreState.pending = null;
     dialog.querySelectorAll("button, input, select").forEach((control) => { control.disabled = false; });
-    document.getElementById("direct-review").append(directNode("p", result.error?.message || "Restore failed.", "notice notice-error"));
+    document.getElementById("direct-review").append(directNode("p", window.ServerManOperationMessages.bridgeError(result, "Restore failed."), "notice notice-error"));
     return;
   }
   directRestoreState.pending.operationId = result.value.operation_id;
+  window.ServerManOperationBar?.adopt(result.value.operation_id);
   document.getElementById("direct-review").append(directNode("p", "Verifying backup and preparing restoration…", "notice"));
 }
 
@@ -193,7 +196,8 @@ function directOperationFinished(operation) {
   } else if (directRestoreState.dialog) {
     directRestoreState.dialog.querySelectorAll("button, input, select").forEach((control) => { control.disabled = false; });
     invalidateDirectPreview();
-    document.getElementById("direct-review").append(directNode("p", operation.terminal_error?.message || `Restore ${operation.state.toLowerCase()}.`, "notice notice-error"));
+    document.getElementById("direct-review").append(directNode("p",
+      window.ServerManOperationBar?.pageResult(operation).text || "Restore failed.", "notice notice-error"));
   }
   return true;
 }

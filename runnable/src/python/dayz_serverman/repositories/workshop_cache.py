@@ -7,23 +7,28 @@ import json
 import os
 import stat
 import unicodedata
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 from ..domain.workshop import CacheProof, WorkshopObservation
-from .steam_vdf import VdfError, field, parse_vdf
 from .tree_metadata import TreeMetadataError, has_alternate_stream
+from .workshop_manifest import (  # noqa: F401 - re-exported for existing importers
+    APP_ID,
+    MANIFEST_NAME,
+    CacheVerificationError,
+    manifest_id,
+    manifest_record,
+    observe_items,
+    steam_reports_complete,
+)
+
+# Each file is hashed in chunks of this size, so peak memory per file is one chunk
+HASH_CHUNK_BYTES = 1024 * 1024
 
 
-# DayZ Steam application identifier; the workshop manifest name derives from it
-APP_ID = "221100"
-MANIFEST_NAME = f"appworkshop_{APP_ID}.acf"
-
-
-class CacheVerificationError(RuntimeError):
-    """Raised when the Workshop cache cannot be verified safely."""
-    pass
+class HashingCancelled(RuntimeError):
+    """Raised when the cancellation probe fires between two files; the hash is abandoned."""
 
 
 def _has_alternate_stream(path: Path) -> bool:
@@ -59,8 +64,14 @@ class WorkshopCacheVerifier:
         """Return the workshop content root under verification."""
         return self._root
 
-    def verify(self, workshop_id: str) -> CacheProof:
-        """Verify one workshop item and return its cache proof."""
+    def verify(
+        self, workshop_id: str, cancellation_probe: Callable[[], bool] | None = None,
+    ) -> CacheProof:
+        """Verify one workshop item and return its cache proof.
+
+        The optional probe is asked before each file; when it returns True the
+        hash is abandoned with HashingCancelled.
+        """
         # Reject non-numeric identifiers before they reach the filesystem
         if not workshop_id.isdecimal():
             raise CacheVerificationError("Workshop item identifier is invalid")
@@ -73,7 +84,7 @@ class WorkshopCacheVerifier:
         manifest = self._validated_manifest()
         first_record = self._manifest_record(manifest, workshop_id)
         # Scan the item content while holding the first manifest reading
-        inventory = self._inventory(item, root)
+        inventory = self._inventory(item, root, cancellation_probe)
         # Re-read the manifest so a mid-scan change is caught
         second_record = self._manifest_record(manifest, workshop_id)
         if first_record != second_record:
@@ -89,35 +100,47 @@ class WorkshopCacheVerifier:
             regular_file_count=count,
             total_regular_bytes=total,
             verified_at=datetime.now(UTC).isoformat(timespec="milliseconds"),
-            installed_manifest_id=self._manifest_id(first_record),
+            installed_manifest_id=manifest_id(first_record),
             metadata_inventory_digest=metadata_digest,
         )
-
-    @staticmethod
-    def _manifest_id(record: bytes) -> str:
-        """Read the installed manifest identifier from a record."""
-        # Decode the persisted record and require a numeric manifest id
-        parsed = json.loads(record.decode("utf-8"))
-        value = field(parsed, "manifest")
-        if not isinstance(value, str) or not value.isdecimal():
-            raise CacheVerificationError("Steam manifest item state is incomplete")
-        return value
 
     def observe(self, workshop_ids: tuple[str, ...]) -> tuple[WorkshopObservation, ...]:
         """Return the current observations for the requested Workshop items."""
         if any(not workshop_id.isdecimal() for workshop_id in workshop_ids):
             raise CacheVerificationError("Workshop item identifier is invalid")
         self._validated_root()
-        manifest = self._validated_manifest()
-        # Observation tolerates incomplete downloads, unlike proof
-        app = self._manifest_app(manifest, require_complete=False)
-        installed = field(app, "WorkshopItemsInstalled")
-        details = field(app, "WorkshopItemDetails")
-        # Coerce missing record groups to empty mappings for the report
-        installed = installed if isinstance(installed, dict) else {}
-        details = details if isinstance(details, dict) else {}
-        return tuple(self._observation(workshop_id, installed, details)
-                     for workshop_id in workshop_ids)
+        # Parsing lives in the manifest module; a missing record group fails closed
+        return observe_items(self._validated_manifest(), workshop_ids)
+
+    def steam_reports_complete(self) -> bool:
+        """Return whether Steam reports no pending update or download for the application."""
+        try:
+            self._validated_root()
+            return steam_reports_complete(self._validated_manifest())
+        except CacheVerificationError:
+            return False
+
+    def source_directory_exists(self, workshop_id: str) -> bool:
+        """Return whether the item has a content directory below the cache root."""
+        try:
+            return workshop_id.isdecimal() and (self._root / workshop_id).is_dir()
+        except OSError:
+            return False
+
+    def root_identity(self) -> str:
+        """Derive a stable identity for the validated content root."""
+        try:
+            canonical = self._validated_root()
+            state = canonical.stat()
+        except OSError as error:
+            raise CacheVerificationError("Workshop cache root is missing or unsafe") from error
+        # Bind identity to path, volume, and creation time so a replaced folder is detected
+        payload = json.dumps({
+            "domain": "workshop-cache-root/v1", "path": str(canonical).casefold(),
+            "device": state.st_dev, "file_identity": state.st_ino,
+            "created_ns": state.st_ctime_ns,
+        }, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
 
     def manifest_record_digest(self, workshop_id: str) -> str:
         """Return the digest of one item's raw manifest record."""
@@ -155,71 +178,7 @@ class WorkshopCacheVerifier:
     @staticmethod
     def _manifest_record(path: Path, workshop_id: str) -> bytes:
         """Return the canonical JSON bytes of one installed item record."""
-        try:
-            app = WorkshopCacheVerifier._manifest_app(path, require_complete=True)
-            installed = field(app, "WorkshopItemsInstalled")
-            if not isinstance(installed, dict):
-                raise VdfError("Steam manifest installed-item set is invalid")
-            matches = [value for key, value in installed.items() if key == workshop_id]
-            if len(matches) != 1 or not isinstance(matches[0], dict):
-                raise VdfError("Steam manifest item identity is missing or ambiguous")
-            record: dict[str, Any] = matches[0]
-            # Require the persisted identity fields before canonicalizing
-            required = {name: field(record, name) for name in ("manifest", "size", "timeupdated")}
-            if any(not isinstance(value, str) or not value.isdecimal() for value in required.values()):
-                raise VdfError("Steam manifest item state is incomplete")
-        except (OSError, UnicodeError, VdfError) as error:
-            raise CacheVerificationError(str(error)) from error
-        # Canonical JSON keeps the digest stable across key orderings
-        return json.dumps(record, sort_keys=True, separators=(",", ":")).encode("utf-8")
-
-    @staticmethod
-    def _manifest_app(path: Path, *, require_complete: bool) -> dict[str, Any]:
-        """Parse the manifest and return its AppWorkshop object."""
-        try:
-            parsed = parse_vdf(path.read_text(encoding="utf-8-sig"))
-            app = field(parsed, "AppWorkshop")
-            # The manifest must belong to the DayZ application
-            if not isinstance(app, dict) or field(app, "appid") != APP_ID:
-                raise VdfError("Steam manifest app identity does not match")
-            # Proof also requires Steam to report no pending work
-            if require_complete and (
-                field(app, "NeedsUpdate") != "0" or field(app, "NeedsDownload") != "0"
-            ):
-                raise VdfError("Steam manifest says that content is incomplete")
-            return app
-        except (OSError, UnicodeError, VdfError) as error:
-            raise CacheVerificationError(str(error)) from error
-
-    @staticmethod
-    def _observation(
-        workshop_id: str, installed: dict[str, Any], details: dict[str, Any],
-    ) -> WorkshopObservation:
-        """Build one observation from the installed and latest records."""
-        installed_record = installed.get(workshop_id)
-        detail_record = details.get(workshop_id)
-        # Coerce absent or malformed item records to empty mappings
-        installed_record = installed_record if isinstance(installed_record, dict) else {}
-        detail_record = detail_record if isinstance(detail_record, dict) else {}
-
-        def decimal(source: dict[str, Any], name: str) -> str | None:
-            """Return a numeric field from a record, or None when absent."""
-            # Match field names case-insensitively, as Steam does
-            value = next((value for key, value in source.items()
-                          if key.casefold() == name.casefold()), None)
-            return value if isinstance(value, str) and value.isdecimal() else None
-
-        installed_manifest = decimal(installed_record, "manifest")
-        installed_time = decimal(installed_record, "timeupdated")
-        latest_manifest = decimal(detail_record, "latest_manifest")
-        latest_time = decimal(detail_record, "latest_timeupdated")
-        return WorkshopObservation(
-            workshop_id=workshop_id,
-            installed_manifest_id=installed_manifest,
-            latest_manifest_id=latest_manifest,
-            installed_time_updated=int(installed_time) if installed_time else None,
-            latest_time_updated=int(latest_time) if latest_time else None,
-        )
+        return manifest_record(path, workshop_id)
 
     @staticmethod
     def _require_safe_chain(path: Path) -> None:
@@ -234,7 +193,9 @@ class WorkshopCacheVerifier:
             current = current.parent
 
     @staticmethod
-    def _inventory(item: Path, root: Path) -> tuple[str, str, int, int]:
+    def _inventory(
+        item: Path, root: Path, cancellation_probe: Callable[[], bool] | None = None,
+    ) -> tuple[str, str, int, int]:
         """Digest the item's files and metadata and count regular bytes."""
         entries: list[tuple[object, ...]] = []
         metadata_entries: list[tuple[object, ...]] = []
@@ -261,6 +222,9 @@ class WorkshopCacheVerifier:
                 metadata_entries.append(("D", relative))
             # Every file must be a regular file below the configured root
             for name in files:
+                # Stop only between files, never inside one
+                if cancellation_probe is not None and cancellation_probe():
+                    raise HashingCancelled("Workshop item hashing was cancelled")
                 child = base / name
                 if (":" in name or child.is_symlink() or _is_reparse(child)
                         or not child.is_file() or _has_alternate_stream(child)):
@@ -277,10 +241,14 @@ class WorkshopCacheVerifier:
                 if identity in identities:
                     raise CacheVerificationError("Workshop item has a path identity collision")
                 identities.add(identity)
-                # Hash the full bytes so the proof covers file content
-                data = child.read_bytes()
-                size = len(data)
-                entries.append(("F", normalized, size, hashlib.sha256(data).hexdigest()))
+                # Stream the bytes through one running hash; the size is what was read
+                digest = hashlib.sha256()
+                size = 0
+                with child.open("rb") as stream:
+                    while chunk := stream.read(HASH_CHUNK_BYTES):
+                        digest.update(chunk)
+                        size += len(chunk)
+                entries.append(("F", normalized, size, digest.hexdigest()))
                 metadata_entries.append(("F", normalized, size, child.stat().st_mtime_ns))
                 count += 1
                 total += size

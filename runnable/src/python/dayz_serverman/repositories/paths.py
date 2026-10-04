@@ -40,6 +40,8 @@ class PortablePaths:
     schedules: Path
     state_file: Path
     applied_mod_state: Path
+    content_proofs: Path
+    update_check_cache: Path
     logs: Path
     operations: Path
     publication: Path
@@ -67,6 +69,8 @@ class PortablePaths:
             schedules=canonical / "data" / "schedules.json",
             state_file=canonical / "data" / "state.json",
             applied_mod_state=canonical / "data" / "applied-mod-state.json",
+            content_proofs=canonical / "data" / "content-proofs.json",
+            update_check_cache=canonical / "data" / "update-check.json",
             logs=canonical / "data" / "logs",
             operations=canonical / "data" / "operations",
             publication=canonical / "data" / "publication",

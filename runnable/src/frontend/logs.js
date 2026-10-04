@@ -125,5 +125,14 @@ async function refreshLogs(showLoading = false, preserveViewport = true) {
   }
 }
 
+// Show one log source: reload it when Logs is visible, else switch to Logs through the unsaved-change guard.
+function showLogSource(source) {
+  logState.source = source;
+  if (shellState.section === "logs") refreshLogs(true, false);
+  else setSection("logs");
+}
+
 // Publish the log workspace controls used by the shell.
-window.ServerManLogs = Object.freeze({ open: () => refreshLogs(true, false), refresh: refreshLogs });
+window.ServerManLogs = Object.freeze({
+  open: () => refreshLogs(true, false), refresh: refreshLogs, showSource: showLogSource,
+});

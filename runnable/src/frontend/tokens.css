@@ -94,4 +94,8 @@
   --choice-radius: 4px;
   --control-disabled-opacity: .65;
   --focus-outline: 2px solid var(--color-focus);
+  /* Operation bar */
+  --operation-bar-min-height: 56px;
+  --operation-bar-control-height: 32px;
+  --operation-bar-z: 10;
 }

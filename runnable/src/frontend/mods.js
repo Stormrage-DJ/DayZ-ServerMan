@@ -1,9 +1,10 @@
-// Mods workspace: Steam access settings, workshop downloads, and cancellation.
+// Mods workspace: Steam access settings, the mod inventory, and the requests that queue mod operations.
 "use strict";
 
 // Tracks the loaded profiles, inventory, settings, and pending workshop operation.
 const modsState = {
   profiles: [], inventory: [], settings: null, pending: null, generation: 0, busy: false,
+  refresh: 0,
 };
 // Capture the profile and workspace generation into a frozen token.
 function captureModsContext() {
@@ -38,15 +39,14 @@ function modsFeedback(message, error = false) {
 // Enable or disable the Steam and workshop controls for a busy host.
 function setModsBusy(busy) {
   modsState.busy = busy;
-  const hasProfiles = modsState.profiles.length > 0;
   // Lock the Steam settings controls during a host round trip.
   ["save-steam-settings", "authenticate-steamcmd", "steam-auth-mode"].forEach((id) => {
     const node = document.getElementById(id); if (node) node.disabled = busy;
   });
   const account = document.getElementById("steam-account-name");
   if (account) account.disabled = busy || document.getElementById("steam-auth-mode")?.value === "ANONYMOUS";
-  const update = document.getElementById("update-workshop");
-  if (update) update.disabled = busy || !hasProfiles;
+  window.ServerManModsActions.sync();
+  window.ServerManModsVerify.sync();
 }
 
 // Return the profile that matches the shared selection, or null.
@@ -86,16 +86,14 @@ function renderMods() {
     "Enter passwords and Steam Guard codes only in the visible SteamCMD window. DayZ-ServerMan never asks for them."));
   const actions = modsNode("div", "mods-actions");
   const authenticationActions = modsNode("div", "mods-action-group");
-  const updateActions = modsNode("div", "mods-action-group mods-update-actions");
-  // Wire the sign-in, login, download, and cancel actions.
-  [["save-steam-settings", "Save sign-in settings", authenticationActions],
-    ["authenticate-steamcmd", "Open SteamCMD login", authenticationActions],
-    ["update-workshop", "Download / update mods", updateActions],
-    ["cancel-workshop-operation", "Cancel current operation", updateActions]].forEach(([id, label, group]) => {
-      const button = modsNode("button", id === "update-workshop" ? "button button-primary" : "button", label);
-      button.id = id; button.type = "button"; group.append(button);
+  // Wire the sign-in and login actions; each submits an operation and is locked while one runs.
+  // The update actions are in the check header of "Configured mods".
+  [["save-steam-settings", "Save sign-in settings"],
+    ["authenticate-steamcmd", "Open SteamCMD login"]].forEach(([id, label]) => {
+      const button = modsNode("button", "button", label);
+      button.id = id; button.type = "button"; authenticationActions.append(window.ServerManBusy.mark(button));
     });
-  actions.append(authenticationActions, updateActions);
+  actions.append(authenticationActions);
   panel.append(form, safety, actions, modsNode("div", "", ""));
   panel.lastChild.id = "mods-feedback";
   // Replace the workspace with the rebuilt panel and inventory.
@@ -108,9 +106,6 @@ function renderMods() {
   setModsBusy(Boolean(modsState.pending));
   document.getElementById("save-steam-settings").addEventListener("click", saveSteamSettings);
   document.getElementById("authenticate-steamcmd").addEventListener("click", authenticateSteamCmd);
-  document.getElementById("update-workshop").addEventListener("click", updateWorkshop);
-  const cancel = document.getElementById("cancel-workshop-operation");
-  cancel.hidden = !modsState.pending; cancel.addEventListener("click", cancelModsOperation);
   if (modsState.pending) setModsBusy(true);
 }
 
@@ -121,10 +116,14 @@ async function openMods() {
   const generation = ++modsState.generation;
   const workspace = window.ServerManWorkspace.capture("mods");
   const profileId = window.ServerManProfileContext?.selectedId?.();
-  // Load the snapshot, profiles, and inventory together.
+  // Request an update check and read its state before the inventory, so a later change is seen.
+  const updates = window.ServerManUpdateStatus.open();
+  // Load the snapshot, profiles, and inventory together; the server state decides the start action.
+  void window.ServerManModsActions.read();
+  window.ServerManModsProgress.clear();
   const [snapshot, profiles, inventory] = await Promise.all([
     window.pywebview.api.get_application_snapshot(), window.pywebview.api.list_profiles(),
-    profileId ? window.pywebview.api.list_mod_inventory(profileId)
+    profileId ? updates.then(() => window.pywebview.api.list_mod_inventory(profileId))
       : Promise.resolve({ success: true, value: [] }),
   ]);
   // Ignore the batch when the workspace or generation moved on.
@@ -147,6 +146,21 @@ async function openMods() {
   }
 }
 
+// Re-read the inventory after an update-state change and redraw only the inventory panel.
+async function refreshModsInventory() {
+  const context = captureModsContext();
+  if (!isModsContextActive(context)) return;
+  // Show the new check state at once, then fetch the rows that belong to it.
+  updateModInventory();
+  if (!context.profileId) return;
+  const ticket = ++modsState.refresh;
+  const inventory = await window.pywebview.api.list_mod_inventory(context.profileId);
+  // Keep the visible rows when the page moved on, a newer refresh started, or the read failed.
+  if (!isModsContextActive(context) || ticket !== modsState.refresh || !inventory?.success) return;
+  modsState.inventory = inventory.value;
+  updateModInventory();
+}
+
 // Save the Steam sign-in settings through the shared operation flow.
 async function saveSteamSettings() {
   const context = captureModsContext();
@@ -167,108 +181,7 @@ async function authenticateSteamCmd() {
   acceptModsOperation(result, "Opening visible SteamCMD authentication");
 }
 
-// Queue a workshop download or update for the selected profile.
-async function updateWorkshop() {
-  const profile = selectedProfile();
-  if (!profile) return modsFeedback("Select a profile first.", true);
-  const context = captureModsContext();
-  const result = await window.pywebview.api.update_workshop_items(
-    profile.profile_id, profile.revision, profile.semantic_digest, modsState.settings.revision,
-    modsState.settings.steam_authentication_mode, modsState.settings.steam_account_name,
-    false,
-  );
-  if (!isModsContextActive(context)) return;
-  acceptModsOperation(result, "Downloading or updating mods");
-}
-
-// Track a queued host operation and show its progress message.
-function acceptModsOperation(result, message) {
-  // Report failures without leaving any pending state behind.
-  if (!result || !result.success) return modsFeedback(
-    result && result.error ? result.error.message : "The request failed safely.", true);
-  const profile = selectedProfile();
-  // Record the queued operation against the current generation and profile.
-  modsState.pending = Object.freeze({ id: result.value.operation_id,
-    generation: modsState.generation, profileId: profile ? profile.profile_id : "" });
-  setModsBusy(true);
-  const cancel = document.getElementById("cancel-workshop-operation");
-  if (cancel) { cancel.hidden = false; cancel.disabled = false; }
-  modsFeedback(message);
-}
-
-// Request cancellation of the pending workshop operation.
-async function cancelModsOperation() {
-  const pending = modsState.pending;
-  if (!pending) return;
-  const context = captureModsContext();
-  const button = document.getElementById("cancel-workshop-operation");
-  if (button) button.disabled = true;
-  const result = await window.pywebview.api.request_operation_cancellation(pending.id);
-  // Ignore responses when the workspace or pending operation changed.
-  if (!isModsContextActive(context) || modsState.pending?.id !== pending.id) return;
-  if (!result || !result.success) {
-    if (button) button.disabled = false;
-    return modsFeedback(result?.error?.message || "Cancellation failed safely.", true);
-  }
-  modsFeedback("Cancellation requested. Waiting for the current safe point.");
-}
-
-// Apply operation events to the mods workspace and its action states.
-function modsOperationFinished(operation) {
-  if (!operation || !modsState.pending || operation.operation_id !== modsState.pending.id) return false;
-  if (!["SUCCEEDED", "FAILED", "CANCELLED", "RECOVERY_REQUIRED"].includes(operation.state)) {
-    // Keep the cancel control state current while work continues.
-    const cancel = document.getElementById("cancel-workshop-operation");
-    if (cancel) cancel.disabled = !operation.cancellable || operation.state === "CANCELLING";
-    modsFeedback(operation.state === "CANCELLING"
-      ? "Cancellation requested. Waiting for a safe point."
-      : `${operation.progress_phase}: ${operation.progress_percent}%`);
-    return true;
-  }
-  // Clear the pending operation and unlock the controls on terminal states.
-  modsState.pending = null;
-  setModsBusy(false);
-  const cancel = document.getElementById("cancel-workshop-operation");
-  if (cancel) cancel.hidden = true;
-  // Report a terminal failure without further processing.
-  if (operation.state !== "SUCCEEDED") {
-    modsFeedback(operation.terminal_error ? operation.terminal_error.message : "Operation failed safely.", true);
-    return true;
-  }
-  // Reopen the workspace after settings are saved.
-  if (operation.kind === "SAVE_STEAM_SETTINGS") { openMods(); return true; }
-  if (operation.kind === "AUTHENTICATE_STEAMCMD") {
-    modsFeedback("SteamCMD authentication completed. Credentials remain owned by SteamCMD.");
-    return true;
-  }
-  if (operation.kind === "UPDATE_WORKSHOP_ITEMS") {
-    const result = operation.result || {};
-    if (!["VERIFIED", "EMPTY"].includes(result.download_state)) {
-      const exitDetail = Number.isInteger(result.steamcmd_exit_code)
-        ? ` (exit code ${result.steamcmd_exit_code})` : "";
-      const summary = result.download_state === "UNKNOWN"
-        ? (result.steamcmd_summary
-          ? `${result.steamcmd_summary}${exitDetail}`
-          : `SteamCMD exited without a verifiable update result${exitDetail}. Open SteamCMD login, then retry.`)
-        : `Workshop update stopped with state: ${result.download_state || "FAILED"}.`;
-      modsFeedback(summary, true);
-      renderModsItems(result.items);
-      return true;
-    }
-    renderModsItems(operation.result?.items);
-    window.ServerManModPublication.reviewFromUpdate(operation);
-    return true;
-  }
-  if (window.ServerManModPublication.operationFinished(operation)) return true;
-  const result = operation.result || {};
-  if (result.profile_id && result.profile_id !== selectedProfile()?.profile_id) return true;
-  const summary = result.start_error === "PUBLICATION_REQUIRED"
-    ? "Downloads were checked. Review and apply the mods before the server starts."
-    : `${(result.items || []).length} Workshop item outcomes recorded: ${result.download_state}.`;
-  modsFeedback(summary, ["FAILED", "UNKNOWN", "CANCELLED"].includes(result.download_state));
-  renderModsItems(result.items);
-  return true;
-}
-
+// Redraw the inventory panel whenever the update state of the selected profile changes.
+document.addEventListener("serverman:update-status", () => { void refreshModsInventory(); });
 // Publish the mods workspace controls used by the shell.
 window.ServerManMods = Object.freeze({ open: openMods, operationFinished: modsOperationFinished });

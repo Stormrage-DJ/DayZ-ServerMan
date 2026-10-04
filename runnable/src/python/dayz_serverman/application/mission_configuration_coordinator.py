@@ -73,9 +73,13 @@ class MissionConfigurationCoordinator:
         try:
             record = self._operations.submit("APPLY_MISSION_CONFIGURATION", work,
                 safe_points=frozenset(("loaded", "validated")),
-                log_fields={"profile_id": str(parameters["profile_id"]), "target_role": str(parameters["target"])})
+                log_fields={"profile_id": str(parameters["profile_id"]), "target_role": str(parameters["target"])},
+                target_profile_id=str(parameters["profile_id"]))
         except QueueUnavailable as error:
-            raise ApplicationCallError(ErrorCode.MUTATION_CONFLICT, str(error), retryable=True) from error
+            raise ApplicationCallError(
+                ErrorCode.MUTATION_CONFLICT, str(error), retryable=True,
+                details=error.details,
+            ) from error
         return {"operation_id": record.operation_id, "state": record.state.value}
 
     def convert_starter(self, parameters: Mapping[str, Any]) -> dict[str, str]:
@@ -97,9 +101,13 @@ class MissionConfigurationCoordinator:
         try:
             record = self._operations.submit("CONVERT_STARTER_LOADOUT", work,
                 safe_points=frozenset(("loaded", "validated")),
-                log_fields={"profile_id": str(parameters["profile_id"])})
+                log_fields={"profile_id": str(parameters["profile_id"])},
+                target_profile_id=str(parameters["profile_id"]))
         except QueueUnavailable as error:
-            raise ApplicationCallError(ErrorCode.MUTATION_CONFLICT, str(error), retryable=True) from error
+            raise ApplicationCallError(
+                ErrorCode.MUTATION_CONFLICT, str(error), retryable=True,
+                details=error.details,
+            ) from error
         return {"operation_id": record.operation_id, "state": record.state.value}
 
 

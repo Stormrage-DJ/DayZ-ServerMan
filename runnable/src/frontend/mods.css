@@ -1,5 +1,5 @@
 /* Styles for the mods inventory panel and access fields */
-.mods-panel, .mods-inventory-panel { box-shadow: none; }
+.mods-panel, .mods-inventory-panel { min-width: 0; box-shadow: none; }
 .mods-selected-server, .mods-count { color: var(--color-text-muted); font-size: .82rem; }
 /* Access row for the selected server and mod source */
 .mods-access-row { display: grid; grid-template-columns: minmax(11rem, .7fr) minmax(16rem, 1fr); gap: var(--primitive-space-3); }
@@ -20,13 +20,39 @@
 .mods-name strong, .mods-name small { display: block; }
 .mods-name small { margin-top: 2px; color: var(--color-text-subtle); font-size: .72rem; }
 .mods-directory { font-family: Consolas, "Cascadia Mono", monospace; font-size: .82rem; }
-.mods-status { font-weight: 700; white-space: nowrap; }
+.mods-status { font-weight: 700; }
+.mods-status-label { display: block; white-space: nowrap; }
+.mods-status-detail { display: block; max-width: 15rem; margin-top: 2px; color: var(--color-text-muted); font-size: .72rem; font-weight: 400; line-height: 1.4; }
+.mods-status-detail-problem { color: var(--color-status-warning); }
 .mods-status-current, .mods-status-installed, .mods-status-local { color: var(--color-status-success); }
-.mods-status-update_available { color: var(--color-status-warning); }
-.mods-status-not_downloaded { color: var(--color-text-subtle); }
+.mods-status-update_available, .mods-status-pending_apply { color: var(--color-status-warning); }
+.mods-status-unchecked { color: var(--color-text-muted); }
+.mods-status-not_downloaded, .mods-status-checking { color: var(--color-text-subtle); }
+/* Row marks of a running or finished operation of this page */
+.mods-status-downloading { color: var(--color-action-strong); }
+.mods-status-failed { color: var(--color-status-error); }
+.mods-status-detail-progress, .mods-status-detail-outcome { color: var(--color-text-muted); }
+/* Update check header: summary, last check, busy mark, and the check action */
+.mods-update-header { display: flex; align-items: center; justify-content: space-between; gap: var(--primitive-space-4); margin-bottom: var(--primitive-space-4); padding: var(--primitive-space-3) var(--primitive-space-4); border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface-raised); }
+.mods-update-header .button { flex: 0 0 auto; }
+.mods-header-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: var(--primitive-space-2); }
+.mods-update-copy { display: grid; justify-items: start; gap: var(--primitive-space-1); min-width: 0; }
+.mods-update-summary.status-neutral { color: var(--color-text-muted); }
+.mods-update-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--primitive-space-1) var(--primitive-space-3); color: var(--color-text-muted); font-size: .82rem; }
+.mods-update-busy { display: inline-flex; align-items: center; gap: var(--primitive-space-2); }
+.mods-update-busy[hidden] { display: none; }
+.mods-update-busy::before { width: 12px; height: 12px; border: 2px solid var(--color-border); border-top-color: var(--color-action-strong); border-radius: 50%; content: ""; animation: mods-update-spin .9s linear infinite; }
+@keyframes mods-update-spin { to { transform: rotate(360deg); } }
+/* Reduced motion: the busy mark stays still and keeps its text */
+@media (prefers-reduced-motion: reduce) { .mods-update-busy::before { animation: none; } }
 /* Narrow layout: stack the access row and full-width actions */
 @media (max-width: 760px) {
   .mods-access-row { grid-template-columns: 1fr; }
   .mods-actions, .mods-action-group { align-items: stretch; flex-direction: column; }
   .mods-actions .button { width: 100%; }
+  .mods-update-header { align-items: stretch; flex-direction: column; }
+  /* Keep the status column with the row progress in view: a tighter table */
+  .mods-table { min-width: 560px; }
+  .mods-table th, .mods-table td { padding: .5rem .4rem; }
+  .mods-status-label { white-space: normal; }
 }

@@ -27,7 +27,7 @@ function confirmOverviewLifecycle(action, backupAfterStop) {
     const confirm = window.ServerManUi.element("button", "button button-primary", confirmText);
     // Make the rest of the page inert while the dialog is open.
     const inerted = [...document.body.children]
-      .filter((element) => element !== dialog)
+      .filter((element) => element !== dialog && !element.hasAttribute("data-announcer"))
       .map((element) => ({ element, inert: element.inert }));
     // Restore the page and resolve the promise when the dialog closes.
     const finish = (accepted) => {
@@ -37,6 +37,8 @@ function confirmOverviewLifecycle(action, backupAfterStop) {
       resolve(accepted);
     };
     cancel.type = "button"; confirm.type = "button";
+    // The confirm button submits an operation: lock it when one starts while the dialog is open.
+    window.ServerManBusy?.mark(confirm, true);
     cancel.addEventListener("click", () => finish(false));
     confirm.addEventListener("click", () => finish(true));
     dialog.addEventListener("keydown", (event) => {

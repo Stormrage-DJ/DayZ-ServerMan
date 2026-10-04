@@ -23,9 +23,8 @@ function configElement(tag, className, text) {
 
 // Show a configuration failure notice with the host message or a fallback line.
 function showConfigurationError(result, fallback) {
-  const error = result && result.error ? result.error : {};
-  const message = typeof error.message === "string" ? error.message : fallback;
-  const notice = configElement("div", "notice notice-error", message);
+  const notice = configElement("div", "notice notice-error",
+    window.ServerManOperationMessages.bridgeError(result, fallback));
   notice.setAttribute("role", "alert");
   document.getElementById("configuration-feedback").replaceChildren(notice);
 }
@@ -33,6 +32,13 @@ function showConfigurationError(result, fallback) {
 // Collect every edited value that differs from the loaded configuration.
 function changedValues() {
   return window.ServerManConfigurationEdit.changedValues(configurationState.values);
+}
+
+// Label the action button for its step; only the apply step submits an operation and is locked while busy.
+function setConfigurationAction(apply) {
+  const action = document.getElementById("configuration-apply");
+  action.textContent = apply ? "Apply changes" : "Review changes";
+  if (apply) window.ServerManBusy?.mark(action); else window.ServerManBusy?.unmark(action);
 }
 
 // Refresh the unsaved indicator and review action for the current edits.
@@ -50,7 +56,7 @@ function updateUnsavedState() {
     indicator.textContent = error.message;
     indicator.className = "unsaved-indicator is-dirty";
     action.disabled = true;
-    action.textContent = "Review changes";
+    setConfigurationAction(false);
     showConfigurationError(null, error.message);
     return;
   }
@@ -60,92 +66,8 @@ function updateUnsavedState() {
   indicator.textContent = count ? `${count} unsaved change${count === 1 ? "" : "s"}` : "No unsaved changes";
   indicator.className = count ? "unsaved-indicator is-dirty" : "unsaved-indicator";
   action.disabled = count === 0;
-  action.textContent = "Review changes";
+  setConfigurationAction(false);
   document.getElementById("configuration-feedback").replaceChildren();
-}
-
-// Build the typed input control for one configuration field.
-function configurationInput(field) {
-  const input = field.kind === "boolean" ? document.createElement("select") : document.createElement("input");
-  input.dataset.configurationField = field.key;
-  input.id = `configuration-${field.key.replaceAll(".", "-")}`;
-  if (field.kind === "boolean") {
-    if (!field.present) {
-      const unset = configElement("option", "", "Not set");
-      unset.value = "";
-      input.append(unset);
-    }
-    // Offer enabled and disabled states for a boolean setting.
-    [["true", "Enabled"], ["false", "Disabled"]].forEach(([value, label]) => {
-      const option = configElement("option", "", label);
-      option.value = value;
-      input.append(option);
-    });
-    input.value = field.present ? String(field.value) : "";
-  } else {
-    // Mirror the field kind through the input type and step rules.
-    input.type = field.secret ? "password" : field.kind === "string" ? "text" : "number";
-    if (field.kind === "number") input.step = "any";
-    if (field.kind === "integer") input.step = "1";
-    input.value = field.present ? String(field.value) : "";
-  }
-  // Recompute the unsaved state on every edit.
-  input.addEventListener("input", updateUnsavedState);
-  input.addEventListener("change", updateUnsavedState);
-  return input;
-}
-
-// Group consecutive fields that form one paired row.
-function configurationRows(fields) {
-  const rows = [];
-  fields.forEach((field) => {
-    const last = rows.at(-1);
-    if (field.pair && last?.pair === field.pair) last.fields.push(field);
-    else rows.push({ pair: field.pair, fields: [field] });
-  });
-  return rows;
-}
-
-// Render one guided group of available configuration fields.
-function renderConfigurationGroup(group, available) {
-  const section = configElement("fieldset", "tweak-group configuration-group");
-  section.append(configElement("legend", "", group.title));
-  if (group.hint) section.append(configElement("p", "tweak-group-hint", group.hint));
-  const rows = configElement("div", "guided-setting-list");
-  // Keep only the fields the loaded target actually exposes.
-  configurationRows(group.fields.filter((definition) => available.has(definition.key))).forEach((row) => {
-    // Build one row with its labels and typed inputs.
-    const item = configElement("div", "guided-setting-row");
-    const controls = configElement("div", `guided-setting-controls${row.fields.length > 1 ? " is-paired" : ""}`);
-    row.fields.forEach((definition) => {
-      const field = available.get(definition.key);
-      const label = configElement("label", "guided-setting-control");
-      const caption = configElement("span", "tweak-field-label", definition.label);
-      const input = configurationInput(field); caption.htmlFor = input.id;
-      label.append(caption, input); controls.append(label);
-    });
-    item.append(controls, configElement("p", "guided-setting-hint", row.fields[0].hint));
-    rows.append(item);
-  });
-  section.append(rows); return section;
-}
-
-// Replace the form with groups built from the loaded field set.
-function renderConfigurationFields(loaded) {
-  configurationState.loaded = loaded;
-  configurationState.reviewed = null;
-  // Rebuild the editable value map from the loaded target.
-  configurationState.values = new Map(loaded.fields.map((field) => [field.key, field]));
-  const form = document.getElementById("configuration-fields");
-  form.replaceChildren();
-  const available = new Map(loaded.fields.map((field) => [field.key, field]));
-  // Render every catalog group that has available fields.
-  window.ServerManConfigurationCatalog.serverGroups.forEach((group) => {
-    form.append(renderConfigurationGroup(group, available));
-  });
-  // Show the target path and refresh the unsaved state for the new form.
-  document.getElementById("configuration-path").textContent = loaded.relative_path;
-  updateUnsavedState();
 }
 
 // Load the selected profile's configuration target for editing.
@@ -234,7 +156,7 @@ async function reviewOrApplyConfiguration() {
     );
     summary.setAttribute("role", "status");
     document.getElementById("configuration-feedback").replaceChildren(summary);
-    document.getElementById("configuration-apply").textContent = "Apply changes";
+    setConfigurationAction(true);
     return;
   }
   // Second press: submit the frozen review unless the edits moved on.
@@ -258,9 +180,9 @@ async function reviewOrApplyConfiguration() {
     return showConfigurationError(result, "Changes could not be applied.");
   }
   if (reviewed !== configurationState.reviewed) return;
-  // Track the queued operation so terminal events can refresh the workspace.
+  // Track the queued operation so terminal events can refresh the workspace; the operation bar shows it.
   configurationState.pendingOperation = result.value.operation_id;
-  window.ServerManUi.setHostStatus("Configuration apply queued", "is-busy", "operation");
+  window.ServerManOperationBar?.adopt(result.value.operation_id);
   document.getElementById("configuration-apply").disabled = true;
 }
 

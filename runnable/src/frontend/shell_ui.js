@@ -1,17 +1,5 @@
-// Shell UI helpers: application status, loading, errors, and operations.
+// Shell UI helpers: application status, loading, host errors, and the shutdown panel.
 "use strict";
-
-// Navigation titles and one-line descriptions per workspace section.
-const sectionCopy = {
-  overview: ["Overview", "Server state, lifecycle controls, and the next safe operator action."],
-  profiles: ["Profiles", "Create and maintain complete DayZ server launch profiles."],
-  configuration: ["Configuration", "Edit the selected server's core configuration with guided controls."],
-  tweaks: ["Tweaks", "Fine-tune the selected server with compact, map-aware controls."],
-  mods: ["Mods", "Download, update, and apply mods for the selected server."],
-  backups: ["Backups", "Create and restore verified server backups."],
-  logs: ["Logs", "Inspect manager activity and captured DayZ server output."],
-  settings: ["Settings", "Configure portable application paths and SteamCMD authentication."],
-};
 
 // Live status messages keyed by their source.
 const applicationStatuses = new Map([
@@ -43,6 +31,14 @@ function renderApplicationStatus() {
   document.getElementById("application-status-text").textContent = text;
   region.querySelector(".status-dot").className = `status-dot ${healthy ? "" : overall.kind}`.trim();
   region.setAttribute("aria-label", `Application status: ${text}`);
+  // Repeat a status that needs attention on the menu button, because a narrow window hides the sidebar.
+  const dot = document.getElementById("menu-status-dot");
+  if (dot) {
+    dot.className = `status-dot ${overall.kind}`.trim();
+    dot.hidden = healthy;
+    document.getElementById("menu-button").setAttribute("aria-label",
+      healthy ? "Open navigation" : `Open navigation. Application status: ${text}`);
+  }
 }
 
 // Record one source status and refresh the header.
@@ -55,22 +51,6 @@ function setHostStatus(text, kind = "", source = "application") {
 function clearHostStatus(source) {
   applicationStatuses.delete(source);
   renderApplicationStatus();
-}
-
-// Mirror operation state into the application status sources.
-function syncOperationStatus(operation) {
-  const state = typeof operation?.state === "string" ? operation.state : "UNKNOWN";
-  // Show busy progress while the operation is active.
-  if (["QUEUED", "RUNNING", "CANCELLING"].includes(state)) {
-    setHostStatus(`${operation.progress_phase || "Operation"} — ${operation.progress_percent || 0}%`, "is-busy", "operation");
-  } else if (["FAILED", "RECOVERY_REQUIRED"].includes(state)) {
-    // Show the failure message as an error.
-    const message = operation.error?.message || operation.terminal_error?.message || "Operation failed";
-    setHostStatus(message, "is-error", "operation");
-  } else {
-    // Clear the operation status once it settles.
-    clearHostStatus("operation");
-  }
 }
 
 // Render the loading skeleton for a workspace.
@@ -97,10 +77,11 @@ function renderLoading(title, message) {
 
 // Render a clear host failure and mark the application status.
 function renderHostError(result) {
-  const error = result && result.error ? result.error : {};
-  // Fall back to a generic message when the host sent none.
-  const message = typeof error.message === "string" ? error.message : "The application host is unavailable.";
+  // Word the host error for the operator; fall back to a generic message when the host sent none.
+  const message = window.ServerManOperationMessages.bridgeError(result, "The application host is unavailable.");
   setHostStatus("Application host unavailable", "is-error", "host");
+  // The state of the running operation is no longer known, so the bar hides its active row.
+  window.ServerManOperationBar?.hostError();
   const region = document.getElementById("content-region");
   // Show the error as an alert panel.
   const panel = element("section", "panel notice notice-error");
@@ -117,7 +98,7 @@ function renderState(section, state) {
   const panel = element("section", "panel");
   // Explain the empty workspace and what to create.
   if (state === "empty") {
-    panel.append(element("h2", "", `No ${sectionCopy[section][0].toLowerCase()} available`));
+    panel.append(element("h2", "", `No ${window.ServerManSections.get(section).title.toLowerCase()} available`));
     panel.append(element("p", "", "Create or configure the required data to continue."));
   } else {
     // Offer reload guidance for the unavailable workspace.
@@ -128,66 +109,24 @@ function renderState(section, state) {
   region.setAttribute("aria-busy", "false");
 }
 
-// Render the progress panel for one operation.
-function renderOperation(operation) {
-  syncOperationStatus(operation);
-  const state = typeof operation.state === "string" ? operation.state : "UNKNOWN";
-  const phase = typeof operation.progress_phase === "string" ? operation.progress_phase : "unknown";
-  // Normalize the reported state and progress values.
-  const rawPercent = Number(operation.progress_percent);
-  const percent = Number.isFinite(rawPercent) ? Math.max(0, Math.min(100, rawPercent)) : 0;
-  const region = document.getElementById("content-region");
-  const panel = element("section", "panel operation-panel");
-  // Show the operation title and its state label.
-  const heading = element("div", "panel-heading");
-  heading.append(
-    element("h2", "", "Manager operation"),
-    element("span", `status-label ${state === "FAILED" ? "status-error" : "status-busy"}`, state),
-  );
-  panel.append(heading);
-  // Expose progress values to assistive technology.
-  const progress = element("div", "progress-track");
-  progress.setAttribute("role", "progressbar");
-  progress.setAttribute("aria-label", "Operation progress");
-  progress.setAttribute("aria-valuenow", String(percent));
-  progress.setAttribute("aria-valuemin", "0");
-  progress.setAttribute("aria-valuemax", "100");
-  const bar = element("div", "progress-bar");
-  bar.style.width = `${percent}%`;
-  progress.append(bar);
-  panel.append(progress, element("p", "", `${phase} — ${percent}%`));
-  // Show the error message when the host provided one.
-  const terminalMessage = operation.error?.message || operation.terminal_error?.message;
-  if (typeof terminalMessage === "string") {
-    panel.append(element("p", "operation-error", terminalMessage));
-  }
-  // Offer cancellation only when the operation allows it.
-  if (operation.cancellable === true) {
-    const cancel = element("button", "button", "Cancel safely");
-    cancel.type = "button";
-    cancel.dataset.cancelOperation = String(operation.operation_id || "");
-    panel.append(cancel);
-  }
-  region.replaceChildren(panel);
-  region.setAttribute("aria-busy", state === "RUNNING" || state === "CANCELLING" ? "true" : "false");
-}
-
 // Render the shutdown progress panel.
 function renderShutdown(snapshot) {
   const state = snapshot && typeof snapshot.state === "string" ? snapshot.state : "DRAINING";
   // Report whether the window can close safely.
   setHostStatus(state === "CLOSED" ? "Safe to close" : "Waiting for safe shutdown",
     state === "CLOSED" ? "" : "is-busy", "shutdown");
+  // The bar keeps showing the operation that is finishing, without Cancel and without the queue.
+  window.ServerManOperationBar?.shutdown();
   const region = document.getElementById("content-region");
   const panel = element("section", "panel notice notice-warning");
   panel.setAttribute("role", "status");
   panel.append(element("h2", "", "Closing DayZ-ServerMan safely"));
   // Explain why closing is blocked or that closing is safe.
-  let message = "Queued work is cancelled. Active work will finish or stop at a declared safe point.";
+  let message = "Waiting work is cancelled. Work in progress finishes or stops at a safe moment.";
   if (snapshot && snapshot.blocking_reason === "MANAGED_SERVER_ACTIVE") {
     message = "A managed server is still active. Closing stays blocked until its stopped state is proven.";
   } else if (state === "CLOSED") {
-    message = "Manager records are flushed. The window can close.";
+    message = "Everything is saved. The window can close.";
   }
   panel.append(element("p", "", message));
   region.replaceChildren(panel);
@@ -197,13 +136,10 @@ function renderShutdown(snapshot) {
 // Publish the shell UI helpers used by every workspace.
 window.ServerManUi = Object.freeze({
   element,
-  sectionCopy,
   renderHostError,
   renderLoading,
-  renderOperation,
   renderShutdown,
   render: renderState,
   clearHostStatus,
   setHostStatus,
-  syncOperationStatus,
 });

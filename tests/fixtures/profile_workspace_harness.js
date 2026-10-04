@@ -15,7 +15,7 @@ window.pywebview = { api: {
   list_profiles: () => host.list.promise, save_profile: () => host.save.promise,
   delete_profile: () => host.remove.promise, preview_profile_command: () => host.preview.promise,
 } };
-window.ServerManUi = { renderHostError: () => {}, renderOperation: () => {},
+window.ServerManUi = { renderHostError: () => {},
   setHostStatus: (text) => { document.getElementById("host").textContent = text; },
   clearHostStatus: () => { document.getElementById("host").textContent = ""; } };
 window.shellState = { section: "profiles" };

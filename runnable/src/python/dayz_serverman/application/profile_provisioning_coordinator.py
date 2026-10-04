@@ -82,6 +82,6 @@ class ProfileProvisioningCoordinator:
             )
         except QueueUnavailable as error:
             raise ApplicationCallError(
-                ErrorCode.MUTATION_CONFLICT, str(error), retryable=True,
+                ErrorCode.MUTATION_CONFLICT, str(error), retryable=True, details=error.details,
             ) from error
         return {"operation_id": record.operation_id, "state": record.state.value}

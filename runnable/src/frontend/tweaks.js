@@ -62,7 +62,8 @@ async function loadTweaks() {
     if (generation !== tweaksState.generation || !window.ServerManWorkspace.isActive(workspace)) return;
     // Collect per-target failures for partial rendering.
     tweaksState.errors = new Map(results.filter(([, result]) => !result.success)
-      .map(([target, result]) => [target, result.error?.message || `${target} could not be loaded.`]));
+      .map(([target, result]) => [target, window.ServerManOperationMessages.bridgeError(
+        result, "This part of the tweaks could not be loaded.")]));
     // Fold loaded medical features into the same result set.
     if (medical.success) {
       Object.entries(medical.value.features).forEach(([feature, value]) => results.push([feature, {
@@ -70,7 +71,7 @@ async function loadTweaks() {
           profile_revision: medical.value.profile_revision, settings_revision: medical.value.settings_revision },
       }]));
     } else {
-      const message = medical.error?.message || "Medical features could not be loaded.";
+      const message = window.ServerManOperationMessages.bridgeError(medical, "Medical features could not be loaded.");
       medicalTargets.forEach((target) => tweaksState.errors.set(target, message));
     }
     // Adopt snapshots, baselines, and fresh drafts under the current profile.
@@ -171,9 +172,9 @@ async function reviewOrApplyTweakTarget(target) {
   if (generation !== tweaksState.generation || profileId !== tweaksState.profileId
       || !window.ServerManWorkspace.isActive(workspace)) return;
   if (!result.success) return showTweakError(result, "Changes could not be queued.");
-  // Track the queued operation and refresh the actions.
+  // Track the queued operation and refresh the actions; the operation bar shows it.
   tweaksState.pending.set(result.value.operation_id, target);
-  window.ServerManUi.setHostStatus(`${target.replaceAll("_", " ")} apply queued`, "is-busy", "operation");
+  window.ServerManOperationBar?.adopt(result.value.operation_id);
   renderTweaksActions();
 }
 
@@ -186,7 +187,7 @@ function showTweakFeedback(message, error = false) {
 }
 // Report a tweak failure with a fallback message.
 function showTweakError(result, fallback) {
-  showTweakFeedback(result?.error?.message || fallback, true);
+  showTweakFeedback(window.ServerManOperationMessages.bridgeError(result, fallback), true);
 }
 
 // List the targets the operator can act on in the current view.
@@ -213,6 +214,8 @@ function renderTweaksActions() {
     const button = window.ServerManUi.element("button", "button button-primary",
       tweaksState.reviewed.has(target) ? `Apply ${target.replaceAll("_", " ")}` : `Review ${target.replaceAll("_", " ")}`);
     button.type = "button"; button.disabled = [...tweaksState.pending.values()].includes(target);
+    // Only the apply step submits an operation and is locked while another one runs or waits.
+    if (tweaksState.reviewed.has(target)) window.ServerManBusy?.mark(button);
     button.addEventListener("click", () => reviewOrApplyTweakTarget(target)); row.append(button);
   });
   // Offer discarding every draft at once.
@@ -225,45 +228,6 @@ function chooseTweakArea(area) { tweaksState.area = area; renderTweaks(); }
 // Switch the gameplay subtab and rerender.
 function chooseGameplayTab(tab) { tweaksState.subtab = tab; renderTweaks(); }
 
-// Ask the operator to confirm legacy starter conversion.
-function starterConversionDialog(snapshot) {
-  return new Promise((resolve) => {
-    const returnFocus = document.activeElement;
-    // Build a modal dialog that resolves with the operator's choice.
-    const dialog = window.ServerManUi.element("section", "panel starter-conversion-dialog");
-    dialog.setAttribute("role", "alertdialog"); dialog.setAttribute("aria-modal", "true");
-    dialog.setAttribute("aria-labelledby", "starter-conversion-title");
-    const title = window.ServerManUi.element("h2", "", "Convert legacy starter loadout?");
-    title.id = "starter-conversion-title";
-    const range = snapshot.conversion;
-    dialog.append(title,
-      window.ServerManUi.element("p", "", `The recognized block spans lines ${range.start_line}-${range.end_line} and contains ${range.items.length} supported item(s).`),
-      window.ServerManUi.element("p", "", "Conversion adds DayZ-ServerMan ownership comments around that block. It does not replace its statements or reorder its items."));
-    // Offer cancel and the conversion action.
-    const actions = window.ServerManUi.element("div", "action-row");
-    const cancel = window.ServerManUi.element("button", "button", "Cancel");
-    const convert = window.ServerManUi.element("button", "button button-primary", "Convert legacy loadout");
-    const inerted = [...document.body.children].filter((item) => item !== dialog)
-      .map((item) => ({ item, inert: item.inert }));
-    // Restore the page and resolve with the chosen answer on close.
-    const finish = (accepted) => {
-      inerted.forEach(({ item, inert }) => { item.inert = inert; });
-      dialog.remove(); if (returnFocus?.isConnected) returnFocus.focus(); resolve(accepted);
-    };
-    cancel.addEventListener("click", () => finish(false));
-    convert.addEventListener("click", () => finish(true));
-    // Keep focus inside the dialog and close on Escape.
-    dialog.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") { event.preventDefault(); finish(false); }
-      if (event.key !== "Tab") return;
-      if (event.shiftKey && document.activeElement === cancel) { event.preventDefault(); convert.focus(); }
-      else if (!event.shiftKey && document.activeElement === convert) { event.preventDefault(); cancel.focus(); }
-    });
-    actions.append(cancel, convert); dialog.append(actions); document.body.append(dialog);
-    inerted.forEach(({ item }) => { item.inert = true; }); cancel.focus();
-  });
-}
-
 // Convert the legacy starter block after the operator confirms.
 async function reviewStarterConversion() {
   const snapshot = tweaksState.snapshots.get("starter_loadout");
@@ -274,9 +238,9 @@ async function reviewStarterConversion() {
   );
   if (generation !== tweaksState.generation || !window.ServerManWorkspace.isActive(workspace)) return;
   if (!result.success) return showTweakError(result, "Legacy starter loadout could not be converted.");
-  // Track the queued conversion and refresh the workspace.
+  // Track the queued conversion and refresh the workspace; the operation bar shows it.
   tweaksState.pending.set(result.value.operation_id, "starter_loadout");
-  window.ServerManUi.setHostStatus("Starter conversion queued", "is-busy", "operation"); renderTweaks();
+  window.ServerManOperationBar?.adopt(result.value.operation_id); renderTweaks();
 }
 
 // Render the tweaks workspace through the render module.
@@ -296,7 +260,11 @@ function tweakOperationFinished(operation) {
   tweaksState.pending.delete(operation.operation_id);
   // Reload after success, otherwise return the target to review.
   if (operation.state === "SUCCEEDED") void loadTweaks();
-  else { tweaksState.reviewed.delete(target); showTweakFeedback(operation.error?.message || "Tweak publication failed.", true); renderTweaksActions(); }
+  else {
+    tweaksState.reviewed.delete(target);
+    showTweakFeedback(window.ServerManOperationBar?.pageResult(operation).text || "Tweak publication failed.", true);
+    renderTweaksActions();
+  }
   return true;
 }
 

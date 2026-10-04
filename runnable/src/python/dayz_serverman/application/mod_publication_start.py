@@ -6,7 +6,11 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import Protocol
 
-from ..adapters.windows.publication_paths import safe_dayz_root, safe_target
+from ..adapters.windows.publication_paths import (
+    PublicationPathError,
+    safe_dayz_root,
+    safe_target,
+)
 from ..domain.lifecycle import LifecycleFailure, LifecycleSnapshot
 from ..domain.mod_publication import (
     GroupState,
@@ -16,8 +20,23 @@ from ..domain.mod_publication import (
     publication_fingerprint,
     canonical_digest,
 )
-from ..repositories.mod_publication_inventory import inventory_tree
-from ..repositories.mod_publication_journal import PublicationJournalRepository
+from ..repositories.mod_publication_inventory import PublicationInventoryError, inventory_tree
+from ..repositories.mod_publication_journal import (
+    PublicationJournalError,
+    PublicationJournalRepository,
+)
+from .mod_publication_prestart import UNCHECKED, PrestartFingerprints
+from .operations.context import OperationContext
+
+
+class ModPublicationError(RuntimeError):
+    """Publication workflow failure carrying a bridge error code."""
+
+    def __init__(self, code: str, message: str, *, recovery_required: bool = False) -> None:
+        """Store the bridge code and whether recovery is required."""
+        self.code = code
+        self.recovery_required = recovery_required
+        super().__init__(message)
 
 
 class LifecycleStartPort(Protocol):
@@ -93,6 +112,7 @@ def verified_publication_result(
         "start_authorized": False,
         "start_state": "PENDING" if start_requested else "NOT_REQUESTED",
         "start_error": "PUBLICATION_REQUIRED" if start_requested else None,
+        "prestart_check": None,
     }
 
 
@@ -101,8 +121,13 @@ def verify_committed_publication(
     journal: PublicationJournal,
     dayz_root: Path,
     cancellation_requested: Callable[[], bool] = lambda: False,
-) -> None:
-    """Re-prove the journal and the published bytes before any start."""
+    prestart: PrestartFingerprints | None = None,
+) -> dict[str, int]:
+    """Re-prove the journal and the published content before any start; return the counts.
+
+    Every group is hashed in full, except an unchanged mod folder that rule D9
+    of `prestart` accepts by its stored fingerprint; a passed check records its hashes.
+    """
     # Rebuild the expected target list from the reviewed intent
     expected_targets = tuple(item.target_relative for item in intent.managed_sources)
     if intent.keys:
@@ -123,12 +148,24 @@ def verify_committed_publication(
     ):
         raise PublicationProofError("Publication completion evidence is invalid.")
     root = safe_dayz_root(dayz_root)
+    accepted = prestart.rule(intent) if prestart is not None else UNCHECKED
+    counts = {"hashed": 0, "fingerprint_accepted": 0}
     # Walk every published group and require unchanged content
     for group in journal.groups:
-        if inventory_tree(safe_target(root, group.target_relative)) != group.output_digest:
-            raise PublicationProofError("Published mod or key content changed before start.")
+        target = safe_target(root, group.target_relative)
+        if accepted(group, target):
+            counts["fingerprint_accepted"] += 1
+        else:
+            # Without an accepted fingerprint only the full hash proves the group
+            before = accepted.fingerprint(target)
+            if inventory_tree(target) != group.output_digest:
+                raise PublicationProofError("Published mod or key content changed before start.")
+            counts["hashed"] += 1
+            accepted.hashed(group, target, before)
         if cancellation_requested():
             raise PublicationStartCancelled
+    accepted.record()
+    return counts
 
 
 def load_verified_retired_publication(
@@ -182,4 +219,82 @@ def start_server(
         "start_state": "STARTED",
         "start_error": None,
         "server": snapshot.to_dict(),
+    }
+
+
+def start_after_publication(
+    *, result: dict[str, object], final: PublicationIntent, journal: PublicationJournal,
+    dayz_root: Path, reviewed_fingerprint: str, update_operation_id: str,
+    rebuild: Callable[[], PublicationIntent], start_requested: Callable[[], bool],
+    journals: PublicationJournalRepository, lifecycle: LifecycleStartPort,
+    context: OperationContext, prestart: PrestartFingerprints | None = None,
+) -> dict[str, object]:
+    """Re-check the committed publication, then hand off to the one authorized start.
+
+    `rebuild` returns the intent from the current profile, settings and gate;
+    `start_requested` reads the start flag of the update gate again; `prestart`
+    is rule D9 for the pre-start check, and without it every group is hashed.
+    """
+    if context.cancellation_requested:
+        return {**result, "start_state": "CANCELLED", "start_error": "UPDATE_CANCELLED"}
+    # Neither start phase is a safe point: a cancellation is answered by the checks below
+    context.checkpoint("VERIFY_BEFORE_START", 90)
+    # Rebuild once more so the start decision sees the final state
+    post_publication = rebuild()
+    if context.cancellation_requested:
+        return _cancelled_start(result)
+    if post_publication.fingerprint != final.fingerprint:
+        raise ModPublicationError(
+            "PUBLICATION_PREVIEW_STALE", "Publication context changed before start.",
+        )
+    if reviewed_publication_fingerprint(
+        post_publication, update_operation_id, start_requested(),
+    ) != reviewed_fingerprint:
+        raise ModPublicationError(
+            "PUBLICATION_PREVIEW_STALE", "Publication review changed before start.",
+        )
+    if context.cancellation_requested:
+        return _cancelled_start(result)
+    # Re-verify the retired journal and committed content before start
+    try:
+        persisted = journal
+        if journal.groups:
+            persisted = load_verified_retired_publication(
+                journals, post_publication, journal,
+                lambda: context.cancellation_requested,
+            )
+        counts = verify_committed_publication(
+            post_publication, persisted, dayz_root,
+            lambda: context.cancellation_requested, prestart,
+        )
+    except PublicationStartCancelled:
+        return _cancelled_start(result)
+    except (OSError, PublicationPathError, PublicationInventoryError,
+            PublicationJournalError, PublicationProofError) as error:
+        raise ModPublicationError(
+            "PUBLICATION_VERIFICATION_FAILED",
+            "Published mods or keys changed before start.",
+        ) from error
+    if context.cancellation_requested:
+        return _cancelled_start(result)
+    # Record the two counts of the finished check in the log and in the result
+    if prestart is not None:
+        prestart.log(counts, context.operation_id)
+    result = {**result, "start_authorized": True, "start_error": None, "prestart_check": counts}
+    context.record_evidence(result)
+    if context.cancellation_requested:
+        return _cancelled_start(result)
+    # Hand off to the lifecycle start and fold in its snapshot
+    context.checkpoint("START_SERVER", 96)
+    result.update(start_server(lifecycle, post_publication))
+    return result
+
+
+def _cancelled_start(result: dict[str, object]) -> dict[str, object]:
+    """Return a cancelled start result that keeps publication evidence."""
+    return {
+        **result,
+        "start_authorized": False,
+        "start_state": "CANCELLED",
+        "start_error": "UPDATE_CANCELLED",
     }

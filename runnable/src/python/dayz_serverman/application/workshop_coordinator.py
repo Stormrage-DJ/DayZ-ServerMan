@@ -131,8 +131,12 @@ class WorkshopCoordinator:
         return self._submit(
             "UPDATE_WORKSHOP_ITEMS",
             lambda context: self._service.update(request, context),
-            safe_points=frozenset(("preflight", "resolve_items", "verify_items", "verify_set")),
+            safe_points=frozenset((
+                "preflight", "resolve_items", "check_remote", "download", "verify_items",
+                "verify_set",
+            )),
             log_fields={"profile_id": profile_id},
+            target_profile_id=profile_id,
         )
 
     def _submit(self, kind: str, work: Any, **options: Any) -> dict[str, Any]:
@@ -144,7 +148,7 @@ class WorkshopCoordinator:
             raise ApplicationCallError(
                 ErrorCode.MUTATION_CONFLICT,
                 str(error),
-                retryable=True,
+                retryable=True, details=error.details,
             ) from error
         return {"operation_id": record.operation_id, "state": record.state.value}
 

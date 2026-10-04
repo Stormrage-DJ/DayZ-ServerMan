@@ -67,7 +67,11 @@ class ProfileUiStaticTests(unittest.TestCase):
         ):
             self.assertIn(value, self.source)
         # The app router must consult the central unsaved-changes guard
-        self.assertIn('shellState.section === "profiles"', self.app)
+        # The registry owns the per-section dispatch; Profiles keeps unsaved edits on a reload
+        registry = (FRONTEND / "sections.js").read_text(encoding="utf-8")
+        profiles = registry.split('registerSection("profiles"', 1)[1].split("registerSection(", 1)[0]
+        self.assertIn("keepsUnsavedEdits: true", profiles)
+        self.assertIn("section.keepsUnsavedEdits", self.app)
         self.assertIn("ServerManTransitions.hasUnsavedChanges()", self.app)
 
     def test_port_and_tagged_source_conversion_are_not_coerced(self) -> None:
@@ -162,8 +166,10 @@ class ProfileUiStaticTests(unittest.TestCase):
             self.assertIn(marker, self.create)
         self.assertIn(".profile-create-row {", styles)
         provision_failure = self.source.split('if (pending.kind === "provision")', 1)[1]
-        provision_failure = provision_failure.split("window.ServerManUi.renderOperation", 1)[0]
+        self.assertIn("// A failed save or delete keeps the form", provision_failure)
+        provision_failure = provision_failure.split("// A failed save or delete keeps the form", 1)[0]
         self.assertIn("return true", provision_failure)
+        self.assertIn("ServerManOperationBar?.pageResult(operation)", provision_failure)
 
 
 @unittest.skipUnless(EDGE.is_file(), "Microsoft Edge is unavailable")

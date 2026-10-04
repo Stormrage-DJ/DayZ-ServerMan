@@ -119,6 +119,7 @@ function renderStarter(section, api) {
     action.type = "button";
     action.disabled = [...api.state.pending.values()].includes("starter_loadout");
     action.addEventListener("click", api.reviewStarterConversion);
+    window.ServerManBusy?.mark(action);
     notice.append(items, action); section.append(notice); return section;
   }
   const selected = new Set(api.state.drafts.get("starter_loadout").items);

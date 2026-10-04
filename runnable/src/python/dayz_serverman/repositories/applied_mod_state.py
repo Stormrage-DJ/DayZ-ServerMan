@@ -7,6 +7,7 @@ import os
 import uuid
 from pathlib import Path
 
+from ..domain.content_proofs import target_directory_key
 from ..domain.mod_publication import PublicationIntent
 from ..domain.workshop import CacheProof
 from .tree_metadata import TreeMetadataError, tree_metadata_digest
@@ -55,6 +56,33 @@ class AppliedModStateRepository:
             )
         except (KeyError, TypeError, ValueError, OSError, TreeMetadataError):
             return None
+
+    def target_records(self) -> frozenset[tuple[str, str, str, str]]:
+        """Return (root identity, target directory key, Workshop id, manifest id) of every record.
+
+        The profile binding is left out on purpose: the result serves display only
+        and authorizes nothing. An unreadable file yields an empty set.
+        """
+        records: set[tuple[str, str, str, str]] = set()
+        try:
+            profiles = self._load()["profiles"]
+        except (OSError, ValueError, TypeError, KeyError):
+            return frozenset()
+        # Walk every profile section and keep the well-formed records
+        for profile in profiles.values():
+            mods = profile.get("mods") if isinstance(profile, dict) else None
+            for workshop_id, record in (mods.items() if isinstance(mods, dict) else ()):
+                if not isinstance(record, dict):
+                    continue
+                values = tuple(record.get(name) for name in (
+                    "dayz_root_identity", "target_relative", "installed_manifest_id",
+                ))
+                if all(isinstance(value, str) for value in values):
+                    # The directory key ignores letter case only, as in the store
+                    records.add(
+                        (values[0], target_directory_key(values[1]), workshop_id, values[2]),
+                    )
+        return frozenset(records)
 
     def record(self, intent: PublicationIntent, dayz_root: Path) -> None:
         """Persist fresh verification evidence for every mod in a publication intent."""

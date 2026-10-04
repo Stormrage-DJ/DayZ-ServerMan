@@ -10,8 +10,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = PROJECT_ROOT / "runnable" / "src" / "frontend"
 SCRIPT_FILES = (
     "shell_ui.js", "workspace_context.js", "profile_context.js", "configuration_catalog.js",
-    "tweaks_catalog.js", "tweaks_render.js", "tweaks.js", "backup_display.js", "backups.js", "backup_history.js", "profile_restore.js",
-    "restore.js", "migration.js", "settings.js", "overview_backup.js", "overview_readiness.js",
+    "tweaks_catalog.js", "tweaks_render.js", "tweaks.js", "tweaks_dialog.js", "backup_display.js",
+    "backups.js", "backup_history.js", "profile_restore.js",
+    "restore.js", "migration.js", "settings.js", "settings_render.js", "overview_backup.js",
+    "overview_readiness.js",
     "overview_lifecycle_dialog.js", "overview.js", "logs.js",
 )
 
@@ -34,7 +36,8 @@ class WorkspaceFeaturesStaticTests(unittest.TestCase):
             "pywebview.api.list_backups", "pywebview.api.create_backup",
             'ServerManWorkspace.capture("backups")', "profile_revision",
             "Create backup?", 'role", "alertdialog"', "No backups exist",
-            "diagnostic.message", "backupOperationFinished", "progress_phase",
+            "diagnostic.message", "backupOperationFinished",
+            "ServerManOperationBar?.pageResult(operation)",
             "loadBackupHistory()", "profileGeneration", "isBackupProfileActive",
             "pending.context", 'aria-modal", "true"', 'event.key === "Escape"',
             'event.key !== "Tab"', "element.inert = true", "element.inert = inert",
@@ -43,6 +46,9 @@ class WorkspaceFeaturesStaticTests(unittest.TestCase):
             self.assertIn(value, self.script)
         for forbidden in ("restore_backup", "delete_backup", "browse_backup_path"):
             self.assertNotIn(forbidden, self.script)
+        # Phase, percent and the progress bar of a whole operation are drawn by the operation bar only
+        for page_progress in ("progress_phase", "progress_percent", "progress-track"):
+            self.assertNotIn(page_progress, self.script)
 
     def test_restore_uses_named_reviewed_context_and_accessible_confirmation(self) -> None:
         """Restore uses the named reviewed context and accessible confirmation."""
@@ -52,7 +58,8 @@ class WorkspaceFeaturesStaticTests(unittest.TestCase):
             "manifest_digest", "restoreContextActive", "pending.context",
             "Restore this backup?", 'role", "alertdialog"', 'aria-modal", "true"',
             'event.key === "Escape"', 'event.key !== "Tab"', "element.inert = true",
-            "element.inert = inert", "Recovery required", "all new mutations are blocked",
+            "element.inert = inert", "Recovery required",
+            "Changes are blocked until an unfinished restore is resolved.",
         ):
             self.assertIn(value, self.script)
 
@@ -61,13 +68,16 @@ class WorkspaceFeaturesStaticTests(unittest.TestCase):
         for value in (
             "pywebview.api.select_legacy_root", "pywebview.api.preview_legacy_import",
             "pywebview.api.apply_legacy_import", "preview_fingerprint",
-            "backup_inventory.status", "The source remains unchanged", "generation",
+            "The archives stay where they are and are only listed.",
+            "The source remains unchanged", "generation",
             'role", "alertdialog"', 'aria-modal", "true"',
             'event.key === "Escape"', 'event.key !== "Tab"',
             "element.inert = true", "element.inert = inert", "textContent",
         ):
             self.assertIn(value, self.script)
         self.assertNotIn("legacy_root_path", self.script)
+        # The policy identifier of the backup inventory is not printed
+        self.assertNotIn("backup_inventory.status", self.script)
 
     def test_settings_supports_fresh_native_assisted_setup(self) -> None:
         """Settings support fresh native-assisted setup."""

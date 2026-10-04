@@ -13,10 +13,12 @@ from .profile_provisioning_api import ProfileProvisioningHostMethods
 from .schedule_api import ScheduleHostMethods
 from .settings_api import SettingsHostMethods
 from .backup_api import BackupHostMethods
+from .update_status_api import UpdateStatusHostMethods
 
 class HostApi(MedicalFeatureHostMethods, SettingsHostMethods, ModInventoryHostMethods,
               ModPublicationHostMethods, OperationalHostMethods, PreferenceHostMethods,
-              ProfileProvisioningHostMethods, ScheduleHostMethods, BackupHostMethods):
+              ProfileProvisioningHostMethods, ScheduleHostMethods, BackupHostMethods,
+              UpdateStatusHostMethods):
     """Translate approved browser calls into strict bridge requests."""
     def __init__(self, bridge: BridgeFacade) -> None:
         """Store the bridge and prepare request tracking and selection hooks."""

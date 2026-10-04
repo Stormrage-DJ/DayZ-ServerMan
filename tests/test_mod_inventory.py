@@ -10,8 +10,13 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runnable/src/python"))
 
+from dayz_serverman.adapters.windows.publication_paths import dayz_root_identity
 from dayz_serverman.application.mod_inventory import ModInventoryService
+from dayz_serverman.application.target_proofs import TargetProofLookup
+from dayz_serverman.application.update_check import CheckSnapshot
 from dayz_serverman.domain.profiles import ProfileInput, ProfileRecord
+from dayz_serverman.domain.update_check import RemoteFact, RemoteItemResult
+from dayz_serverman.domain.update_check_rules import CheckState
 
 
 class _Profiles:
@@ -76,6 +81,77 @@ class ModInventoryTests(unittest.TestCase):
             self.assertEqual(rows[0]["state"], "UPDATE_AVAILABLE")
             self.assertEqual(rows[1]["state"], "LOCAL")
             self.assertIsNone(rows[1]["version"])
+
+    def test_manifest_without_details_block_reports_unavailable(self) -> None:
+        """Verify a manifest without the latest-details block degrades to UNAVAILABLE."""
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root = base / "steamapps/workshop/content/221100"
+            (root / "111").mkdir(parents=True)
+            # Record the installed item only; Steam wrote no WorkshopItemDetails block
+            (base / "steamapps/workshop/appworkshop_221100.acf").write_text(
+                '"AppWorkshop" { "appid" "221100" "WorkshopItemsInstalled" { '
+                '"111" { "manifest" "8" "size" "1" "timeupdated" "5" } } }', encoding="utf-8")
+            profile = ProfileRecord(1, ProfileInput.parse({
+                "profile_id": "main", "display_name": "Main",
+                "server_executable": "DayZServer_x64.exe", "server_config": "serverDZ.cfg",
+                "runtime_profile": None, "mission_root": None, "game_port": 2302,
+                "mods": [{"directory": "@Friendly", "launch_scope": "client",
+                          "source": {"kind": "workshop", "workshop_id": "111"}}],
+                "extra_arguments": [],
+            }))
+            rows = ModInventoryService(_Profiles(profile), _Settings(root)).list("main")
+            self.assertEqual([row["state"] for row in rows], ["UNAVAILABLE"])
+
+    def test_wired_sources_merge_remote_facts_and_target_proofs(self) -> None:
+        """Verify rows gain the remote date, the check value and the pending reason."""
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root = base / "steamapps/workshop/content/221100"
+            (root / "111").mkdir(parents=True)
+            dayz = base / "DayZ Server"
+            dayz.mkdir()
+            # Record one installed item without any latest-manifest detail
+            (base / "steamapps/workshop/appworkshop_221100.acf").write_text(
+                '"AppWorkshop" { "appid" "221100" "WorkshopItemsInstalled" { '
+                '"111" { "manifest" "8" "size" "1" "timeupdated" "5" } } '
+                '"WorkshopItemDetails" { "111" { "manifest" "8" } } }', encoding="utf-8")
+            profile = ProfileRecord(1, ProfileInput.parse({
+                "profile_id": "main", "display_name": "Main",
+                "server_executable": "DayZServer_x64.exe", "server_config": "serverDZ.cfg",
+                "runtime_profile": None, "mission_root": None, "game_port": 2302,
+                "mods": [{"directory": "@Friendly", "launch_scope": "client",
+                          "source": {"kind": "workshop", "workshop_id": "111"}}],
+                "extra_arguments": [],
+            }))
+            settings = SimpleNamespace(
+                load=lambda: SimpleNamespace(workshop_content_root=str(root), dayz_root=str(dayz)))
+            check = SimpleNamespace(remote_time=5)
+            check.snapshot = lambda: CheckSnapshot(
+                CheckState.OK, None, None, None, False, 0, {"111": RemoteFact(
+                    RemoteItemResult.OK, check.remote_time, 1, "2026-10-03T12:00:00.000+00:00")})
+            records = SimpleNamespace(found=set())
+            records.target_records = lambda: records.found
+            service = ModInventoryService(
+                _Profiles(profile), settings, check_source=check,
+                target_proofs=TargetProofLookup([records]))
+
+            def row() -> tuple:
+                """Return the state and the additive fields of the only row."""
+                value = service.list("main")[0]
+                return (value["state"], value["remote_time_updated"],
+                        value["remote_check"], value["pending_reason"])
+
+            # The copy is missing, then unproven, then proven by a target record
+            self.assertEqual(row(), ("PENDING_APPLY", 5, "OK", "TARGET_MISSING"))
+            (dayz / "@Friendly").mkdir()
+            self.assertEqual(row(), ("PENDING_APPLY", 5, "OK", "TARGET_UNPROVEN"))
+            records.found = {(dayz_root_identity(dayz), "@friendly", "111", "8")}
+            self.assertEqual(row(), ("CURRENT", 5, "OK", None))
+            # A newer remote time outranks the proven copy
+            check.remote_time = 6
+            self.assertEqual(row(), ("UPDATE_AVAILABLE", 6, "OK", None))
+            self.assertEqual(service.report("main")[1].check_state, CheckState.OK)
 
 
 if __name__ == "__main__":

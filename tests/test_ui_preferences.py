@@ -53,6 +53,8 @@ class UiPreferenceTests(unittest.TestCase):
         self.assertIsNone(result["value"]["selected_profile_id"])
         self.assertEqual(result["value"]["backup_after_stop_profiles"], [])
         self.assertEqual(result["value"]["storage_status"], "MISSING")
+        # Automatic update checks are on until the operator switches them off
+        self.assertIs(result["value"]["automatic_update_checks"], True)
 
     def test_selected_profile_survives_composition_restart(self) -> None:
         """The selected profile survives a composition restart."""
@@ -124,6 +126,55 @@ class UiPreferenceTests(unittest.TestCase):
         self.assertFalse(saved["success"])
         self.assertEqual(saved["error"]["code"], "RECOVERY_REQUIRED")
         self.assertEqual(path.read_bytes(), before)
+
+    def automatic(self) -> object:
+        """Return the effective automatic-check switch as the service reads it."""
+        return self.composition.preferences.automatic_update_checks()
+
+    def test_automatic_update_checks_default_on_and_survive_other_saves(self) -> None:
+        """The switch is on when the key is absent and is stored as a boolean."""
+        self.create_profile()
+        self.dispatch("save_selected_profile", {"profile_id": "livonia-main"})
+        # A record without the key keeps automatic checks on
+        self.assertIs(self.dispatch("get_ui_preferences")["value"]["automatic_update_checks"], True)
+        self.assertIs(self.automatic(), True)
+        saved = self.dispatch("save_automatic_update_checks", {"enabled": False})
+        self.assertEqual(saved["value"], {"automatic_update_checks": False})
+        loaded = self.dispatch("get_ui_preferences")["value"]
+        self.assertIs(loaded["automatic_update_checks"], False)
+        self.assertEqual(loaded["selected_profile_id"], "livonia-main")
+        self.assertIs(self.automatic(), False)
+        # Another preference save keeps the switch; switching on again works
+        self.dispatch("save_backup_after_stop", {"profile_id": "livonia-main", "enabled": True})
+        self.assertIs(self.automatic(), False)
+        self.assertTrue(self.dispatch("save_automatic_update_checks", {"enabled": True})["success"])
+        self.assertIs(self.automatic(), True)
+
+    def test_automatic_update_checks_are_off_for_a_non_boolean_or_corrupt_record(self) -> None:
+        """A stored non-boolean value or an unreadable record disables automatic checks."""
+        self.assertTrue(self.dispatch("save_automatic_update_checks", {"enabled": True})["success"])
+        path = self.composition.paths.ui_preferences
+        valid = path.read_text(encoding="utf-8")
+        self.assertIn("true", valid)
+        for stored in ('"yes"', "1", "null", "false"):
+            path.write_text(valid.replace("true", stored), encoding="utf-8")
+            view = self.dispatch("get_ui_preferences")["value"]
+            self.assertEqual(view["storage_status"], "VALID", stored)
+            self.assertIs(view["automatic_update_checks"], False, stored)
+            self.assertIs(self.automatic(), False, stored)
+        # A corrupt record disables the checks and refuses the save
+        path.write_text("{broken", encoding="utf-8")
+        self.assertIs(self.dispatch("get_ui_preferences")["value"]["automatic_update_checks"], False)
+        self.assertIs(self.automatic(), False)
+        refused = self.dispatch("save_automatic_update_checks", {"enabled": True})
+        self.assertEqual(refused["error"]["code"], "RECOVERY_REQUIRED")
+
+    def test_automatic_update_checks_save_rejects_invalid_requests(self) -> None:
+        """Only the exact field set with a boolean value is accepted."""
+        for parameters in ({"enabled": "yes"}, {"enabled": 1}, {"enabled": True, "profile_id": "x"}):
+            rejected = self.dispatch("save_automatic_update_checks", parameters)
+            self.assertEqual(rejected["error"]["code"], "INVALID_REQUEST", parameters)
+        self.assertFalse(self.composition.paths.ui_preferences.exists())
 
 
 if __name__ == "__main__":

@@ -64,6 +64,12 @@ class OperationRecord:
     progress_phase: str = "accepted"
     result: Mapping[str, Any] | None = None
     terminal_error: OperationError | None = None
+    # Advisory per-item progress: null or {"items": [...]} with at most 200 entries
+    progress_detail: Mapping[str, Any] | None = None
+    # Profile that the submitter named for this operation; None when it names none
+    target_profile_id: str | None = None
+    # Phase of the last checkpoint; kept when a terminal state replaces progress_phase
+    last_working_phase: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Return the schema-versioned wire representation of the record."""
@@ -83,6 +89,9 @@ class OperationRecord:
             "terminal_error": (
                 self.terminal_error.to_dict() if self.terminal_error is not None else None
             ),
+            "progress_detail": _detail_copy(self.progress_detail),
+            "target_profile_id": self.target_profile_id,
+            "last_working_phase": self.last_working_phase,
         }
 
     def snapshot(self) -> OperationRecord:
@@ -100,7 +109,17 @@ class OperationRecord:
             progress_phase=self.progress_phase,
             result=dict(self.result) if self.result is not None else None,
             terminal_error=self.terminal_error,
+            progress_detail=_detail_copy(self.progress_detail),
+            target_profile_id=self.target_profile_id,
+            last_working_phase=self.last_working_phase,
         )
+
+
+def _detail_copy(detail: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """Return a detached copy of a progress detail value, or None."""
+    if detail is None:
+        return None
+    return {"items": [dict(item) for item in detail["items"]]}
 
 
 @dataclass(frozen=True)
@@ -126,9 +145,23 @@ class OperationEvent:
         }
 
 
+# Machine-readable causes of a refused submission; the bridge reports one as error detail "reason"
+QUEUE_FULL = "QUEUE_FULL"
+RECOVERY_BLOCK = "RECOVERY_BLOCK"
+SHUTTING_DOWN = "SHUTTING_DOWN"
+
+
 class QueueUnavailable(RuntimeError):
     """Raised when the operation lane cannot accept new work."""
-    pass
+    def __init__(self, message: str, reason: str = QUEUE_FULL) -> None:
+        """Store the safe message and the machine-readable cause of the refusal."""
+        self.reason = reason
+        super().__init__(message)
+
+    @property
+    def details(self) -> dict[str, str]:
+        """Return the additive error detail that names the cause to the bridge caller."""
+        return {"reason": self.reason}
 
 
 class OperationNotFound(RuntimeError):

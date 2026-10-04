@@ -97,8 +97,12 @@ def stage_keys_group(
     target: Path,
     checkpoint: Callable[[str, int], None],
     fault: Callable[[str, int], None],
+    writes_allowed: bool = True,
 ) -> PublicationGroup:
-    """Stage the keys directory, preserving existing non-colliding keys."""
+    """Stage the keys directory, preserving existing non-colliding keys.
+
+    With `writes_allowed` false a missing key ends the staging before any copy.
+    """
     # Reserve sibling artifact paths beside the live keys directory
     stage, recovery = artifact_paths(target, intent.publication_id, ordinal)
     _require_clear_artifacts(stage, recovery)
@@ -114,6 +118,9 @@ def stage_keys_group(
                 raise StagingError(f"KEY_COLLISION: key collision: {key.filename}")
             if current is None:
                 missing.append(key)
+        # A run without the write guard must not add a key file
+        if missing and not writes_allowed:
+            raise StagingError("PUBLICATION_PREVIEW_STALE: key files are missing")
         # Nothing to add means the existing keys already satisfy the intent
         if prior is not None and not missing:
             return PublicationGroup(
@@ -140,6 +147,22 @@ def stage_keys_group(
         # Remove the partial stage so a retry starts clean
         _remove_partial_stage(stage)
         raise
+
+
+def measured_fingerprint(target: Path) -> str | None:
+    """Return the fingerprint of a tree, or None when it cannot be measured; never raise."""
+    try:
+        return tree_metadata_digest(target)
+    except (TreeMetadataError, OSError):
+        return None
+
+
+def missing_key_count(intent: PublicationIntent, target: Path) -> int:
+    """Return how many key files of the intent are not in the keys directory; read-only."""
+    if not intent.keys or not target.exists():
+        return len(intent.keys)
+    existing = _existing_keys(target)
+    return sum(1 for key in intent.keys if key.filename.casefold() not in existing)
 
 
 def _existing_keys(target: Path) -> dict[str, Path]:

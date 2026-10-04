@@ -19,7 +19,12 @@ from ..domain.mod_publication import (
 from ..domain.profiles import ProfileRecord
 from ..domain.workshop import CacheProof, derive_required_items
 from .backup_verification import is_reparse, sha256_file
-from .workshop_cache import CacheVerificationError, WorkshopCacheVerifier, _has_alternate_stream
+from .workshop_cache import (
+    CacheVerificationError,
+    HashingCancelled,
+    WorkshopCacheVerifier,
+    _has_alternate_stream,
+)
 from .tree_metadata import TreeMetadataError, tree_metadata_digest
 
 
@@ -32,8 +37,12 @@ class PublicationInventoryError(RuntimeError):
         super().__init__(message)
 
 
-def inventory_tree(root: Path) -> str:
-    """Return a canonical digest over every path and file in a source tree."""
+def inventory_tree(root: Path, cancellation_probe: Callable[[], bool] | None = None) -> str:
+    """Return a canonical digest over every path and file in a source tree.
+
+    The optional probe is asked before each file; when it returns True the
+    hash is abandoned with HashingCancelled.
+    """
     # The root itself must be a plain directory without alternate streams
     if not root.is_dir() or is_reparse(root) or _has_alternate_stream(root):
         raise PublicationInventoryError("MANAGED_MOD_SOURCE_INVALID", "source directory is unsafe")
@@ -49,6 +58,9 @@ def inventory_tree(root: Path) -> str:
             relative = _relative_identity(child, root, identities)
             entries.append(("D", relative))
         for name in files:
+            # Stop only between files, never inside one
+            if cancellation_probe is not None and cancellation_probe():
+                raise HashingCancelled("target hashing was cancelled")
             child = base / name
             _safe_entry(child, directory=False)
             relative = _relative_identity(child, root, identities)

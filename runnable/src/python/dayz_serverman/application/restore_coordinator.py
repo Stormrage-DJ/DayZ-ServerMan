@@ -108,9 +108,13 @@ class RestoreCoordinator:
                     "backup_id": str(parameters.get("backup_id")),
                     "target_role": "restore",
                 },
+                target_profile_id=str(parameters.get("profile_id")),
             )
         except QueueUnavailable as error:
-            raise ApplicationCallError(ErrorCode.MUTATION_CONFLICT, str(error), retryable=True) from error
+            raise ApplicationCallError(
+                ErrorCode.MUTATION_CONFLICT, str(error), retryable=True,
+                details=error.details,
+            ) from error
         return {"operation_id": operation.operation_id, "state": operation.state.value}
 
 

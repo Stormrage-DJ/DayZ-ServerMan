@@ -31,7 +31,7 @@ function overviewStatusPresentation(status) {
 
 // Describe the managed-process evidence without confusing it with readiness.
 function overviewProcessDetail(status) {
-  if (status?.diagnostic_code) return status.diagnostic_code;
+  if (status?.diagnostic_code) return window.ServerManDiagnosticLabels.process(status.diagnostic_code);
   if (status?.query_port) return `Steam query port ${status.query_port}`;
   return "No process diagnostic is active.";
 }

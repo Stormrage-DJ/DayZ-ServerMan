@@ -19,7 +19,8 @@ def script_source() -> str:
     """Concatenate the frontend scripts that participate in the race scenarios."""
     names = (
         "workspace_context.js", "transition_guard.js", "configuration_catalog.js",
-        "configuration_edit.js", "configuration_context.js", "configuration.js",
+        "configuration_edit.js", "configuration_context.js", "configuration_fields.js",
+        "configuration.js",
     )
     return "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in names)
 
@@ -73,6 +74,10 @@ window.ServerManProfileContext = { selectedId: () => "alpha", select: () => {} }
   check(configurationState.loaded === oldShared, "shared reload overwrote a newer edit");
   check(!document.getElementById("configuration-profile").disabled, "shared controls stayed disabled");
 
+  // Register the guard owner before a terminal event can mark it dirty.
+  let sharedDiscard = 0; let sharedFocus = 0; let commits = 0;
+  window.ServerManTransitions.registerOwner("shared-configuration",
+    () => { sharedDiscard += 1; }, () => { sharedFocus += 1; document.getElementById("shared-focus").focus(); });
   const sharedContext = { profile_id: "alpha", target: "server", profile_revision: 1,
     settings_revision: 1, digest: "shared-digest", server_config_digest: null };
   configurationState.loaded = sharedContext;
@@ -89,9 +94,6 @@ window.ServerManProfileContext = { selectedId: () => "alpha", select: () => {} }
   check(configurationOperationFinished({ operation_id: "shared-apply-op", state: "FAILED" }),
     "configuration operation correlation was lost");
 
-  let sharedDiscard = 0; let sharedFocus = 0; let commits = 0;
-  window.ServerManTransitions.registerOwner("shared-configuration",
-    () => { sharedDiscard += 1; }, () => { sharedFocus += 1; document.getElementById("shared-focus").focus(); });
   window.ServerManTransitions.setDirty("shared-configuration", true);
   window.ServerManTransitions.requestOwnerTransition("shared-configuration",
     "Discard server configuration changes?",

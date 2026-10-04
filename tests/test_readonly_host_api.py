@@ -44,6 +44,7 @@ class HostApiTests(unittest.TestCase):
                 "get_ui_preferences",
                 "save_selected_profile",
                 "save_backup_after_stop",
+                "save_automatic_update_checks",
                 "save_lifecycle_schedule",
                 "read_operation_events",
                 "get_operation",
@@ -51,6 +52,9 @@ class HostApiTests(unittest.TestCase):
                 "request_shutdown",
                 "list_profiles",
                 "list_mod_inventory",
+                "get_update_status",
+                "request_update_check",
+                "verify_mod_files",
                 "read_profile",
                 "preview_profile_command",
                 "list_profile_missions",
@@ -86,6 +90,7 @@ class HostApiTests(unittest.TestCase):
                 "update_workshop_items",
                 "preview_mod_publication",
                 "publish_mods_and_keys",
+                "apply_mods_and_restart",
                 "save_settings",
                 "select_settings_path",
                 "get_server_status",
@@ -148,6 +153,10 @@ class HostApiTests(unittest.TestCase):
         api.save_settings({
             "dayz_root": None, "steamcmd_root": None, "custom_backup_root": None,
         }, None)
+        api.save_automatic_update_checks(False)
+        api.get_update_status("main")
+        api.request_update_check("mods", True)
+        api.verify_mod_files("main", 3, 4)
         # The dispatch order matches the call order exactly
         self.assertEqual(
             [request["method"] for request in facade.requests],
@@ -196,6 +205,10 @@ class HostApiTests(unittest.TestCase):
                 "list_legacy_backup_references",
                 "revalidate_legacy_backup_references",
                 "save_settings",
+                "save_automatic_update_checks",
+                "get_update_status",
+                "request_update_check",
+                "verify_mod_files",
             ],
         )
         self.assertTrue(all(request["contract_version"] == 1 for request in facade.requests))
@@ -212,6 +225,18 @@ class HostApiTests(unittest.TestCase):
             requests_by_method["restart_server"]["parameters"]["backup_after_stop"],
             False,
         )
+        # The update-check methods carry exactly their contract fields
+        self.assertEqual(
+            requests_by_method["save_automatic_update_checks"]["parameters"], {"enabled": False})
+        self.assertEqual(
+            requests_by_method["get_update_status"]["parameters"], {"profile_id": "main"})
+        self.assertEqual(
+            requests_by_method["request_update_check"]["parameters"],
+            {"scope": "mods", "force": True})
+        self.assertEqual(requests_by_method["verify_mod_files"]["parameters"], {
+            "profile_id": "main", "expected_profile_revision": 3,
+            "expected_settings_revision": 4,
+        })
 
     def test_bridge_error_is_returned_in_sanitized_contract(self) -> None:
         """Bridge failures surface as sanitized error envelopes."""

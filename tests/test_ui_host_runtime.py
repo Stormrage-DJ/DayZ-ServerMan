@@ -1,6 +1,7 @@
 """Desktop host runtime tests for inline EdgeChromium window behavior."""
 from __future__ import annotations
 
+import dataclasses
 import sys
 import tempfile
 import unittest
@@ -31,6 +32,7 @@ class FakeWebview:
         self.window_arguments: dict[str, object] = {}
         self.start_arguments: dict[str, object] = {}
         self.window = FakeWindow()
+        self.events: list[str] = []
 
     def create_window(self, _title: str, **arguments: object) -> object:
         """Capture the window options and return the fake window."""
@@ -40,6 +42,7 @@ class FakeWebview:
     def start(self, callback: object, **arguments: object) -> None:
         """Capture the start options including the GUI and server flags."""
         self.start_arguments = {"callback": callback, **arguments}
+        self.events.append("window")
 
 
 class FakeWindow:
@@ -55,13 +58,35 @@ class FakeWindow:
         return self.selection
 
 
+class RecordingScheduler:
+    """Update-check scheduler stand-in that records start and stop."""
+    def __init__(self, events: list[str]) -> None:
+        """Share the event log with the fake webview."""
+        self.events = events
+
+    def start(self) -> None:
+        """Record that the host started the scheduler."""
+        self.events.append("scheduler-start")
+
+    def stop(self, timeout: float = 2.0) -> bool:
+        """Record that the host stopped the scheduler."""
+        self.events.append("scheduler-stop")
+        return True
+
+
 class HostRuntimeTests(unittest.TestCase):
     """Host runtime contracts for the inline local-only window."""
     def setUp(self) -> None:
         """Build a composition rooted in a temporary manager directory."""
         self.temporary = tempfile.TemporaryDirectory(prefix="serverman_ui_")
         self.manager_root = Path(self.temporary.name) / "Review Manager"
-        self.composition = build_composition(self.manager_root)
+        composed = build_composition(self.manager_root)
+        self.assertEqual(type(composed.update_check_scheduler).__name__, "UpdateCheckScheduler")
+        # Record the scheduler calls instead of starting a real check thread
+        self.events: list[str] = []
+        self.composition = dataclasses.replace(
+            composed, update_check_scheduler=RecordingScheduler(self.events),
+        )
 
     def tearDown(self) -> None:
         """Shut the operations manager down and remove the temporary directory."""
@@ -72,6 +97,7 @@ class HostRuntimeTests(unittest.TestCase):
         """The runtime forces an inline EdgeChromium window without an HTTP server."""
         # Launch against the studio frontend with a fake webview module
         fake = FakeWebview()
+        fake.events = self.events
         self.assertEqual(
             self.composition.host_bridge.allowed_methods,
             self.composition.bridge.allowed_methods,
@@ -88,6 +114,17 @@ class HostRuntimeTests(unittest.TestCase):
         self.assertEqual(fake.start_arguments["storage_path"], str(self.composition.paths.webview2))
         self.assertFalse(fake.settings["ALLOW_DOWNLOADS"])
         self.assertFalse(fake.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"])
+        # The update-check scheduler runs exactly while the window lives
+        self.assertEqual(self.events, ["scheduler-start", "window", "scheduler-stop"])
+
+    def test_update_check_scheduler_is_stopped_when_the_window_fails(self) -> None:
+        """A failing window loop still stops the update-check scheduler."""
+        fake = FakeWebview()
+        fake.start = lambda *_args, **_options: (_ for _ in ()).throw(RuntimeError("window"))
+        with patch("dayz_serverman.host.runtime.find_webview2_version", return_value="1.0"):
+            with self.assertRaises(RuntimeError):
+                launch_application(self.composition, frontend_root=FRONTEND, webview_module=fake)
+        self.assertEqual(self.events, ["scheduler-start", "scheduler-stop"])
 
     def test_packaged_frontend_is_preferred_without_cwd_lookup(self) -> None:
         """A packaged frontend beside the manager root wins over a lookup."""

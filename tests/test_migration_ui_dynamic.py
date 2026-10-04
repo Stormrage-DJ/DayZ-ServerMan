@@ -113,7 +113,8 @@ class MigrationUiDynamicTests(unittest.TestCase):
         # Load the frontend scripts and embed them into the harness page
         scripts = "\n".join(
             (FRONTEND / name).read_text(encoding="utf-8")
-            for name in ("workspace_context.js", "transition_guard.js", "migration.js")
+            for name in ("operation_labels.js", "operation_messages.js", "diagnostic_labels.js", "workspace_context.js",
+                         "transition_guard.js", "migration.js")
         )
         page_text = (
             "<!doctype html><html><body><main><h1 id='page-title'>Settings</h1>"

@@ -61,9 +61,14 @@ window.pywebview = { api: {
   get_operation: async (operationId) => operationValues.get(operationId),
 } };
 window.ServerManUi = {
-  syncOperationStatus: () => {},
-  renderHostError: () => {}, render: () => {}, renderOperation: () => {},
-  setHostStatus: () => {}, sectionCopy: { backups: ["Backups", "Backups"] },
+  renderHostError: () => {}, render: () => {},
+  setHostStatus: () => {},
+};
+// The operation bar is not part of this page fixture; the page result keeps the look of the state.
+window.ServerManOperationBar = {
+  sync: () => {}, settle: () => {}, reset: () => {},
+  pageResult: (operation) => ({ look: operation.state === "RECOVERY_REQUIRED" ? "recovery" : "failed",
+    text: operation.terminal_error?.message || "" }),
 };
 
 (async () => {
@@ -88,7 +93,8 @@ window.ServerManUi = {
 
   activePreview.resolve(preview("alpha", "alpha-two", 3)); await flush();
   check(restoreState.preview.value.backup_id === "alpha-two", "active preview did not bind");
-  check(document.getElementById("restore-feedback").textContent.includes("Runtime profile — REPLACE"),
+  check(document.getElementById("restore-feedback").textContent.includes("Runtime profile — replace")
+    && !document.getElementById("restore-feedback").textContent.includes("REPLACE"),
     "runtime target kind is not visible in review");
   document.querySelector("#restore-feedback button").focus();
   showRestoreConfirmation();
@@ -125,8 +131,9 @@ window.ServerManUi = {
   check(restoreState.pendingOperation.operationId === "restore-active", "active restore was not tracked");
   restoreOperationFinished({ operation_id: "restore-active", state: "RECOVERY_REQUIRED",
     progress_phase: "compensating", progress_percent: 95 });
-  check(document.getElementById("restore-feedback").textContent.includes("New mutations are blocked"),
-    "recovery-required explanation is missing");
+  check(document.getElementById("restore-feedback").textContent
+    === "Recovery required. Changes are blocked until an unfinished restore is resolved. "
+      + "Details are in Logs, Manager diagnostics.", "recovery-required explanation is missing");
 
   schedulePoll = () => {};
   shellState.hostReady = true;
@@ -193,7 +200,9 @@ class RestoreUiDynamicTests(unittest.TestCase):
         # Concatenate the frontend modules that implement the scenario
         scripts = "\n".join(
             (FRONTEND / name).read_text(encoding="utf-8")
-            for name in ("workspace_context.js", "backup_display.js", "backups.js", "backup_history.js", "restore.js", "app.js")
+            for name in ("operation_labels.js", "operation_messages.js", "diagnostic_labels.js", "workspace_context.js",
+                         "backup_display.js", "backups.js", "backup_history.js", "restore.js",
+                         "sections.js", "app.js")
         )
         # Compose a standalone page embedding the modules and the harness
         page_text = (

@@ -91,6 +91,7 @@ class ProfileCoordinator:
         return self._submit(
             "SAVE_PROFILE",
             lambda: self._profiles.save(profile, expected).to_dict(),
+            profile.profile_id,
         )
 
     def delete_profile(self, parameters: Mapping[str, Any]) -> dict[str, str]:
@@ -105,10 +106,13 @@ class ProfileCoordinator:
         return self._submit(
             "DELETE_PROFILE",
             lambda: self._deletion.delete(profile_id, expected),
+            profile_id,
         )
 
-    def _submit(self, kind: str, action: Callable[[], dict[str, Any]]) -> dict[str, str]:
-        """Queue one profile mutation and describe the queued operation."""
+    def _submit(
+        self, kind: str, action: Callable[[], dict[str, Any]], profile_id: str,
+    ) -> dict[str, str]:
+        """Queue one mutation of the named profile and describe the queued operation."""
         def work(_context: object) -> dict[str, Any]:
             """Run the mutation and map failures for the operation lane."""
             # Translate each failure family into a typed operation failure
@@ -134,12 +138,12 @@ class ProfileCoordinator:
 
         # Queue the mutation and surface a busy lane immediately
         try:
-            record = self._operations.submit(kind, work)
+            record = self._operations.submit(kind, work, target_profile_id=profile_id)
         except QueueUnavailable as error:
             raise ApplicationCallError(
                 ErrorCode.MUTATION_CONFLICT,
                 str(error),
-                retryable=True,
+                retryable=True, details=error.details,
             ) from error
         return {"operation_id": record.operation_id, "state": record.state.value}
 

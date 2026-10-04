@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-import json
 from pathlib import Path
 from typing import Any
 
 from ..bridge.contracts import ErrorCode
 from ..bridge.facade import ApplicationCallError
+from .log_activity import manager_activity
 
 
 # Log sources exposed through the bridge
@@ -58,7 +58,7 @@ class LogQueryService:
         # Return the newest lines and flag truncation in either form
         lines = content.splitlines()
         if source == "manager":
-            lines = _manager_activity(lines)
+            lines = manager_activity(lines)
         return {
             "source": source,
             "lines": lines[-maximum:],
@@ -92,62 +92,3 @@ def _revision(path: Path) -> str:
     except OSError:
         return "missing"
     return f"{stat.st_size}:{stat.st_mtime_ns}"
-
-
-def _manager_activity(lines: list[str]) -> list[str]:
-    """Turn structured diagnostics into concise operator-facing activity."""
-    activity: list[str] = []
-    for line in lines:
-        try:
-            record = json.loads(line)
-        except (json.JSONDecodeError, TypeError):
-            continue
-        if not isinstance(record, dict):
-            continue
-        rendered = _format_manager_record(record)
-        if rendered is not None:
-            activity.append(rendered)
-    return activity
-
-
-def _format_manager_record(record: Mapping[str, Any]) -> str | None:
-    """Format one relevant manager record or hide routine diagnostics."""
-    event = record.get("event")
-    fields = record.get("fields") if isinstance(record.get("fields"), dict) else {}
-    level = str(record.get("level", "INFO"))
-    timestamp = str(record.get("occurred_at", "")).replace("T", " ")[:19]
-    prefix = f"{timestamp}  {level:<7}".strip()
-    if event in {"bridge.request", "bridge.success", "operation.progress",
-                 "shutdown.requested", "shutdown.closed", "operation_lane.draining",
-                 "schedule.started", "schedule.stopped"}:
-        return None
-    if event == "operation.state":
-        state = fields.get("state")
-        if state not in {"SUCCEEDED", "FAILED", "CANCELLED", "RECOVERY_REQUIRED"}:
-            return None
-        action = _display_name(fields.get("kind", "Operation"))
-        if state == "SUCCEEDED":
-            message = f"{action} completed."
-        elif state == "CANCELLED":
-            message = f"{action} was cancelled."
-        else:
-            detail = fields.get("error_message") or fields.get("error_code") or "Unknown error"
-            message = f"{action} failed: {detail}"
-        return f"{prefix}  {message}"
-    if event == "bridge.failure":
-        method = _display_name(fields.get("method", "Request"))
-        detail = fields.get("message") or fields.get("error_code") or "Unknown error"
-        return f"{prefix}  {method} failed: {detail}"
-    if isinstance(event, str):
-        message = _display_name(event)
-        details = ", ".join(
-            f"{_display_name(key)}: {value}" for key, value in fields.items()
-            if value not in (None, "")
-        )
-        return f"{prefix}  {message}{f' — {details}' if details else ''}"
-    return None
-
-
-def _display_name(value: object) -> str:
-    """Convert an event or operation identifier into readable words."""
-    return str(value).replace(".", " ").replace("_", " ").strip().title()

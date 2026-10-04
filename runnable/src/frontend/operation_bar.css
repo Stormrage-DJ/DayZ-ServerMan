@@ -1,0 +1,70 @@
+/* Operation bar: the persistent global indicator above the page, and the busy treatment of page controls */
+.operation-bar { position: sticky; top: 0; z-index: var(--operation-bar-z); border-bottom: 1px solid var(--color-border); background: var(--color-surface); }
+.operation-bar[hidden] { display: none; }
+.operation-bar-inner { display: grid; max-width: 1260px; margin: 0 auto; padding: 0 var(--space-page); }
+#main-content { scroll-margin-top: var(--operation-bar-min-height); }
+
+/* One row per shown operation; the left accent and the dot carry the state colour, the words carry the state */
+.operation-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--primitive-space-2) var(--primitive-space-4); min-height: var(--operation-bar-min-height); padding: var(--primitive-space-3) 0 var(--primitive-space-3) var(--primitive-space-3); border-left: 4px solid var(--color-text-subtle); }
+.operation-row + .operation-row { border-top: 1px solid var(--color-border); }
+.operation-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--color-text-subtle); }
+.operation-row .progress-bar { background: var(--color-text-subtle); }
+.operation-row.is-running { border-left-color: var(--color-action); }
+.operation-row.is-running .operation-dot, .operation-row.is-running .progress-bar { background: var(--color-action); }
+.operation-row.is-cancelling { border-left-color: var(--color-status-warning); }
+.operation-row.is-cancelling .operation-dot, .operation-row.is-cancelling .progress-bar { background: var(--color-status-warning); }
+.operation-row.is-success { border-left-color: var(--color-status-success); }
+.operation-row.is-success .operation-dot { background: var(--color-status-success); }
+.operation-row.is-warning { border-left-color: var(--color-status-warning); }
+.operation-row.is-warning .operation-dot { background: var(--color-status-warning); }
+.operation-row.is-failed { border-left-color: var(--color-status-error); }
+.operation-row.is-failed .operation-dot { background: var(--color-status-error); }
+.operation-row.is-recovery { border-left-color: var(--color-status-recovery); }
+.operation-row.is-recovery .operation-dot { background: var(--color-status-recovery); }
+
+/* Name, target chip, phase, progress, and percent of the active row */
+.operation-heading { display: flex; flex: none; align-items: center; gap: var(--primitive-space-2); min-width: 0; }
+.operation-name { color: var(--color-text); font-size: 14px; font-weight: 700; }
+.operation-target { padding: 2px var(--primitive-space-2); border: 1px solid var(--color-border); border-radius: 999px; color: var(--color-text-muted); font-size: 12px; white-space: nowrap; }
+.operation-detail { display: flex; flex: 1 1 0; align-items: center; gap: var(--primitive-space-3); min-width: 0; }
+.operation-phase { overflow: hidden; color: var(--color-text-muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.operation-progress { flex: 1 1 160px; min-width: 64px; max-width: 320px; border: 1px solid var(--color-border); }
+.operation-progress .progress-bar { transition: width var(--primitive-duration) ease; }
+.operation-progress.is-indeterminate .progress-bar { width: 40%; animation: operation-slide 1.5s linear infinite; }
+.operation-percent { flex: none; min-width: 4ch; color: var(--color-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+@keyframes operation-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+
+/* Buttons of the bar use the compact control height */
+.operation-actions { display: flex; flex: none; gap: var(--primitive-space-2); margin-left: auto; }
+.operation-button { min-height: var(--operation-bar-control-height); padding: 0 var(--primitive-space-3); }
+
+/* Result rows: sentence first, host message below it */
+.operation-copy { display: grid; flex: 1 1 0; gap: 2px; min-width: 0; }
+.operation-message, .operation-note { color: var(--color-text-muted); font-size: 13px; line-height: 1.45; }
+.operation-note { flex: 1 1 100%; margin: 0 0 0 calc(8px + var(--primitive-space-4)); }
+
+/* List of the other waiting operations, opened from the "+N waiting" button */
+.operation-queue { display: grid; gap: var(--primitive-space-2); margin: 0; padding: var(--primitive-space-3) 0 var(--primitive-space-3) calc(12px + var(--primitive-space-4) + var(--primitive-space-3)); border-top: 1px solid var(--color-border); list-style: none; }
+.operation-queue-item { display: flex; align-items: center; gap: var(--primitive-space-3); min-height: var(--operation-bar-control-height); }
+.operation-queue-item .operation-button { margin-left: auto; }
+
+/* Visible wait line above the buttons of a dialog that was open when an operation started */
+.busy-wait-line { margin: var(--primitive-space-4) 0 0; color: var(--color-status-warning); font-weight: 700; }
+.busy-wait-line + .action-row { margin-top: var(--primitive-space-3); }
+
+/* Reduced motion: the indeterminate fill stands still as a full-width hatch */
+@media (prefers-reduced-motion: reduce) {
+  .operation-progress.is-indeterminate .progress-bar { width: 100%; animation: none; background-image: repeating-linear-gradient(45deg, transparent 0 6px, color-mix(in srgb, var(--color-surface) 45%, transparent) 6px 12px); }
+}
+
+/* Narrow layout: name and buttons on the first line, phase and progress on the second */
+@media (max-width: 859px) {
+  .operation-bar-inner { padding: 0 var(--primitive-space-4); }
+  .operation-row { gap: var(--primitive-space-2) var(--primitive-space-3); }
+  .operation-heading { flex: 1 1 0; flex-wrap: wrap; }
+  .operation-detail { order: 3; flex: 1 1 100%; margin-left: calc(8px + var(--primitive-space-3)); }
+  .operation-progress { max-width: none; }
+  .operation-note { order: 4; margin-left: calc(8px + var(--primitive-space-3)); }
+  .operation-result .operation-copy { flex: 1 1 calc(100% - 8px - var(--primitive-space-3)); }
+  .operation-result .operation-actions { flex: 1 1 100%; margin-left: calc(8px + var(--primitive-space-3)); }
+}

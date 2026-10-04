@@ -5,26 +5,28 @@
 function fieldValue(field, input) {
   if (field.kind === "boolean") return input.value === "true";
   if (field.kind === "string") return input.value;
+  // Name the field by the label of its control, never by its configuration key.
+  const label = window.ServerManHostSentences.fieldLabel(field.key) || "This field";
   // Reject empty numeric inputs before any coercion.
-  if (input.value === "") throw new Error(`${field.key} requires a numeric value.`);
+  if (input.value === "") throw new Error(`${label} requires a numeric value.`);
   // Reject values the browser already flags as invalid.
-  if (!input.checkValidity()) throw new Error(`${field.key} is not a valid ${field.kind}.`);
+  if (!input.checkValidity()) throw new Error(`${label} is not a valid ${field.kind}.`);
   // Enforce whole safe integer values for integer fields.
   if (field.kind === "integer") {
-    if (!/^[+-]?\d+$/.test(input.value)) throw new Error(`${field.key} must be a whole integer.`);
+    if (!/^[+-]?\d+$/.test(input.value)) throw new Error(`${label} must be a whole integer.`);
     const value = Number(input.value);
     if (!Number.isFinite(value) || !Number.isInteger(value) || !Number.isSafeInteger(value)) {
-      throw new Error(`${field.key} must be a safe whole integer.`);
+      throw new Error(`${label} must be a safe whole integer.`);
     }
     return value;
   }
   // Require a finite number for number fields.
   if (field.kind === "number") {
     const value = Number(input.value);
-    if (!Number.isFinite(value)) throw new Error(`${field.key} must be a finite number.`);
+    if (!Number.isFinite(value)) throw new Error(`${label} must be a finite number.`);
     return value;
   }
-  throw new Error(`${field.key} has an unsupported field type.`);
+  throw new Error(`${label} has an unsupported field type.`);
 }
 
 // Collect values that differ from the loaded configuration, in field order.

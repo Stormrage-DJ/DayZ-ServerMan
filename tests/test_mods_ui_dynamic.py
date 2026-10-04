@@ -29,6 +29,7 @@ HARNESS = r"""
   let cancelled = 0;
   let published = 0;
   let previewed = 0;
+  const checks = [];
   const ok = (value) => ({success: true, value});
   window.pywebview = {api: {
     get_application_snapshot: async () => ok({settings: {revision: 2,
@@ -36,12 +37,18 @@ HARNESS = r"""
       operations: [], operation_session_id: "qa"}),
     list_profiles: async () => ok([{profile_id: "primary", display_name: "Primary",
       revision: 3, semantic_digest: "a".repeat(64)}]),
-    get_ui_preferences: async () => ok({selected_profile_id: "primary"}),
+    get_ui_preferences: async () => ok({selected_profile_id: "primary",
+      automatic_update_checks: true}),
+    get_update_status: async () => ok({mods: {check_state: "OK", checked_at: null,
+      last_success_at: "2026-10-03T13:41:07.120Z", error_code: null, update_count: 0,
+      pending_apply_count: 0}, server_build: null, checking: false, revision: 1}),
+    request_update_check: async (scope, force) => { checks.push([scope, force]);
+      return ok({accepted: false, checking: false}); },
     save_selected_profile: async () => ok({selected_profile_id: "primary"}),
     list_mod_inventory: async () => ok([{order: 1, name: "Example Mod",
       directory: "mods\\alpha", launch_scope: "client", source_kind: "workshop",
       workshop_id: "111", version: "1.2.3", state: "CURRENT", time_updated: 1}]),
-    update_workshop_items: async () => ok({operation_id: "update-one", state: "QUEUED"}),
+    update_workshop_items: async () => ok({operation_id: "update-one", state: "QUEUED"}), get_server_status: async () => ok({state: "STOPPED"}),
     preview_mod_publication: async () => { previewed += 1; return ok({profile_id: "primary",
       publication_fingerprint: "b".repeat(64), key_count: 2,
       targets: [{workshop_id: "111", target_relative: "mods\\alpha"}]}); },
@@ -57,15 +64,29 @@ HARNESS = r"""
     shellState.hostReady = true;
     commitSection("mods");
     await new Promise((resolve) => setTimeout(resolve, 100));
+    assert(JSON.stringify(checks) === '[["mods",false]]', "update check requested on open");
+    const account = document.getElementById("steam-account-name");
+    account.value = "typed-name";
     document.getElementById("update-workshop").click();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    window.ServerManMods.operationFinished({operation_id: "update-one", state: "RUNNING",
-      cancellable: true, progress_phase: "download", progress_percent: 55});
-    assert(document.getElementById("mods-feedback").textContent.includes("download: 55%"), "progress");
-    assert(!document.getElementById("cancel-workshop-operation").hidden, "cancel visible");
-    document.getElementById("cancel-workshop-operation").click();
+    // Progress and Cancel live in the operation bar; the page keeps its start message.
+    const running = {operation_id: "update-one", kind: "UPDATE_WORKSHOP_ITEMS", state: "RUNNING",
+      revision: 2, cancellable: true, progress_phase: "verify_items", progress_percent: 55};
+    window.ServerManOperationBar.sync(running);
+    window.ServerManMods.operationFinished(running);
+    const barText = () => document.getElementById("operation-bar").textContent;
+    assert(document.getElementById("mods-feedback").textContent === "Downloading or updating mods",
+      "page start message");
+    assert(barText().includes("Updating mods") && barText().includes("Verifying downloaded mods")
+      && barText().includes("55%"), "progress in the bar");
+    assert(!document.getElementById("cancel-workshop-operation"), "no page cancel button");
+    [...document.querySelectorAll("#operation-bar button")]
+      .find((button) => button.textContent === "Cancel").click();
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert(cancelled === 1, "cancel correlation");
+    // The event poll gives every record to the bar first; the end of the update unlocks the page.
+    window.ServerManOperationBar.sync({operation_id: "update-one", kind: "UPDATE_WORKSHOP_ITEMS",
+      state: "SUCCEEDED", revision: 3, result: {download_state: "VERIFIED"}});
     window.ServerManMods.operationFinished({operation_id: "update-one", kind: "UPDATE_WORKSHOP_ITEMS",
       state: "SUCCEEDED",
       result: {profile_id: "primary", download_state: "VERIFIED",
@@ -74,6 +95,9 @@ HARNESS = r"""
         items: [{item: {workshop_id: "111"},
           outcome: "UPDATED_VERIFIED", error_code: null}]}});
     await new Promise((resolve) => setTimeout(resolve, 0));
+    assert(checks.length === 2 && checks[1][1] === false, "update check after a finished update");
+    assert(document.getElementById("steam-account-name") === account
+      && account.value === "typed-name", "refresh after an update keeps the typed account name");
     const dialog = document.getElementById("mod-publication-confirmation");
     assert(dialog?.getAttribute("aria-modal") === "true", "review modal");
     assert(dialog.textContent.includes("mods\\alpha"), "safe target preview");
@@ -86,17 +110,22 @@ HARNESS = r"""
     [...dialog.querySelectorAll("button")].at(-1).click();
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert(published === 1, "explicit publish confirmation");
-    window.ServerManMods.operationFinished({operation_id: "publish-one",
-      kind: "PUBLISH_MODS_AND_KEYS", state: "RUNNING", cancellable: true,
-      progress_phase: "CHECK_TARGET", progress_percent: 62});
-    assert(document.getElementById("mods-feedback").textContent.includes("CHECK_TARGET: 62%"),
-      "publication progress");
+    const publishing = {operation_id: "publish-one", kind: "PUBLISH_MODS_AND_KEYS", state: "RUNNING",
+      revision: 2, cancellable: true, progress_phase: "CHECK_TARGET", progress_percent: 62};
+    window.ServerManOperationBar.sync(publishing);
+    window.ServerManMods.operationFinished(publishing);
+    assert(!document.getElementById("mods-feedback").textContent.includes("CHECK_TARGET")
+      && !document.getElementById("mods-feedback").textContent.includes("62%"), "no raw page progress");
+    assert(barText().includes("Checking the server folder") && barText().includes("62%")
+      && !barText().includes("CHECK_TARGET"), "publication progress in the bar");
+    window.ServerManOperationBar.sync({operation_id: "publish-one", kind: "PUBLISH_MODS_AND_KEYS",
+      state: "SUCCEEDED", revision: 3, result: {start_state: "STARTED"}});
     window.ServerManMods.operationFinished({operation_id: "publish-one",
       kind: "PUBLISH_MODS_AND_KEYS", state: "SUCCEEDED",
       result: {profile_id: "primary", publication_state: "VERIFIED",
         key_state: "VERIFIED", start_state: "STARTED", start_error: null}});
-    assert(document.getElementById("mods-feedback").textContent.includes(
-      "Server start was authorized and completed"), "composite success");
+    assert(document.getElementById("mods-feedback").textContent
+      === "Mods and keys applied. The server was started.", "composite success");
     const previewsBeforeFailure = previewed;
     modsState.pending = Object.freeze({id: "update-unknown", generation: modsState.generation,
       profileId: "primary"});
@@ -107,16 +136,20 @@ HARNESS = r"""
         items: [{item: {workshop_id: "111"}, outcome: "UNKNOWN_FAILED",
           error_code: "UPDATE_RESULT_UNKNOWN"}]}});
     assert(previewed === previewsBeforeFailure, "failed update must not enter publication");
-    assert(document.getElementById("mods-feedback").textContent.includes(
-      "exit code 7"), "failed update guidance");
+    assert(document.getElementById("mods-feedback").textContent.startsWith(
+      "The mod update could not be confirmed. SteamCMD exited without a verifiable update result (exit code 7)."),
+      "failed update guidance");
+    assert(document.getElementById("mods-feedback").textContent.includes("Workshop 111: Could not verify")
+      && !/[A-Z]{2,}_[A-Z_]+/.test(document.getElementById("mods-feedback").textContent),
+      "per-mod outcome without a raw code");
     modsState.pending = Object.freeze({id: "publish-cancel", generation: modsState.generation,
       profileId: "primary"});
     window.ServerManMods.operationFinished({operation_id: "publish-cancel",
       kind: "PUBLISH_MODS_AND_KEYS", state: "SUCCEEDED",
       result: {profile_id: "primary", publication_state: "VERIFIED",
         key_state: "VERIFIED", start_state: "CANCELLED", start_error: "UPDATE_CANCELLED"}});
-    assert(document.getElementById("mods-feedback").textContent.includes(
-      "start was cancelled before launch"), "post-publication cancellation");
+    assert(document.getElementById("mods-feedback").textContent
+      === "Mods and keys applied. The server start was cancelled.", "post-publication cancellation");
     let releasePreview;
     window.pywebview.api.preview_mod_publication = () => new Promise(
       (resolve) => { releasePreview = resolve; });
@@ -134,8 +167,8 @@ HARNESS = r"""
     window.ServerManMods.operationFinished({operation_id: "auth-one", kind: "AUTHENTICATE_STEAMCMD",
       state: "SUCCEEDED",
       result: {authenticated: true}});
-    assert(document.getElementById("mods-feedback").textContent.includes(
-      "Credentials remain owned by SteamCMD"), "auth terminal");
+    assert(document.getElementById("mods-feedback").textContent
+      === "Steam sign-in completed. Credentials remain owned by SteamCMD.", "auth terminal");
     document.body.replaceChildren(); document.body.style.background = "rgb(0, 255, 0)";
   } catch (error) {
     document.body.replaceChildren(); document.body.style.background = "rgb(255, 0, 0)";

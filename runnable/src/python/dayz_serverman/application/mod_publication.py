@@ -6,48 +6,37 @@ from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import Callable
 
-from ..domain.mod_publication import PublicationIntent
+from ..domain.mod_publication import PublicationIntent, PublicationJournal
 from ..repositories.mod_publication_inventory import (
     PublicationInventoryError,
     build_publication_intent,
 )
 from ..repositories.mod_publication_journal import PublicationJournalRepository
-from ..repositories.mod_publication_journal import PublicationJournalError
-from ..repositories.mod_publication_stage import (
-    ModPublicationStorage,
-    PublicationCancelled,
-    PublicationStorageError,
-)
-from ..repositories.applied_mod_state import AppliedModStateRepository
-from ..repositories.tree_metadata import TreeMetadataError
+from ..repositories.mod_publication_stage import ModPublicationStorage, PublicationCancelled
 from ..adapters.windows.publication_paths import PublicationPathError, dayz_root_identity
+from .content_proof_records import ContentProofRecorder
+from .installation_guard import PLAIN_APPLY_REQUIRES_GUARD, InstallationGuard
+from .mod_publication_apply import apply_publication, missing_keys, publication_writes
 from .operations.context import OperationContext
 from .operations.manager import OperationManager
 from .operations.models import OperationCancelled
 from .profiles import ProfileService
 from .mod_publication_gate import PublicationGateError, parse_publication_gate
-from .mod_publication_start import (
+from .mod_publication_prestart import PrestartFingerprints
+from .mod_publication_start import (  # noqa: F401 - re-exported for existing importers
     LifecycleStartPort,
+    ModPublicationError,
     PublicationProofError,
     PublicationStartCancelled,
     empty_publication_journal,
     load_verified_retired_publication,
     reviewed_publication_fingerprint,
+    start_after_publication,
     start_server,
     verified_publication_result,
     verify_committed_publication,
 )
 from .settings import SettingsService
-
-
-class ModPublicationError(RuntimeError):
-    """Publication workflow failure carrying a bridge error code."""
-
-    def __init__(self, code: str, message: str, *, recovery_required: bool = False) -> None:
-        """Store the bridge code and whether recovery is required."""
-        self.code = code
-        self.recovery_required = recovery_required
-        super().__init__(message)
 
 
 @dataclass(frozen=True)
@@ -67,16 +56,26 @@ class ModPublicationService:
         self, profiles: ProfileService, settings: SettingsService,
         operations: OperationManager, storage_factory: Callable[[Callable], ModPublicationStorage],
         journals: PublicationJournalRepository, lifecycle: LifecycleStartPort,
-        applied_state: AppliedModStateRepository | None = None,
+        content_proofs: ContentProofRecorder | None = None,
+        prestart: PrestartFingerprints | None = None,
+        guard: InstallationGuard | None = None,
+        guard_plain_apply: bool = PLAIN_APPLY_REQUIRES_GUARD,
     ) -> None:
-        """Store collaborators and the optional applied-state recorder."""
+        """Store collaborators, the optional proof recorder, pre-start rule and write guard.
+
+        `guard_plain_apply` is the policy of decision D10: whether a writing
+        publication without a requested start also runs inside the guard.
+        """
         self._profiles = profiles
         self._settings = settings
         self._operations = operations
         self._storage_factory = storage_factory
         self._journals = journals
         self._lifecycle = lifecycle
-        self._applied_state = applied_state
+        self._content_proofs = content_proofs
+        self._prestart = prestart
+        self._guard = guard
+        self._guard_plain_apply = guard_plain_apply
 
     def preview(self, request: PublicationRequest) -> dict[str, object]:
         """Return the reviewed targets and the fingerprint publish must echo."""
@@ -95,11 +94,30 @@ class ModPublicationService:
                 intent, request.update_operation_id, start_requested,
             ),
             "targets": [
-                {"workshop_id": item.workshop_id, "target_relative": item.target_relative}
+                {"workshop_id": item.workshop_id, "target_relative": item.target_relative,
+                 "current": item.target_current}
                 for item in intent.managed_sources
             ],
             "key_count": len(intent.keys),
+            # Key files of the plan that the keys folder does not hold yet
+            "missing_key_count": missing_keys(intent, Path(self._settings.load().dayz_root)),
+            # Effective policy of decision D10, so the page never guesses it
+            "plain_apply_guarded": self._guard is not None and self._guard_plain_apply,
         }
+
+    def confirm_restart_plan(self, request: PublicationRequest, reviewed_fingerprint: str) -> bool:
+        """Require the reviewed plan with a requested start; return whether it would write.
+
+        This is the plan check of a restart before anything stops. It changes nothing.
+        """
+        intent = self._rebuild(request, f"confirm-{request.update_operation_id[:32].lower()}")
+        gate = self._operations.get(request.update_operation_id)
+        # Only the reviewed plan of an update that asked for a start may stop the server
+        if gate.result["start_requested"] is not True or reviewed_publication_fingerprint(
+            intent, request.update_operation_id, True,
+        ) != reviewed_fingerprint:
+            raise ModPublicationError("PUBLICATION_PREVIEW_STALE", "Publication preview changed.")
+        return publication_writes(intent, Path(self._settings.load().dayz_root))
 
     def publish(
         self, request: PublicationRequest, reviewed_fingerprint: str,
@@ -145,35 +163,21 @@ class ModPublicationService:
         settings = self._settings.load()
         if settings.revision != request.settings_revision or settings.dayz_root is None:
             raise ModPublicationError("REVISION_CONFLICT", "Manager settings changed.")
-        # Stage and publish the reviewed targets, or journal an empty publication
-        try:
-            if final.managed_sources or final.keys:
-                journal = storage.stage(final, Path(settings.dayz_root))
-                storage.publish(journal, Path(settings.dayz_root), self._journals)
-            else:
-                journal = empty_publication_journal(final)
-        except PublicationCancelled as error:
-            raise OperationCancelled(str(error)) from error
-        except PublicationJournalError as error:
-            raise ModPublicationError(
-                "RECOVERY_REQUIRED", "Publication journal verification failed.",
-                recovery_required=True,
-            ) from error
-        except PublicationPathError as error:
-            raise ModPublicationError("PATH_INVALID", str(error)) from error
-        except OSError as error:
-            raise ModPublicationError("PUBLICATION_FAILED", "Publication storage failed.") from error
-        except (PublicationInventoryError, PublicationStorageError) as error:
-            raise ModPublicationError(
-                getattr(error, "code", "PUBLICATION_FAILED"), str(error),
-                recovery_required=getattr(error, "recovery_required", False),
-            ) from error
-        # Record the applied state best effort; publication already succeeded
-        if self._applied_state is not None and final.managed_sources:
-            try:
-                self._applied_state.record(final, Path(settings.dayz_root))
-            except (OSError, ValueError, TypeError, TreeMetadataError):
-                pass
+        def record_proofs(committed: PublicationJournal) -> None:
+            """Record the content proofs of the committed publication, best effort."""
+            if (self._content_proofs is not None and final.managed_sources
+                    and settings.workshop_content_root is not None):
+                self._content_proofs.record_publication(
+                    final, Path(settings.dayz_root), Path(settings.workshop_content_root),
+                    committed, getattr(storage, "hashed_fingerprints", None),
+                )
+        # Stage and publish the reviewed targets; a writing run takes the write guard
+        journal = apply_publication(
+            storage=storage, journals=self._journals, intent=final,
+            dayz_root=Path(settings.dayz_root), start_requested=final_start_requested,
+            guard=self._guard, guard_plain_apply=self._guard_plain_apply,
+            record_proofs=record_proofs,
+        )
         # Assemble the verified publication evidence for the operation
         result = verified_publication_result(
             final, journal, request.update_operation_id, final_start_requested,
@@ -183,57 +187,20 @@ class ModPublicationService:
         # Honor the optional start request only after verification
         if not final_start_requested:
             return result
-        if context.cancellation_requested:
-            return {**result, "start_state": "CANCELLED", "start_error": "UPDATE_CANCELLED"}
-        # Rebuild once more so the start decision sees the final state
-        post_publication = self._rebuild(
-            request, f"publication-{context.operation_id[:32].lower()}",
+        # Re-check the committed publication, then hand off to the lifecycle start
+        return start_after_publication(
+            result=result, final=final, journal=journal, dayz_root=Path(settings.dayz_root),
+            reviewed_fingerprint=reviewed_fingerprint,
+            update_operation_id=request.update_operation_id,
+            rebuild=lambda: self._rebuild(
+                request, f"publication-{context.operation_id[:32].lower()}",
+            ),
+            start_requested=lambda: self._operations.get(
+                request.update_operation_id,
+            ).result["start_requested"],
+            journals=self._journals, lifecycle=self._lifecycle, context=context,
+            prestart=self._prestart,
         )
-        if context.cancellation_requested:
-            return _cancelled_start(result)
-        if post_publication.fingerprint != final.fingerprint:
-            raise ModPublicationError(
-                "PUBLICATION_PREVIEW_STALE", "Publication context changed before start.",
-            )
-        post_gate = self._operations.get(request.update_operation_id)
-        post_start_requested = post_gate.result["start_requested"]
-        if reviewed_publication_fingerprint(
-            post_publication, request.update_operation_id, post_start_requested,
-        ) != reviewed_fingerprint:
-            raise ModPublicationError(
-                "PUBLICATION_PREVIEW_STALE", "Publication review changed before start.",
-            )
-        if context.cancellation_requested:
-            return _cancelled_start(result)
-        # Re-verify the retired journal and committed content before start
-        try:
-            persisted = journal
-            if journal.groups:
-                persisted = load_verified_retired_publication(
-                    self._journals, post_publication, journal,
-                    lambda: context.cancellation_requested,
-                )
-            verify_committed_publication(
-                post_publication, persisted, Path(settings.dayz_root),
-                lambda: context.cancellation_requested,
-            )
-        except PublicationStartCancelled:
-            return _cancelled_start(result)
-        except (OSError, PublicationPathError, PublicationInventoryError,
-                PublicationJournalError, PublicationProofError) as error:
-            raise ModPublicationError(
-                "PUBLICATION_VERIFICATION_FAILED",
-                "Published mods or keys changed before start.",
-            ) from error
-        if context.cancellation_requested:
-            return _cancelled_start(result)
-        result = {**result, "start_authorized": True, "start_error": None}
-        context.record_evidence(result)
-        if context.cancellation_requested:
-            return _cancelled_start(result)
-        # Hand off to the lifecycle start and fold in its snapshot
-        result.update(start_server(self._lifecycle, post_publication))
-        return result
 
     def _rebuild(
         self, request: PublicationRequest, publication_id: str,
@@ -271,12 +238,3 @@ class ModPublicationService:
                 getattr(error, "code", "PATH_INVALID"), str(error),
             ) from error
 
-
-def _cancelled_start(result: dict[str, object]) -> dict[str, object]:
-    """Return a cancelled start result that keeps publication evidence."""
-    return {
-        **result,
-        "start_authorized": False,
-        "start_state": "CANCELLED",
-        "start_error": "UPDATE_CANCELLED",
-    }
