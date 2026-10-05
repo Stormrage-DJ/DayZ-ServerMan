@@ -163,8 +163,9 @@ def launch_application(
     ) if smoke else None
     # Keep scheduled lifecycle actions running while the window lives
     composition.schedules.start()
-    # Check Steam for mod updates at start and on the interval
+    # Check Steam for mod updates and for the server build at start and on their intervals
     composition.update_check_scheduler.start()
+    composition.server_build.scheduler.start()
     try:
         # Start the embedded Edge Chromium window and block until it closes
         webview.start(
@@ -176,7 +177,9 @@ def launch_application(
             storage_path=str(composition.paths.webview2),
         )
     finally:
-        # Stop scheduling after the window closes
+        # Stop scheduling after the window closes; a running build check gets 30 s to end
+        composition.server_build.scheduler.stop()
+        composition.server_build.service.stop(30.0)
         composition.update_check_scheduler.stop()
         composition.schedules.stop()
     return 0

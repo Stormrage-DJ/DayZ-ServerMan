@@ -6,8 +6,10 @@ const settingsUpdatesState = { saving: false, pending: true };
 
 // What the switch does and what it sends, shown under its label.
 const SETTINGS_UPDATES_HELP = "When this is on, DayZ-ServerMan asks Steam whether your mods have a newer version: "
-  + "at start, when you select another server, and every 30 minutes. Only Workshop item numbers are sent to Steam. "
-  + "No sign-in is used and no file is changed. “Check now” on Overview and Mods works in both settings.";
+  + "at start, when you select another server, and every 30 minutes. Only Workshop item numbers are sent. "
+  + "It also asks which DayZ server build Steam offers, at start and every 6 hours: SteamCMD signs in anonymously "
+  + "and reads the public app information. Your Steam account is not used, and no file of the DayZ server is changed; "
+  + "SteamCMD updates files in its own folder only. “Check now” on Overview checks both; on Mods it checks the mods.";
 
 // Write the result line of the switch; the line is a polite status.
 function settingsUpdatesFeedback(text) {
@@ -57,7 +59,7 @@ function renderSettingsUpdates() {
   box.disabled = settingsUpdatesState.saving;
   box.setAttribute("aria-describedby", "automatic-update-checks-help");
   box.addEventListener("change", saveAutomaticUpdateChecks);
-  label.append(box, node("span", "", "Check Steam for mod updates automatically"));
+  label.append(box, node("span", "", "Check Steam for mod and server updates automatically"));
   const help = node("p", "settings-updates-help", SETTINGS_UPDATES_HELP); help.id = "automatic-update-checks-help";
   const feedback = node("p", "settings-updates-feedback"); feedback.id = "automatic-update-checks-feedback";
   feedback.setAttribute("role", "status");

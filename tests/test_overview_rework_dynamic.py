@@ -155,10 +155,10 @@ await start(); await wait(80);
 const cards = [...region().querySelectorAll(".overview-cards > .overview-card")];
 same(cards.map((card) => card.querySelector("h2").textContent).join("|"),
   "Updates|Last backup|Next scheduled action", "cards");
-// Updates: the same sentence as the badge name and the Mods header, and a primary way to Mods.
+// Updates: the Mods header sentence with "mod" named (QF-049), and a primary way to Mods.
 const summary = () => byId("overview-updates").querySelector(".overview-updates-summary");
 const expected = "2 updates available · 1 downloaded - not applied";
-same(summary().textContent, expected, "updates summary");
+same(summary().textContent, "2 mod updates available · 1 downloaded - not applied", "updates summary");
 check(summary().classList.contains("status-warning"), "summary tone");
 same(document.querySelector('.nav-item[data-section="mods"] .nav-badge').textContent, "3", "badge");
 same(document.querySelector('.nav-item[data-section="mods"] .nav-badge-name').textContent,
@@ -175,7 +175,7 @@ const card = byId("overview-updates");
 const land = async (next) => { host.updates = next; updateStatusState.readAt -= 31000;
   await window.ServerManUpdateStatus.poll(false); await wait(10); };
 await land(updates());
-check(byId("overview-updates") === card && summary().textContent === "No updates available"
+check(byId("overview-updates") === card && summary().textContent === "No mod updates available"
   && !byId("overview-open-mods").classList.contains("button-primary"), "card after the updates were applied");
 check(card.querySelector(".overview-updates-switch").hidden && card.querySelector(".mods-update-busy").hidden,
   "switch line or busy mark without a reason");

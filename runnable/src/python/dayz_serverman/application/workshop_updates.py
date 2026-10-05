@@ -20,6 +20,7 @@ from .operations.context import OperationContext
 from .operations.models import OperationFailure
 from .profiles import ProfileService
 from .settings import SettingsService
+from .steamcmd_guard import SteamCmdRunGuard, hold_steamcmd
 from .steamcmd_results import classify_output, terminal_outcomes
 from .workshop_decision import FreshCheckSource, decide_sent_items
 from .workshop_authentication import (
@@ -52,6 +53,7 @@ class WorkshopUpdateService:
         content_proofs: ContentProofResolver | None = None,
         check_source: FreshCheckSource | None = None,
         download_observer: Callable[..., DownloadObserver] | None = DownloadObserver,
+        steamcmd_guard: SteamCmdRunGuard | None = None,
     ) -> None:
         """Store profile, settings, SteamCMD ports, proof and check collaborators.
 
@@ -66,11 +68,14 @@ class WorkshopUpdateService:
         self._check_source = check_source
         self._verifier_factory = verifier_factory
         self._download_observer = download_observer
+        # One SteamCMD run at a time in this manager, also against the server build check
+        self._steamcmd_guard = steamcmd_guard
 
     def authenticate(self, expected_settings_revision: int, context: OperationContext) -> dict[str, object]:
         """Run interactive SteamCMD sign-in with revision-stability guards."""
         return authenticate_interactive(
             self._settings, self._preflight, self._steamcmd, expected_settings_revision, context,
+            guard=self._steamcmd_guard,
         )
 
     def update(self, request: UpdateRequest, context: OperationContext) -> dict[str, object]:
@@ -78,52 +83,59 @@ class WorkshopUpdateService:
         context.checkpoint("preflight", 5)
         # Reject stale revisions before any filesystem work
         settings, profile = self._resolve_context(request)
-        paths = inspect_paths(self._preflight, settings)
-        # Resolve the ordered items the update must process
-        items = derive_required_items(profile)
-        context.checkpoint("resolve_items", 10)
-        if not items:
-            return update_result(request, (), "EMPTY")
-        verifier = self._verifier_factory(paths.workshop_root)
-        # Snapshot the before state used to classify outcomes
-        try:
-            before = {
-                observation.workshop_id: observation
-                for observation in verifier.observe(tuple(item.workshop_id for item in items))
-            }
-        except CacheVerificationError as error:
-            raise OperationFailure("WORKSHOP_MANIFEST_INVALID", str(error)) from error
-        # Decide from a fresh remote check which items SteamCMD must process
-        context.checkpoint("check_remote", 12)
-        check = None if self._check_source is None else SizeRecordingCheck(self._check_source)
-        sent = decide_sent_items(check, items, before, verifier)
-        # Each sent item waits for its download; rows read these advisory item phases
-        progress = ItemProgress(context.publish_detail)
-        sent_ids = tuple(item.workshop_id for item in sent)
-        progress.queued(sent_ids, {} if check is None else check.sizes)
-        # Re-check revisions immediately before the launch or the local proofs
-        self._resolve_context(request)
-        run = None
-        if sent:
-            context.checkpoint("download", 15)
-            # Build the SteamCMD update command for the sent items only
-            argv = build_update_argv(
-                paths.executable,
-                request.authentication_mode,
-                request.account_name,
-                sent,
-            )
-            revalidate_paths(self._preflight, paths)
-            # The observer samples the download folders until the run has ended
-            with (self._download_observer(paths.workshop_root, progress, sent_ids)
-                  if self._download_observer is not None else nullcontext()):
-                run = self._steamcmd.run_update(
-                    paths,
-                    argv,
-                    lambda: context.cancellation_requested,
-                    lambda evidence: record_child(context, evidence),
-                    lambda: self._resolve_context(request),
+        # The guard spans preflight to the end of the run, so no other SteamCMD run falls in between
+        with hold_steamcmd(self._steamcmd_guard, context, "UPDATE_WORKSHOP_ITEMS", 5) as hold:
+            paths = inspect_paths(self._preflight, settings)
+            # Resolve the ordered items the update must process
+            items = derive_required_items(profile)
+            context.checkpoint("resolve_items", 10)
+            if not items:
+                return update_result(request, (), "EMPTY")
+            verifier = self._verifier_factory(paths.workshop_root)
+            # Snapshot the before state used to classify outcomes
+            try:
+                before = {
+                    observation.workshop_id: observation
+                    for observation in verifier.observe(tuple(item.workshop_id for item in items))
+                }
+            except CacheVerificationError as error:
+                raise OperationFailure("WORKSHOP_MANIFEST_INVALID", str(error)) from error
+            # Decide from a fresh remote check which items SteamCMD must process
+            context.checkpoint("check_remote", 12)
+            check = None if self._check_source is None else SizeRecordingCheck(self._check_source)
+            sent = decide_sent_items(check, items, before, verifier)
+            # Nothing to send: no SteamCMD run follows, so the guard is free again at once
+            if not sent:
+                hold.release()
+            # Each sent item waits for its download; rows read these advisory item phases
+            progress = ItemProgress(context.publish_detail)
+            sent_ids = tuple(item.workshop_id for item in sent)
+            progress.queued(sent_ids, {} if check is None else check.sizes)
+            # Re-check revisions immediately before the launch or the local proofs
+            self._resolve_context(request)
+            run = None
+            if sent:
+                context.checkpoint("download", 15)
+                # Build the SteamCMD update command for the sent items only
+                argv = build_update_argv(
+                    paths.executable,
+                    request.authentication_mode,
+                    request.account_name,
+                    sent,
                 )
+                revalidate_paths(self._preflight, paths)
+                # The observer samples the download folders until the run has ended
+                with (self._download_observer(paths.workshop_root, progress, sent_ids)
+                      if self._download_observer is not None else nullcontext()):
+                    run = self._steamcmd.run_update(
+                        paths,
+                        argv,
+                        lambda: context.cancellation_requested,
+                        lambda evidence: record_child(context, evidence),
+                        lambda: self._resolve_context(request),
+                    )
+            # An unproven exit poisons the guard before the update reports it
+            hold.release(unproven=run is not None and not run.termination_confirmed)
         # With an empty sent set no process starts and no process evidence exists
         cancelled = run is not None and run.cancelled
         # Require proven termination before trusting any SteamCMD output

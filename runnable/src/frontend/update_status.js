@@ -33,8 +33,10 @@ function updateStatusSignature(status) {
   const profile = updateStatusState.profileId;
   if (!status) return `${profile}|none`;
   const mods = status.mods || {};
+  const build = status.server_build || {};
   return [profile, status.revision, status.checking, mods.check_state, mods.last_success_at,
-    mods.error_code, mods.update_count, mods.pending_apply_count].join("|");
+    mods.error_code, mods.update_count, mods.pending_apply_count,
+    build.revision, build.state, build.checking, build.waiting, build.paused].join("|");
 }
 
 // Read the status of the selected profile; resolve true when it differs from the last one.
@@ -44,9 +46,9 @@ async function readUpdateStatus() {
   if (profileId !== updateStatusState.profileId) {
     updateStatusState.profileId = profileId; updateStatusState.status = null;
   }
-  if (!profileId) return false;
   const before = updateStatusSignature(updateStatusState.status);
-  const result = await window.pywebview.api.get_update_status(profileId);
+  // Without a profile the host answers with the server build part only
+  const result = await window.pywebview.api.get_update_status(profileId || null);
   // Drop an answer for a profile that is no longer selected.
   if (profileId !== updateStatusProfile()) return false;
   updateStatusState.readAt = Date.now();
@@ -61,9 +63,9 @@ function announceUpdateStatus() {
   }));
 }
 
-// Ask the host for a mod check; a forced request ignores the automatic-check switch.
-async function requestUpdateCheck(force) {
-  const result = await window.pywebview.api.request_update_check("mods", force);
+// Ask the host for a check of the scope (mods by default); a forced request ignores the automatic-check switch.
+async function requestUpdateCheck(force, scope = "mods") {
+  const result = await window.pywebview.api.request_update_check(scope, force);
   // Keep the failure of an operator request for the header.
   updateStatusState.requestError = !force || (result && result.success) ? ""
     : window.ServerManOperationMessages.bridgeError(result, "The check request failed safely.");
@@ -106,7 +108,8 @@ function openUpdateStatus() {
 
 // Refresh on every shell poll, in every section: one read per idle interval, on every poll while a check runs.
 async function pollUpdateStatus(modsVisible = false) {
-  const checking = updateStatusState.status?.checking === true;
+  const build = updateStatusState.status?.server_build;
+  const checking = updateStatusState.status?.checking === true || build?.checking === true || build?.waiting === true;
   const waited = Date.now() - updateStatusState.readAt;
   const interval = modsVisible ? UPDATE_STATUS_IDLE_INTERVAL : UPDATE_STATUS_BACKGROUND_INTERVAL;
   if (updateStatusState.reading || (!checking && waited < interval)) return;
@@ -119,12 +122,12 @@ async function pollUpdateStatus(modsVisible = false) {
   }
 }
 
-// Request a check, read the fresh state, and announce it; "Check now" passes force. A request that is
-// not forced shares the request-and-read of the shell, so one finished operation sends one request.
-async function recheckUpdateStatus(force = false) {
-  if (!updateStatusProfile()) return;
+// Request a check, read the fresh state, and announce it; "Check now" passes force and its scope. A request
+// that is not forced shares the request-and-read of the shell, so one finished operation sends one request.
+async function recheckUpdateStatus(force = false, scope = "mods") {
+  if (!updateStatusProfile() && scope === "mods") return;
   if (!force) { updateStatusState.announceAlways = true; await openUpdateStatus(); return; }
-  await requestUpdateCheck(true);
+  await requestUpdateCheck(true, scope);
   await readUpdateStatus();
   announceUpdateStatus();
 }
@@ -157,19 +160,21 @@ function updateCountText(count, singular, plural) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
-// Summarize the update state in one line; mod rows refine the "all current" wording.
-function updateSummary(rows = null) {
+// Summarize the update state in one line; mod rows refine the "all current" wording. `named` says "mod" in the
+// lines that would be ambiguous outside the Mods page (the Overview card also shows the server build, QF-049).
+function updateSummary(rows = null, named = false) {
+  const noun = named ? "mod " : "";
   const status = updateStatusState.status;
   if (!status || !status.mods) return { text: "Update status is unavailable", tone: "neutral" };
   const mods = status.mods;
   // The first check of this session is still running.
   if (status.checking && mods.check_state === "NEVER") {
-    return { text: "Checking for updates…", tone: "neutral" };
+    return { text: `Checking for ${noun}updates…`, tone: "neutral" };
   }
   // Name what needs the operator, in the order of the table states.
   const parts = [];
   if (mods.update_count > 0) {
-    parts.push(`${updateCountText(mods.update_count, "update", "updates")} available`);
+    parts.push(`${updateCountText(mods.update_count, `${noun}update`, `${noun}updates`)} available`);
   }
   if (mods.pending_apply_count > 0) parts.push(`${mods.pending_apply_count} downloaded - not applied`);
   const pending = parts.length > 0;
@@ -179,7 +184,7 @@ function updateSummary(rows = null) {
       tone: pending ? "warning" : mods.check_state === "FAILED" ? "error" : "neutral" };
   }
   // Nothing is pending: say "current" only when every row is verified or local.
-  if (!Array.isArray(rows)) return { text: "No updates available", tone: "normal" };
+  if (!Array.isArray(rows)) return { text: `No ${noun}updates available`, tone: "normal" };
   if (!rows.length) return { text: "No mods to check", tone: "neutral" };
   const settled = rows.every((row) => ["CURRENT", "LOCAL"].includes(row.state));
   if (!settled) return { text: "No updates available", tone: "neutral" };

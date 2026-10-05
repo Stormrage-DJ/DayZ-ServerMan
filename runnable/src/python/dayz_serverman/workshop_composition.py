@@ -25,6 +25,7 @@ from .application.profiles import ProfileService
 from .application.schedules import ScheduleCoordinator
 from .application.server_readiness import ReadinessLifecycleService
 from .application.settings import SettingsService
+from .application.steamcmd_guard import SteamCmdRunGuard
 from .application.target_proofs import TargetProofLookup
 from .application.workshop_coordinator import WorkshopCoordinator
 from .application.workshop_updates import WorkshopUpdateService
@@ -65,6 +66,7 @@ def build_workshop(
     check_source: CheckSource,
     logger: StructuredLogger | None = None,
     backups: BackupService | None = None,
+    *, steamcmd_guard: SteamCmdRunGuard | None = None,
 ) -> WorkshopComposition:
     """Build SteamCMD update, inventory, and publication services.
 
@@ -87,6 +89,8 @@ def build_workshop(
         content_proofs=ContentProofResolver(content_proofs, applied_mod_state),
         # The update asks for a fresh check and sends only changed items to SteamCMD
         check_source=check_source,
+        # One SteamCMD run at a time, also against the server build check
+        steamcmd_guard=steamcmd_guard,
     )
     workshop_coordinator = WorkshopCoordinator(workshop_updates, settings, operations)
     # Row states merge the remote facts with target records; the proof store

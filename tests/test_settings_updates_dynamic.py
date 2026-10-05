@@ -35,10 +35,10 @@ same([...region().querySelectorAll(":scope > .panel > h2")].map((node) => node.t
   "Application locations|Update checks|Legacy manager import", "panel order");
 const box = () => byId("automatic-update-checks");
 check(box().type === "checkbox" && box().getAttribute("role") === "switch" && !box().checked, "switch from the stored value");
-same(box().closest("label").textContent, "Check Steam for mod updates automatically", "switch label");
+same(box().closest("label").textContent, "Check Steam for mod and server updates automatically", "switch label");
 const help = byId(box().getAttribute("aria-describedby")).textContent;
-check(help.includes("Only Workshop item numbers are sent to Steam.") && help.includes("every 30 minutes")
-  && help.includes("No sign-in is used and no file is changed."), `help: ${help}`);
+check(help.includes("Only Workshop item numbers are sent.") && help.includes("every 30 minutes") && help.includes("every 6 hours")
+  && help.includes("SteamCMD signs in anonymously") && help.includes("Your Steam account is not used"), `help: ${help}`);
 const feedback = () => byId("automatic-update-checks-feedback");
 check(feedback().getAttribute("role") === "status" && feedback().textContent === "", "feedback line");
 // With the switch off, the update wording names the switch.

@@ -63,7 +63,8 @@ from .profile_provisioning_composition import build_profile_provisioning
 from .lifecycle_composition import build_lifecycle
 from .profile_restore_composition import build_profile_restore
 from .update_check_composition import (
-    build_update_check, build_update_check_scheduler, build_update_status,
+    ServerBuildParts, build_server_build, build_update_check, build_update_check_scheduler,
+    build_update_status,
 )
 from .workshop_composition import build_workshop
 
@@ -110,6 +111,7 @@ class ApplicationComposition:
     update_check: UpdateCheckService
     update_check_scheduler: UpdateCheckScheduler
     update_check_coordinator: UpdateCheckCoordinator
+    server_build: ServerBuildParts
     coordinator: ApplicationCoordinator
     bridge: BridgeFacade
     host_bridge: BridgeFacade
@@ -204,12 +206,18 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
     # Build the remote update check; it never runs on the operation lane
     update_check = build_update_check(paths, profiles, profile_repository, preferences, logger)
     update_check_scheduler = build_update_check_scheduler(update_check, preferences, logger)
+    # The server build check shares one SteamCMD run guard with the Workshop update and sign-in
+    server_build = build_server_build(
+        paths, settings, operations, preferences, shutdown, update_check_scheduler, logger,
+    )
     # Build SteamCMD update, inventory, and publication services
     workshop = build_workshop(
         paths, profiles, settings, operations, lifecycle, preferences, schedules,
-        publication_journals, update_check, logger, backups,
+        publication_journals, update_check, logger, backups, steamcmd_guard=server_build.guard,
     )
-    update_check_coordinator = build_update_status(update_check, workshop.mod_inventory)
+    update_check_coordinator = build_update_status(
+        update_check, workshop.mod_inventory, server_build.service,
+    )
     # Assemble every coordinator's handlers into the bridge facade
     coordinator = ApplicationCoordinator(settings, operations, shutdown)
     logs = LogQueryService(paths.logs / "manager.jsonl", paths.logs / "dayz-server.log")
@@ -280,6 +288,7 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
         update_check=update_check,
         update_check_scheduler=update_check_scheduler,
         update_check_coordinator=update_check_coordinator,
+        server_build=server_build,
         coordinator=coordinator,
         bridge=bridge,
         host_bridge=bridge,

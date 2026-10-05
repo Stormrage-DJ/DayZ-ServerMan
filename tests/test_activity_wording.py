@@ -34,7 +34,7 @@ INSPECTED = "Mutations are blocked until restore recovery is inspected."
 PACKAGE = ROOT / "runnable" / "src" / "python" / "dayz_serverman"
 # Events with their own sentence builder in the activity formatter
 BUILT_EVENTS = {"operation.state", "bridge.failure", "operation_lane.recovery_block",
-                "schedule.saved", "schedule.queued", "update_check.completed"}
+                "schedule.saved", "schedule.queued", "update_check.completed", "server_build.check_completed"}
 
 
 def activity(event: str, fields: dict, level: str = "INFO") -> str:

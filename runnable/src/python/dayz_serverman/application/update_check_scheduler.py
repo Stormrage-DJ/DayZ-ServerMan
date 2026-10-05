@@ -1,27 +1,46 @@
-"""Daemon timer that starts the remote update check at start and on the interval."""
+"""Daemon timer that starts a background check at start and on its interval.
+
+One instance drives the mod check, a second one the server build check.
+"""
 
 from __future__ import annotations
 
 import threading
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import Callable, Mapping
+from typing import Any, Protocol
 
 from ..observability.structured_log import StructuredLogger
-from .update_check import UpdateCheckService
 
 # Longest wait between two evaluations, in seconds
 MAX_WAIT_SECONDS = 60.0
+
+
+class ScheduledCheck(Protocol):
+    """A check that the timer can drive."""
+
+    # Start a run when a trigger is due; return whether one started
+    def run_scheduled(self) -> bool: ...
+
+    # Return the seconds until the next useful evaluation
+    def seconds_until_due(self) -> float: ...
+
+    # Register a callback that fires after a run has ended
+    def add_idle_listener(self, listener: Callable[[], None]) -> None: ...
 
 
 class UpdateCheckScheduler:
     """Evaluate the "start, interval" trigger; never touches the lane or a bridge call."""
 
     def __init__(
-        self, service: UpdateCheckService, logger: StructuredLogger | None = None,
-        *, max_wait_seconds: float = MAX_WAIT_SECONDS,
+        self, service: ScheduledCheck, logger: StructuredLogger | None = None,
+        *, max_wait_seconds: float = MAX_WAIT_SECONDS, event_prefix: str = "update_check",
     ) -> None:
-        """Store the check service and prepare the stop and wake signals."""
+        """Store the check service and prepare the stop and wake signals.
+
+        `event_prefix` names the check in the scheduler events.
+        """
         self._service = service
+        self._prefix = event_prefix
         self._logger = logger
         self._max_wait_seconds = max_wait_seconds
         self._lock = threading.Lock()
@@ -39,10 +58,10 @@ class UpdateCheckScheduler:
             self._stop.clear()
             self._wake.clear()
             self._thread = threading.Thread(
-                target=self._loop, name="dayz-serverman-update-check-scheduler", daemon=True,
+                target=self._loop, name=f"dayz-serverman-{self._prefix}-scheduler", daemon=True,
             )
             self._thread.start()
-        self._log("update_check.scheduler_started")
+        self._log(f"{self._prefix}.scheduler_started")
 
     def stop(self, timeout: float = 2.0) -> bool:
         """Signal the thread and report whether it exited within the timeout."""
@@ -58,7 +77,7 @@ class UpdateCheckScheduler:
         if stopped:
             with self._lock:
                 self._thread = None
-            self._log("update_check.scheduler_stopped")
+            self._log(f"{self._prefix}.scheduler_stopped")
         return stopped
 
     def wake(self) -> None:
@@ -75,7 +94,7 @@ class UpdateCheckScheduler:
                 self._service.run_scheduled()
                 due = self._service.seconds_until_due()
             except Exception as error:
-                self._log("update_check.scheduler_failed", level="ERROR", fields={
+                self._log(f"{self._prefix}.scheduler_failed", level="ERROR", fields={
                     "error_type": type(error).__name__,
                 })
                 due = self._max_wait_seconds

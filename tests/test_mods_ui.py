@@ -106,8 +106,8 @@ class ModsUiTests(unittest.TestCase):
         self.assertLess(html.index("window.ServerManUpdateStatus = "),
                         html.index("window.ServerManMods = "))
         # Named bridge calls: status per profile, non-forced and forced requests
-        self.assertIn("get_update_status(profileId)", status)
-        self.assertIn('request_update_check("mods", force)', status)
+        self.assertIn("get_update_status(profileId || null)", status)
+        self.assertIn('requestUpdateCheck(force, scope = "mods")', status)
         self.assertIn("requestUpdateCheck(false)", status)
         self.assertIn("ServerManUpdateStatus.recheck(true)", header)
         self.assertIn("automatic_update_checks", status)

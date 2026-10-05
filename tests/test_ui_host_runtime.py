@@ -84,8 +84,12 @@ class HostRuntimeTests(unittest.TestCase):
         self.assertEqual(type(composed.update_check_scheduler).__name__, "UpdateCheckScheduler")
         # Record the scheduler calls instead of starting a real check thread
         self.events: list[str] = []
+        # The server build timer is recorded too, so no test starts a real build check thread
+        self.build_events: list[str] = []
         self.composition = dataclasses.replace(
             composed, update_check_scheduler=RecordingScheduler(self.events),
+            server_build=dataclasses.replace(
+                composed.server_build, scheduler=RecordingScheduler(self.build_events)),
         )
 
     def tearDown(self) -> None:
@@ -116,6 +120,7 @@ class HostRuntimeTests(unittest.TestCase):
         self.assertFalse(fake.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"])
         # The update-check scheduler runs exactly while the window lives
         self.assertEqual(self.events, ["scheduler-start", "window", "scheduler-stop"])
+        self.assertEqual(self.build_events, ["scheduler-start", "scheduler-stop"])
 
     def test_update_check_scheduler_is_stopped_when_the_window_fails(self) -> None:
         """A failing window loop still stops the update-check scheduler."""

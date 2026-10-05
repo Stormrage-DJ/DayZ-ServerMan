@@ -48,6 +48,11 @@ class ShutdownCoordinator:
         self._blocking_reason: str | None = None
         self._close_guard = close_guard or (lambda: True)
         self._lock = threading.Lock()
+        self._drain_listeners: list[Callable[[], None]] = []
+
+    def add_drain_listener(self, listener: Callable[[], None]) -> None:
+        """Register a callback that runs when the drain begins, before the lane stops."""
+        self._drain_listeners.append(listener)
 
     def snapshot(self) -> ShutdownSnapshot:
         """Return the current snapshot, refreshing while a drain is pending."""
@@ -67,6 +72,12 @@ class ShutdownCoordinator:
             if self._state == ShutdownState.OPEN:
                 self._state = ShutdownState.DRAINING
                 self._log("shutdown.requested")
+        # Background work outside the lane is asked to end first
+        for listener in tuple(self._drain_listeners):
+            try:
+                listener()
+            except Exception:
+                continue
         # Stop accepting new operations, then report drain progress
         self._operations.begin_shutdown()
         return self.refresh()

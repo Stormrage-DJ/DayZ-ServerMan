@@ -11,20 +11,29 @@ from ..domain.models import RepositoryError
 from ..domain.profiles import ProfileValidationError, validate_profile_id
 from ..repositories.profiles import ProfileNotFound, ProfileStorageError
 from .mod_inventory import ModInventoryService
+from .server_build import ServerBuildService
+from .server_build_status import internal_view
 from .settings import SettingsValidationError
 from .update_check import UpdateCheckService
 
-# The only check scope until the server build check exists
+# Check scopes: the mods, the server build, or both ("Check now" on Overview)
 SCOPE_MODS = "mods"
+SCOPE_SERVER_BUILD = "server_build"
+SCOPE_ALL = "all"
+SCOPES = frozenset((SCOPE_MODS, SCOPE_SERVER_BUILD, SCOPE_ALL))
 
 
 class UpdateCheckCoordinator:
     """Serve the update status of one profile and accept check requests."""
 
-    def __init__(self, service: UpdateCheckService, inventory: ModInventoryService) -> None:
-        """Store the check service and the inventory that owns the row rule."""
+    def __init__(
+        self, service: UpdateCheckService, inventory: ModInventoryService,
+        server_build: ServerBuildService | None = None,
+    ) -> None:
+        """Store the mod check, the inventory that owns the row rule, and the build check."""
         self._service = service
         self._inventory = inventory
+        self._server_build = server_build
 
     def handlers(self) -> dict[str, Any]:
         """Return the bridge handler table for the update status calls."""
@@ -34,10 +43,17 @@ class UpdateCheckCoordinator:
         }
 
     def get_update_status(self, parameters: Mapping[str, Any]) -> dict[str, object]:
-        """Return the check state and the row counts for the requested profile."""
+        """Return the check state and the row counts for the requested profile.
+
+        A null profile identifier returns the server build part only.
+        """
         # Require exactly the profile identifier
         if set(parameters) != {"profile_id"}:
             raise ApplicationCallError(ErrorCode.INVALID_REQUEST, "profile_id is required")
+        if parameters.get("profile_id") is None:
+            view = self._service.snapshot()
+            return {"mods": None, "server_build": self._build_status(),
+                    "checking": view.checking, "revision": view.revision}
         # Derive the rows and the check view from one consistent reading
         try:
             profile_id = validate_profile_id(parameters.get("profile_id"))
@@ -67,8 +83,7 @@ class UpdateCheckCoordinator:
                 "update_count": states.count("UPDATE_AVAILABLE"),
                 "pending_apply_count": states.count("PENDING_APPLY"),
             },
-            # The server build check does not exist yet
-            "server_build": None,
+            "server_build": self._build_status(),
             "checking": view.checking,
             "revision": view.revision,
         }
@@ -78,10 +93,28 @@ class UpdateCheckCoordinator:
         # Require the exact field set with a known scope and a boolean flag
         if set(parameters) != {"scope", "force"}:
             raise ApplicationCallError(ErrorCode.INVALID_REQUEST, "scope and force are required")
-        if parameters.get("scope") != SCOPE_MODS:
+        scope = parameters.get("scope")
+        if not isinstance(scope, str) or scope not in SCOPES:
             raise ApplicationCallError(ErrorCode.INVALID_REQUEST, "scope is invalid")
         force = parameters.get("force")
         if not isinstance(force, bool):
             raise ApplicationCallError(ErrorCode.INVALID_REQUEST, "force is invalid")
+        if scope == SCOPE_MODS:
+            accepted, checking = self._service.request(force)
+            return {"accepted": accepted, "checking": checking}
+        build = (self._server_build.request(force) if self._server_build is not None
+                 else {"accepted": False, "checking": False, "waiting": False})
+        if scope == SCOPE_SERVER_BUILD:
+            return {"accepted": build["accepted"], "checking": build["checking"], "server_build": build}
+        # "all": the top-level fields keep their mod meaning
         accepted, checking = self._service.request(force)
-        return {"accepted": accepted, "checking": checking}
+        return {"accepted": accepted, "checking": checking, "server_build": build}
+
+    def _build_status(self) -> dict[str, object] | None:
+        """Return the server build part; it never fails the status call."""
+        if self._server_build is None:
+            return None
+        try:
+            return self._server_build.status()
+        except Exception:
+            return internal_view()

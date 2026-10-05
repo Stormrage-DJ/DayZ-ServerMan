@@ -64,7 +64,9 @@ for (const [status, automatic, form, text, name, summary] of cases) {
   await choose(profile);
   const label = `${status.mods.check_state}${status.checking ? " checking" : ""}${automatic ? "" : " automatic off"}`;
   same(shown(), `${form}:${text}|${name}`, `${label}: sidebar badge`);
-  same(byId("overview-updates").querySelector(".overview-updates-summary").textContent, summary, `${label}: Overview card`);
+  // The card names the mods, because it also shows the server build (QF-049)
+  same(byId("overview-updates").querySelector(".overview-updates-summary").textContent,
+    summary.replace(/(\d+ |for )updates/, "$1mod updates"), `${label}: Overview card`);
   check(!byId("page-update-badge").hidden && byId("page-update-badge").getAttribute("aria-label")
     === `${name.slice(6, 7).toUpperCase()}${name.slice(7)}. Open Mods.`, `${label}: heading badge`);
   // The page shows the same three answers on later polls, and the Mods header agrees.

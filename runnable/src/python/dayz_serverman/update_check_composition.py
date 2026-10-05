@@ -1,13 +1,21 @@
-"""Compose the remote update check: catalog, cache, service, timer and bridge calls."""
+"""Compose the remote update checks: mods and server build, their timers and bridge calls."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from .adapters.steam_web_api import SteamWebApiCatalog
+from .adapters.windows.steamcmd_app import WindowsSteamCmdAppInfo
+from .adapters.windows.steamcmd_paths import SteamCmdPreflight
 from .application.mod_inventory import ModInventoryService
+from .application.operations.manager import OperationManager
 from .application.preferences import PreferenceCoordinator
 from .application.profiles import ProfileService
+from .application.server_build import ServerBuildService
+from .application.settings import SettingsService
+from .application.shutdown import ShutdownCoordinator
+from .application.steamcmd_guard import SteamCmdRunGuard
 from .application.update_check import UpdateCheckService
 from .application.update_check_coordinator import UpdateCheckCoordinator
 from .application.update_check_ports import WorkshopRemoteCatalogPort
@@ -16,6 +24,7 @@ from .domain.profiles import ProfileRecord, ProfileValidationError
 from .observability.structured_log import StructuredLogger
 from .repositories.paths import PortablePaths
 from .repositories.profiles import ProfileNotFound, ProfileRepository, ProfileStorageError
+from .repositories.server_build_cache import ServerBuildCacheRepository
 from .repositories.update_check_cache import UpdateCheckCacheRepository
 
 # Errors that make one profile, or the whole listing, unreadable
@@ -91,8 +100,46 @@ def build_update_check_scheduler(
     return scheduler
 
 
+@dataclass(frozen=True)
+class ServerBuildParts:
+    """The SteamCMD run guard, the server build check and its timer."""
+
+    guard: SteamCmdRunGuard
+    service: ServerBuildService
+    scheduler: UpdateCheckScheduler
+
+
+def build_server_build(
+    paths: PortablePaths, settings: SettingsService, operations: OperationManager,
+    preferences: PreferenceCoordinator, shutdown: ShutdownCoordinator,
+    mod_scheduler: UpdateCheckScheduler, logger: StructuredLogger | None,
+) -> ServerBuildParts:
+    """Build the guard shared by every SteamCMD run, the build check and its timer."""
+    guard = SteamCmdRunGuard(logger)
+    preflight = SteamCmdPreflight()
+    service = ServerBuildService(
+        preflight, WindowsSteamCmdAppInfo(preflight),
+        ServerBuildCacheRepository(paths.server_build_cache, logger), settings.load, guard,
+        # A check never starts ahead of queued operator work
+        operations.is_drained,
+        automatic_enabled=preferences.automatic_update_checks, logger=logger,
+    )
+    scheduler = UpdateCheckScheduler(service, logger, event_prefix="server_build")
+
+    def wake_both() -> None:
+        """One switch governs both checks, so a saved switch wakes both timers."""
+        mod_scheduler.wake()
+        scheduler.wake()
+
+    preferences.on_automatic_update_checks_saved(wake_both)
+    # Closing the application ends a running check before the lane drains
+    shutdown.add_drain_listener(service.cancel)
+    return ServerBuildParts(guard, service, scheduler)
+
+
 def build_update_status(
     service: UpdateCheckService, mod_inventory: ModInventoryService,
+    server_build: ServerBuildService | None = None,
 ) -> UpdateCheckCoordinator:
     """Build the bridge calls that report the status and accept check requests."""
-    return UpdateCheckCoordinator(service, mod_inventory)
+    return UpdateCheckCoordinator(service, mod_inventory, server_build)

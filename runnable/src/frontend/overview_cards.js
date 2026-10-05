@@ -37,7 +37,7 @@ function fillOverviewUpdates() {
   // A failed request of the operator is shown in place of the summary, as on Mods.
   const failed = updates.requestError();
   const summary = !profile ? { text: "No server profile", tone: "neutral" }
-    : failed ? { text: `Could not check: ${failed}`, tone: "error" } : updates.summary();
+    : failed ? { text: `Could not check: ${failed}`, tone: "error" } : updates.summary(null, true);
   setOverviewCardText(card.querySelector(".overview-updates-summary"), summary.text,
     `status-label overview-updates-summary status-${summary.tone}`);
   const success = updates.formatTime(status?.mods?.last_success_at);
@@ -46,18 +46,22 @@ function fillOverviewUpdates() {
   if (success) checked.title = success.exact; else checked.removeAttribute("title");
   card.querySelector(".mods-update-busy").hidden = !checking;
   card.querySelector(".overview-updates-switch").hidden = updates.automaticChecks();
-  card.querySelector("#overview-check-now").disabled = checking || !profile;
+  // Without a profile "Check now" still checks the server build
+  card.querySelector("#overview-check-now").disabled = checking;
+  window.ServerManServerBuild.fill(status);
   // "Open Mods" is the primary action while something waits for the operator.
   const open = card.querySelector("#overview-open-mods");
   const className = updates.badge().count > 0 ? "button button-primary" : "button";
   if (open.className !== className) open.className = className;
 }
 
-// Run "Check now" from the card and show the busy mark at once.
+// Run "Check now" from the card and show the busy mark at once: mods and the server build, or only the
+// server build without a profile.
 async function checkOverviewUpdates(event) {
   const button = event.currentTarget;
   button.disabled = true;
-  await window.ServerManUpdateStatus.recheck(true);
+  const scope = window.ServerManProfileContext.selectedId() ? "all" : "server_build";
+  await window.ServerManUpdateStatus.recheck(true, scope);
   fillOverviewUpdates();
 }
 
@@ -68,7 +72,8 @@ function renderOverviewUpdates() {
   meta.append(overviewNode("span", "overview-updates-checked"),
     overviewNode("span", "mods-update-busy", "Checking…"));
   body.append(overviewNode("p", "status-label overview-updates-summary"), meta,
-    overviewNode("p", "overview-card-meta overview-updates-switch", "Automatic checks are off."));
+    overviewNode("p", "overview-card-meta overview-updates-switch", "Automatic checks are off."),
+    window.ServerManServerBuild.render());
   const check = overviewNode("button", "button", "Check now"); check.id = "overview-check-now"; check.type = "button";
   check.addEventListener("click", checkOverviewUpdates);
   const open = overviewCardLink("Open Mods", "mods"); open.id = "overview-open-mods";

@@ -100,6 +100,7 @@ def compose_shell_html(frontend_root: Path) -> str:
     overview_script = (root / "overview.js").read_text(encoding="utf-8")
     overview_script += "\n" + (root / "overview_server.js").read_text(encoding="utf-8")
     overview_script += "\n" + (root / "overview_cards.js").read_text(encoding="utf-8")
+    overview_script += "\n" + (root / "server_build_status.js").read_text(encoding="utf-8")
     overview_status_script = (root / "overview_status.js").read_text(encoding="utf-8")
     logs_script = (root / "logs.js").read_text(encoding="utf-8")
     # The section registry follows every page module and precedes the shell loop

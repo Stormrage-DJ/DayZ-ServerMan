@@ -9,14 +9,19 @@ from ..domain.workshop import AuthenticationMode
 from .operations.context import OperationContext
 from .operations.models import OperationCancelled, OperationFailure
 from .settings import SettingsService
+from .steamcmd_guard import SteamCmdRunGuard, hold_steamcmd
 from .workshop_ports import SteamCmdPort, SteamCmdPreflightPort
 
 
 def authenticate_interactive(
     settings_service: SettingsService, preflight: SteamCmdPreflightPort,
     steamcmd: SteamCmdPort, expected_settings_revision: int, context: OperationContext,
+    *, guard: SteamCmdRunGuard | None = None,
 ) -> dict[str, object]:
-    """Run interactive SteamCMD sign-in with revision-stability guards."""
+    """Run interactive SteamCMD sign-in with revision-stability guards.
+
+    The SteamCMD guard is held from the preflight to the end of the sign-in run.
+    """
     context.checkpoint("preflight", 5)
     # Require stored account credentials and a revision-stable settings record
     settings = settings_service.load()
@@ -27,10 +32,6 @@ def authenticate_interactive(
             "AUTHENTICATION_REQUIRED",
             "Select account authentication and configure an account name first.",
         )
-    paths = inspect_paths(preflight, settings)
-    context.checkpoint("interactive_authentication", 20)
-    # Confirm path identity before launching the interactive session
-    revalidate_paths(preflight, paths)
 
     def require_auth_context() -> None:
         """Before launch, confirm the revision and credentials are unchanged."""
@@ -39,12 +40,19 @@ def authenticate_interactive(
         if resolve_authentication(current) != (mode, account):
             raise OperationFailure("REVISION_CONFLICT", "Steam authentication settings changed.")
 
-    # Re-check credentials in before_launch so a stale edit cannot launch
-    run = steamcmd.authenticate_interactive(
-        paths, account, lambda: context.cancellation_requested,
-        lambda evidence: record_child(context, evidence),
-        require_auth_context,
-    )
+    with hold_steamcmd(guard, context, "AUTHENTICATE_STEAMCMD", 5) as hold:
+        paths = inspect_paths(preflight, settings)
+        context.checkpoint("interactive_authentication", 20)
+        # Confirm path identity before launching the interactive session
+        revalidate_paths(preflight, paths)
+        # Re-check credentials in before_launch so a stale edit cannot launch
+        run = steamcmd.authenticate_interactive(
+            paths, account, lambda: context.cancellation_requested,
+            lambda evidence: record_child(context, evidence),
+            require_auth_context,
+        )
+        # An unproven exit poisons the guard before the sign-in reports it
+        hold.release(unproven=not run.termination_confirmed)
     require_settings_revision(settings_service.load(), expected_settings_revision)
     # Confirm the session was not cancelled and terminated provably
     if run.cancelled:

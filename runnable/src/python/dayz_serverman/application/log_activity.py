@@ -18,7 +18,9 @@ HIDDEN_EVENTS = frozenset((
     "bridge.request", "bridge.success", "operation.progress", "shutdown.requested", "shutdown.closed",
     "operation_lane.draining", "schedule.started", "schedule.stopped", "update_check.request",
     "update_check.response", "update_check.scheduler_started", "update_check.scheduler_stopped",
-    "mod_publication.prestart_check",
+    "mod_publication.prestart_check", "server_build.check_started", "server_build.check_skipped",
+    "server_build.installed_read", "server_build.scheduler_started", "server_build.scheduler_stopped",
+    "steamcmd.guard_waited",
 ))
 # Sentence shown for an event whose details stay in the diagnostics
 DETAIL_HINT = "Details are in Manager diagnostics."
@@ -32,6 +34,10 @@ EVENT_TEXTS: dict[str, str] = {
     "update_check.scheduler_failed": f"The automatic update check failed. {DETAIL_HINT}",
     "update_check.cache_write_failed": f"The result of the update check could not be saved. {DETAIL_HINT}",
     "content_proofs.write_failed": f"A record of verified mod files could not be saved. {DETAIL_HINT}",
+    "server_build.steamcmd_exit_unproven": (
+        "SteamCMD did not close after the server build check. Close SteamCMD, then restart DayZ-ServerMan."),
+    "server_build.cache_write_failed": f"The result of the server build check could not be saved. {DETAIL_HINT}",
+    "server_build.scheduler_failed": f"The automatic server build check failed. {DETAIL_HINT}",
 }
 # Wording of a scheduled action inside a sentence
 SCHEDULE_ACTIONS: dict[str, str] = {"stop": "save and stop", "restart": "save and restart"}
@@ -122,6 +128,9 @@ def _event_sentence(event: str, fields: Mapping[str, Any], level: str) -> str | 
     if event == "update_check.completed":
         return ("Update check finished." if fields.get("outcome") == "OK"
                 else f"The update check did not finish. {DETAIL_HINT}")
+    if event == "server_build.check_completed":
+        return ("The server build check finished." if fields.get("outcome") == "OK"
+                else f"The server build check could not finish. {DETAIL_HINT}")
     if event in EVENT_TEXTS:
         return EVENT_TEXTS[event]
     # An event that this view does not know is named only when it is a warning or an error

@@ -21,6 +21,13 @@
 .overview-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--primitive-space-1) var(--primitive-space-3); }
 .overview-card-meta[hidden] { display: none; }
 .overview-card-actions { margin-top: var(--primitive-space-2); }
+.overview-build { display: grid; justify-items: start; gap: var(--primitive-space-2); min-width: 0;
+  padding-top: var(--primitive-space-2); border-top: 1px solid var(--color-border); }
+.overview-build[hidden] { display: none; }
+.overview-build-title { margin: 0; font-size: 13px; font-weight: 600; }
+.overview-build p { margin: 0; }
+.overview-build-summary { align-items: baseline; }
+.overview-build-summary::before { flex: none; transform: translateY(-1px); }
 /* Schedule editor inside its disclosure: time fields, the two actions, and the save button */
 .schedule-editor { color: var(--color-text-muted); }
 .schedule-editor[open] { display: grid; justify-items: start; gap: var(--primitive-space-3); }

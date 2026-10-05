@@ -89,7 +89,7 @@ class WorkshopCoordinator:
         return self._submit(
             "AUTHENTICATE_STEAMCMD",
             lambda context: self._service.authenticate(expected, context),
-            safe_points=frozenset(("preflight",)),
+            safe_points=frozenset(("preflight", "wait_steamcmd")),
         )
 
     def update_workshop_items(self, parameters: Mapping[str, Any]) -> dict[str, Any]:
@@ -132,8 +132,8 @@ class WorkshopCoordinator:
             "UPDATE_WORKSHOP_ITEMS",
             lambda context: self._service.update(request, context),
             safe_points=frozenset((
-                "preflight", "resolve_items", "check_remote", "download", "verify_items",
-                "verify_set",
+                "preflight", "wait_steamcmd", "resolve_items", "check_remote", "download",
+                "verify_items", "verify_set",
             )),
             log_fields={"profile_id": profile_id},
             target_profile_id=profile_id,

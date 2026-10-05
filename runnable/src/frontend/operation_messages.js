@@ -31,6 +31,8 @@ const operationErrorTexts = Object.freeze({
   AUTHENTICATION_FAILED: "SteamCMD closed before the sign-in was confirmed.",
   STEAMCMD_UNAVAILABLE: "The SteamCMD or Workshop folder is missing or changed. Check the folders in Settings and try again.",
   STEAMCMD_PATH_CHANGED: "The SteamCMD or Workshop folder is missing or changed. Check the folders in Settings and try again.",
+  STEAMCMD_BUSY: "SteamCMD is still busy with the server build check. Try again in a minute.",
+  STEAMCMD_EXIT_UNPROVEN: "SteamCMD did not close after an earlier run. Close SteamCMD, then restart DayZ-ServerMan.",
   ENTITLEMENT_DENIED: "This Steam account may not download the item.",
   CONNECTION_FAILED: "Steam could not be reached.",
   WORKSHOP_CONTENT_FAILED: "The downloaded mod files could not be verified. Run the update again.",

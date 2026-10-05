@@ -42,6 +42,7 @@ class PortablePaths:
     applied_mod_state: Path
     content_proofs: Path
     update_check_cache: Path
+    server_build_cache: Path
     logs: Path
     operations: Path
     publication: Path
@@ -71,6 +72,7 @@ class PortablePaths:
             applied_mod_state=canonical / "data" / "applied-mod-state.json",
             content_proofs=canonical / "data" / "content-proofs.json",
             update_check_cache=canonical / "data" / "update-check.json",
+            server_build_cache=canonical / "data" / "server-build-check.json",
             logs=canonical / "data" / "logs",
             operations=canonical / "data" / "operations",
             publication=canonical / "data" / "publication",

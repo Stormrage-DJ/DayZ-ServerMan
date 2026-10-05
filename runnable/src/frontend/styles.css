@@ -152,6 +152,8 @@ select { padding-right: 34px; }
 .mods-action-group { display: flex; flex-wrap: wrap; gap: var(--primitive-space-3); }
 /* Profiles workspace: editor fields, runtime toggles, and mod table */
 .configuration-panel .action-row { align-items: center; justify-content: flex-end; }
+/* Let the panel shrink in the content grid; the mod table scrolls inside its own wrapper */
+.profile-panel { min-width: 0; }
 .profile-panel textarea { width: 100%; min-height: 8rem; resize: vertical; font: 13px/1.45 Consolas, monospace; }
 .profile-panel > .panel-heading { align-items: center; margin-bottom: var(--primitive-space-4); }
 .profile-panel > .panel-heading h2 { margin: 0; }
