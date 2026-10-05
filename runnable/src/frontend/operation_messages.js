@@ -6,6 +6,8 @@ const OPERATION_INTERNAL_TEXT = "Something went wrong inside DayZ-ServerMan. Det
 // Text for a blocked state that an earlier operation left behind.
 const OPERATION_RECOVERY_TEXT = "An earlier operation did not finish cleanly. Changes are blocked until it is resolved. "
   + "Details are in Logs, Manager diagnostics.";
+// A sentence that states the block; a result whose own sentence states it drops it from its message.
+const OPERATION_BLOCK_SENTENCE = /\s*Changes are blocked(?: until [^.]*)?\./g;
 // Text for a rejected request whose host message cannot be shown: it says what to check.
 const OPERATION_REQUEST_TEXT = "The request was not accepted. Check the values you entered, then try again. "
   + "Details are in Logs, Manager diagnostics.";
@@ -52,6 +54,12 @@ const operationErrorTexts = Object.freeze({
   MIGRATION_CONFLICT: "The legacy folder changed after the preview. Preview it again.",
   GAMEPLAY_NOT_ENABLED: "Turn on \u201CUse gameplay configuration\u201D in Configuration first.",
   OPERATION_NOT_CANCELLABLE: "This operation can no longer be cancelled.",
+});
+// Text per operation kind for a code whose general text names another operation; it wins over the general text.
+const operationKindErrorTexts = Object.freeze({
+  AUTHENTICATE_STEAMCMD: Object.freeze({
+    UPDATE_RESULT_UNKNOWN: "SteamCMD did not close cleanly after the Steam sign-in, so the sign-in cannot be confirmed. Changes are blocked.",
+  }),
 });
 // Known host sentences of a rejected request, by a fragment of the host message.
 const operationRequestTexts = Object.freeze([
@@ -109,8 +117,8 @@ function namedServerState(message) {
   return name ? operationServerStates[name] : null;
 }
 
-// Turn a host error into operator text; the fallback replaces a missing error.
-function operationErrorText(error, fallback = OPERATION_INTERNAL_TEXT) {
+// Turn a host error into operator text; the fallback replaces a missing error, the kind of its operation picks its text.
+function operationErrorText(error, fallback = OPERATION_INTERNAL_TEXT, kind = null) {
   if (!error || typeof error !== "object") return fallback;
   const code = typeof error.code === "string" ? error.code : "";
   const message = typeof error.message === "string" ? error.message : "";
@@ -120,6 +128,8 @@ function operationErrorText(error, fallback = OPERATION_INTERNAL_TEXT) {
     return `This cannot be done while the server is ${state || operationServerStates.RUNNING_EXTERNAL}.`;
   }
   if (code === "MUTATION_CONFLICT") return mutationConflictText(error.details?.reason, message, error.details?.owner);
+  const own = typeof kind === "string" && Object.hasOwn(operationKindErrorTexts, kind) ? operationKindErrorTexts[kind] : {};
+  if (Object.hasOwn(own, code)) return own[code];
   if (Object.hasOwn(operationErrorTexts, code)) return operationErrorTexts[code];
   // A rejected request with a known host sentence has its own wording.
   const known = code === "INVALID_REQUEST" && operationRequestTexts.find(([fragment]) => message.includes(fragment));
@@ -261,7 +271,7 @@ function operationResult(operation, seenPhase = null) {
     // An apply with a start that failed in the check before the start, or in the start, did apply the mods.
     if (operation?.kind === "PUBLISH_MODS_AND_KEYS" && phase === "VERIFY_BEFORE_START") sentence = texts.startCheck;
     if (operation?.kind === "PUBLISH_MODS_AND_KEYS" && phase === "START_SERVER") sentence = texts.start;
-    message = operationErrorText(failure, "");
+    message = operationErrorText(failure, "", operation?.kind);
     // These sentences already say what the text of their error code or of the named state says.
     const code = operation?.terminal_error?.code;
     if ((sentence === texts.preflight && code === "PUBLICATION_PREVIEW_STALE") || sentence === texts.stopNotRunning
@@ -269,7 +279,10 @@ function operationResult(operation, seenPhase = null) {
     // A launch failure of a start or restart is already said by the sentence.
     if (operation?.terminal_error?.code === "LAUNCH_FAILED"
         && ["START_SERVER", "RESTART_SERVER"].includes(operation.kind)) message = "";
-    if (operation?.state === "RECOVERY_REQUIRED") { look = "recovery"; sentence = `${sentence} Changes are blocked.`; }
+    // The result sentence states the block once, so the message does not state it again.
+    if (operation?.state === "RECOVERY_REQUIRED") {
+      look = "recovery"; sentence = `${sentence} Changes are blocked.`; message = message.replace(OPERATION_BLOCK_SENTENCE, "").trim();
+    }
   }
   return Object.freeze({ look, sentence, message, text: message ? `${sentence} ${message}` : sentence });
 }

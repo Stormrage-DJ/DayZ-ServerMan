@@ -60,9 +60,8 @@ class ModInventoryService:
         for order, mod in enumerate(profile.values.mods, start=1):
             workshop_id = mod.source.workshop_id
             # Read cached metadata only when the Workshop item is present on disk
-            metadata = read_mod_metadata(root / workshop_id) if (
-                root is not None and workshop_id is not None and (root / workshop_id).is_dir()
-            ) else None
+            present = self._content_present(root, workshop_id)
+            metadata = read_mod_metadata(root / workshop_id) if present else None
             observation = observations.get(workshop_id) if workshop_id else None
             # Merge local observation, remote fact and target proof into one state
             derived = row_state(RowInputs(
@@ -74,6 +73,7 @@ class ModInventoryService:
                 fact=snapshot.facts.get(workshop_id) if snapshot and workshop_id else None,
                 check_state=snapshot.check_state if snapshot else None,
                 target=targets.get(mod.directory, TargetProof.UNKNOWN),
+                content_present=present or mod.source.kind != "workshop",
             ))
             # Prefer cached metadata names and versions over the raw directory
             rows.append({
@@ -104,6 +104,16 @@ class ModInventoryService:
             if mod.source.kind == "workshop" and mod.source.workshop_id in observations
         ]
         return self._target_proofs.resolve(getattr(settings, "dayz_root", None), items)
+
+    @staticmethod
+    def _content_present(root: Path | None, workshop_id: str | None) -> bool:
+        """Return whether the Workshop content folder of the item exists; an unreadable folder counts as absent."""
+        if root is None or workshop_id is None:
+            return False
+        try:
+            return (root / workshop_id).is_dir()
+        except OSError:
+            return False
 
     @staticmethod
     def _observations(

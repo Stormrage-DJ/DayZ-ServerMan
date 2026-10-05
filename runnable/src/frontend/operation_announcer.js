@@ -49,6 +49,12 @@ function announceOperationProgress(operation, name, target, phase, clock = Date.
   }
 }
 
+// Announce a refused cancellation at once through the alert element. The bar itself is not live, and the focus
+// stays on Cancel, so without this a screen reader user would not hear why the operation goes on.
+function announceOperationCancelRefusal(note) {
+  if (note) speakOperation(note, true);
+}
+
 // Record that the visible page shows its own live notice for the result of this operation.
 function markOperationAnnouncedByPage(operationId) {
   operationAnnounced.byPage.add(operationId);

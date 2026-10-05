@@ -1,4 +1,4 @@
-// Overview workspace: notices, the server panel, and the cards for the profile selected in the sidebar.
+// Overview workspace: notices, the server strip, and the status board for the profile selected in the sidebar.
 "use strict";
 
 // Tracks the last snapshot, profiles, server status, and pending lifecycle operation.
@@ -25,7 +25,8 @@ function selectedOverviewProfile() {
 
 // Build a notice panel with a title and message.
 function overviewNotice(title, message, kind = "warning") {
-  const notice = overviewNode("section", `notice notice-${kind}`);
+  // The compact notice runs its title in at the start of the text (overview.css).
+  const notice = overviewNode("section", `notice notice-${kind} overview-notice`);
   notice.append(overviewNode("h2", "", title), overviewNode("p", "", message));
   return notice;
 }
@@ -43,7 +44,7 @@ function overviewNoticeActions(targets) {
   return row;
 }
 
-// Collect what the server panel and the notice depend on: state, profile, setup, and a recovery block.
+// Collect what the server strip and the notice depend on: state, profile, setup, and a recovery block.
 function overviewContext() {
   const settings = overviewState.snapshot.settings;
   return {
@@ -94,19 +95,21 @@ function restoreOverviewFocus(focusedId) {
   target?.focus({ preventScroll: true });
 }
 
-// Draw the notice and the server panel; the cards below them keep their state.
+// Draw the notice and the server strip; the status board below them keeps its state.
 function renderOverviewTop() {
   const top = document.getElementById("overview-top");
   if (!top) return;
   const context = overviewContext();
   // Keep the process details open and the focus where it was across a redraw that the operator did not ask for.
-  const open = document.getElementById("overview-process")?.open === true;
+  const open = document.getElementById("overview-process")?.hidden === false;
   const active = document.activeElement;
   const focusedId = active && top.contains(active) ? active.id : "";
   const notice = renderOverviewNotice(context);
   top.replaceChildren(...(notice ? [notice] : []));
   top.append(window.ServerManOverviewServer.render(context));
-  document.getElementById("overview-process").open = open;
+  window.ServerManOverviewServer.setProcessOpen(open);
+  // An open names panel is measured once it is on the page.
+  window.ServerManOverviewPlayers.settle();
   restoreOverviewFocus(focusedId);
 }
 
@@ -115,11 +118,10 @@ function renderOverview() {
   const region = document.getElementById("content-region");
   const profile = selectedOverviewProfile();
   const top = overviewNode("div", "overview-top"); top.id = "overview-top";
-  // Three cards follow the server panel: updates, the newest backup, and the daily schedule.
-  const cards = overviewNode("div", "overview-cards");
-  cards.append(window.ServerManOverviewCards.updates(), window.ServerManOverviewCards.backup(profile),
-    window.ServerManOverviewSchedule.create(profile));
-  region.replaceChildren(top, cards);
+  // One status board follows the server strip: updates, the newest backup, and the daily schedule.
+  region.replaceChildren(top, window.ServerManOverviewCards.board(profile));
+  // A freshly opened Overview starts with the names panel closed.
+  window.ServerManOverviewPlayers.reset();
   renderOverviewTop();
   region.setAttribute("aria-busy", "false");
 }
@@ -194,7 +196,7 @@ async function openOverview(snapshot = null) {
 // React to tracked lifecycle and scheduled server operations, and to a finished backup.
 function overviewOperationFinished(operation) {
   const tracked = operation.operation_id === overviewState.pendingOperationId;
-  // A backup that ended elsewhere changes only the "Last backup" card; the event is not consumed here.
+  // A backup that ended elsewhere changes only the "Last backup" row; the event is not consumed here.
   if (!tracked && operation.kind === "CREATE_BACKUP"
       && !["QUEUED", "RUNNING", "CANCELLING"].includes(operation.state)) {
     void window.ServerManOverviewCards.reloadBackup(selectedOverviewProfile());
@@ -216,6 +218,6 @@ window.ServerManOverview = Object.freeze({
   open: openOverview,
   operationFinished: overviewOperationFinished,
   track: (operationId) => { overviewState.pendingOperationId = operationId; },
-  // A changed server state redraws the notice and the server panel only.
+  // A changed server state redraws the notice and the server strip only.
   refreshServer: renderOverviewTop,
 });

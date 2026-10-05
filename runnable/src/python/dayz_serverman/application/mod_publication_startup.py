@@ -30,7 +30,8 @@ def recover_interrupted_publications(
         return
     current = settings.load()
     if current.dayz_root is None:
-        operations.block_for_recovery("Mutations are blocked by unresolved mod publication.")
+        # A save that sets only the DayZ server folder may pass this block (QF-069)
+        operations.block_for_missing_dayz_root("Mutations are blocked by unresolved mod publication.")
         return
     root = Path(current.dayz_root)
     try:

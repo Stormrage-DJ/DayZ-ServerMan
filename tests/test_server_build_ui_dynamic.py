@@ -1,4 +1,4 @@
-"""Headless Edge checks of the server part of the Overview "Updates" card (14.9, 14.10)."""
+"""Headless Edge checks of the "DayZ server" row of the Overview status board (14.9, 14.10, D17)."""
 from __future__ import annotations
 
 import unittest
@@ -32,11 +32,17 @@ const line = (name) => part().querySelector(`.overview-build-${name}`);
 const land = async (server, revision) => { host.updates = updates(server(revision)); updateStatusState.readAt -= 31000;
   await window.ServerManUpdateStatus.poll(false); await wait(10); };
 const shown = (name) => line(name).hidden ? "" : line(name).textContent;
+// A failed check shows a short head and the reason under it (D17); other states show one line.
+const lead = () => line("summary").textContent + (shown("reason") ? `|${shown("reason")}` : "");
+const split = (text) => { const prefix = "Could not check the DayZ server build: ";
+  return text.startsWith(prefix) ? `Could not check|${text[prefix.length].toUpperCase()}${text.slice(prefix.length + 1)}`
+    : text; };
 """
 
 STATES = HEAD + r"""
 await start(); await wait(60);
-check(!part().hidden && part().querySelector("h3").textContent === "DayZ server", "server part");
+check(!part().hidden && part().querySelector("h3").textContent === "DayZ server"
+  && part().tagName === "LI", "server row");
 same(line("summary").textContent, "DayZ server is up to date.", "current");
 check(line("summary").classList.contains("status-normal"), "current tone");
 check(line("detail").textContent.startsWith("Installed: build 24570360 · Steam: build 24570360, on Steam since ")
@@ -70,7 +76,8 @@ const cases = [
 ];
 for (const [extra, summary, tone, advice] of cases) {
   await land((value) => build({...extra, revision: value}), revision += 1);
-  same(line("summary").textContent, summary, "summary");
+  same(lead(), split(summary), "summary");
+  same(window.ServerManServerBuild.lines(build(extra)).text, summary, "one-line text");
   check(line("summary").classList.contains(`status-${tone}`), `${summary} tone`);
   same(shown("advice"), advice, `${summary} advice`);
   for (const raw of ["UPDATE_", "STEAM_CLIENT", "STEAMCMD_", "TIMEOUT", "NO_MANIFEST", "LATER_CODE"]) {
@@ -84,7 +91,7 @@ check(line("detail").textContent.startsWith("Installed: build 24570360 (branch b
 window.ServerManUpdateStatus.setAutomaticChecks(false);
 await land((value) => build({state: "COULD_NOT_CHECK", reason: "NEVER", check_state: "NEVER", last_success_at: null,
   revision: value}), revision += 1);
-same(line("summary").textContent, "Could not check the DayZ server build: automatic checks are off.", "switch off");
+same(lead(), "Could not check|Automatic checks are off.", "switch off");
 check(line("detail").textContent.endsWith("Not checked yet"), "never checked");
 window.ServerManUpdateStatus.setAutomaticChecks(true);
 // Busy and waiting lines; a running build check does not lock "Check now".

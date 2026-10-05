@@ -78,8 +78,8 @@ function announceBadgeRise(badge) {
   navigationBadgeState.count = badge.count;
   if (!risen) return;
   const profile = window.ServerManProfileContext.profiles().find((item) => item.profile_id === profileId);
-  const subject = badge.count === 1 ? "1 mod update needs" : `${badge.count} mod updates need`;
-  speakOperation(`${subject} attention for ${profile ? profile.display_name : "this server"}.`);
+  // The same parts as the spoken badge name, so a mod that is only not downloaded is not called an update (QF-061).
+  speakOperation(`Mods need attention for ${profile ? profile.display_name : "this server"}: ${badge.name}.`);
 }
 
 // Redraw the badge of the Mods item and its accessible name from the current update state.

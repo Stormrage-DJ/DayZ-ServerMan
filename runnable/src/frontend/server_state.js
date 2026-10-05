@@ -76,6 +76,12 @@ function adoptServerStatus(value) {
   const reconfirmed = !serverStateStore.confirmed;
   serverStateStore.confirmed = true;
   if (!serverStateChanged(serverStateStore.status, value)) {
+    // A new player count is kept for the Overview, which writes it in place on the poll tick; it redraws
+    // nothing and tells no page, so a player who joins does not move the focus (D18).
+    if (serverStateStore.status && (serverStateStore.status.players !== value.players
+        || serverStateStore.status.max_players !== value.max_players)) {
+      serverStateStore.status = Object.freeze({ ...value });
+    }
     // The state is the same, but a page that saw the failed read must learn that it is confirmed again.
     if (reconfirmed) publishServerStatus();
     return false;

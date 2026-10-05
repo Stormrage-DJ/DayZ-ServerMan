@@ -19,15 +19,22 @@ const HOST_IMPORT_BLOCK = "A legacy import was interrupted and could not be undo
   + "Restart DayZ-ServerMan; it checks the unfinished import again when it starts.";
 // Known reasons of a recovery block, by a fragment of the host reason; the first match wins.
 const hostBlockReasons = Object.freeze([
-  ["Direct profile restore", "A profile restore from a backup archive did not finish. Stop the DayZ server, then restart DayZ-ServerMan; it checks the unfinished restore when it starts."],
+  // A direct profile restore is worded by cause (QF-075); these rows come before "restore recovery".
+  ["Direct profile restore journals", "A profile restore from a backup archive did not finish, and its restore records cannot be read, so DayZ-ServerMan cannot finish or undo it. Restart DayZ-ServerMan to read them again."],
+  ["Direct profile restore recovery requires a configured DayZ root", "A profile restore from a backup archive did not finish, and it cannot be checked because no DayZ server folder is set. In Settings, set the DayZ server folder that the restore used and change nothing else. Then save and restart DayZ-ServerMan."],
+  ["Direct profile restore recovery requires attention", "A profile restore from a backup archive did not finish, and DayZ-ServerMan cannot finish or undo it safely because the DayZ server folder or the restored files changed or cannot be opened. If a drive or folder was unavailable, make it available again, then restart DayZ-ServerMan."],
+  ["Direct profile restore requires recovery", "A profile restore from a backup archive did not finish. Stop the DayZ server, then restart DayZ-ServerMan; it checks the unfinished restore when it starts."],
+  // A backup restore without a DayZ server folder (QF-069); it contains "restore recovery", so it comes first.
+  ["Backup restore recovery requires a configured DayZ root", "A backup restore did not finish, and it cannot be checked because no DayZ server folder is set. In Settings, set the DayZ server folder that the restore used and change nothing else. Then save, and open Backups or restart DayZ-ServerMan."],
   ["restore recovery", "A backup restore did not finish cleanly. Open Backups; DayZ-ServerMan checks the unfinished restore again there."],
   ["mod publication recovery", "Applying mods to the server folder was interrupted and could not be undone safely. Restart DayZ-ServerMan; it checks the server folder again when it starts."],
-  ["unresolved mod publication", "Applying mods to the server folder was interrupted, and it cannot be checked because no DayZ server folder is set."],
+  ["unresolved mod publication", "Applying mods to the server folder was interrupted, and it cannot be checked because no DayZ server folder is set. In Settings, set the DayZ server folder that the apply used and change nothing else. Then save and restart DayZ-ServerMan."],
   ["interrupted mod publication", "Applying mods to the server folder was interrupted and must be finished. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then restart DayZ-ServerMan."],
   ["interrupted backup restore", "A backup restore was interrupted and must be finished. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then open Backups again or restart DayZ-ServerMan."],
   ["interrupted direct profile restore", "A profile restore from a backup archive was interrupted and must be finished. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then restart DayZ-ServerMan."],
   ["interrupted profile creation", "Creating a profile was interrupted and must be finished. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then restart DayZ-ServerMan."],
   ["interrupted SteamCMD update", "A mod update was interrupted, so its result is not known. Restart DayZ-ServerMan, then update the mods again."],
+  ["process-tree exit after the sign-in", "SteamCMD did not close cleanly after the Steam sign-in, so the sign-in cannot be confirmed. Close SteamCMD, restart DayZ-ServerMan, then sign in again."],
   ["process-tree exit", "SteamCMD did not close cleanly, so the mod update cannot be confirmed. Close SteamCMD, restart DayZ-ServerMan, then update the mods again."],
   ["Profile provisioning recovery", "Creating a profile was interrupted and could not be undone safely. Restart DayZ-ServerMan; it checks the unfinished profile again when it starts."],
   ["migration recovery", HOST_IMPORT_BLOCK],

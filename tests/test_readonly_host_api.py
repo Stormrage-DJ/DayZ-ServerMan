@@ -94,6 +94,7 @@ class HostApiTests(unittest.TestCase):
                 "save_settings",
                 "select_settings_path",
                 "get_server_status",
+                "get_online_players",
                 "start_server",
                 "stop_server",
                 "restart_server",
@@ -130,6 +131,7 @@ class HostApiTests(unittest.TestCase):
         api.apply_restore("main", "backup-1", 3, 4, "a" * 64, "b" * 64)
         api.inspect_restore_recovery()
         api.get_server_status()
+        api.get_online_players()
         api.start_server("main", 3, 4)
         api.stop_server("main", 3, 4, True)
         api.restart_server("main", 3, 4, False)
@@ -185,6 +187,7 @@ class HostApiTests(unittest.TestCase):
                 "apply_restore",
                 "inspect_restore_recovery",
                 "get_server_status",
+                "get_online_players",
                 "start_server",
                 "stop_server",
                 "restart_server",
@@ -230,6 +233,8 @@ class HostApiTests(unittest.TestCase):
             requests_by_method["save_automatic_update_checks"]["parameters"], {"enabled": False})
         self.assertEqual(
             requests_by_method["get_update_status"]["parameters"], {"profile_id": "main"})
+        # D18: the names read takes no parameters
+        self.assertEqual(requests_by_method["get_online_players"]["parameters"], {})
         self.assertEqual(
             requests_by_method["request_update_check"]["parameters"],
             {"scope": "mods", "force": True})

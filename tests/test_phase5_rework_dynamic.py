@@ -64,9 +64,13 @@ for (const [status, automatic, form, text, name, summary] of cases) {
   await choose(profile);
   const label = `${status.mods.check_state}${status.checking ? " checking" : ""}${automatic ? "" : " automatic off"}`;
   same(shown(), `${form}:${text}|${name}`, `${label}: sidebar badge`);
-  // The card names the mods, because it also shows the server build (QF-049)
-  same(byId("overview-updates").querySelector(".overview-updates-summary").textContent,
-    summary.replace(/(\d+ |for )updates/, "$1mod updates"), `${label}: Overview card`);
+  // The row names the mods, because the board also shows the server build (QF-049); a failed check is a short
+  // head with the reason under it (D17).
+  const row = byId("overview-updates"); const reason = row.querySelector(".overview-updates-reason");
+  const named = summary.replace(/(\d+ |for )updates/, "$1mod updates");
+  same(row.querySelector(".overview-updates-summary").textContent + (reason.hidden ? "" : `|${reason.textContent}`),
+    named.startsWith("Could not check: ") ? `Could not check|${named[17].toUpperCase()}${named.slice(18)}.` : named,
+    `${label}: Overview row`);
   check(!byId("page-update-badge").hidden && byId("page-update-badge").getAttribute("aria-label")
     === `${name.slice(6, 7).toUpperCase()}${name.slice(7)}. Open Mods.`, `${label}: heading badge`);
   // The page shows the same three answers on later polls, and the Mods header agrees.
@@ -116,16 +120,21 @@ check(schedule.querySelector(".schedule-summary").textContent === "No scheduled 
 // QF-032: the focus stays on the same control across a state redraw, and an open disclosure stays open.
 const redraw = async (extra) => { host.status = running("alpha", extra); await tick(); await wait(10); };
 for (const [id, extra] of [["overview-stop", {readiness: "UNRESPONSIVE"}], ["overview-restart", {readiness: "READY"}],
-  ["backup-after-stop", {readiness: "STARTING"}], ["overview-process-summary", {readiness: "READY"}]]) {
+  ["backup-after-stop", {readiness: "STARTING"}]]) {
   byId(id).focus();
   const before = byId("overview-server");
   await redraw(extra);
   check(byId("overview-server") !== before, `${id}: the panel was not redrawn`);
   same(document.activeElement?.id, id, `focus after a redraw from ${id}`);
 }
-byId("overview-process").open = true; byId("overview-process-summary").focus();
+// "Process details" exists while the server does not run; it stays open and focused across a redraw.
+await redraw({state: "UNKNOWN", readiness: null, process_id: null, query_port: null, started_at: null});
+byId("overview-process-toggle").click(); byId("overview-process-toggle").focus();
+await redraw({state: "UNKNOWN", readiness: null, process_id: null, query_port: null, started_at: null,
+  diagnostic_code: "PROCESS_AMBIGUOUS"});
+check(!byId("overview-process").hidden && byId("overview-process-toggle").getAttribute("aria-expanded") === "true"
+  && document.activeElement === byId("overview-process-toggle"), "open disclosure");
 await redraw({readiness: "UNRESPONSIVE"});
-check(byId("overview-process").open && document.activeElement === byId("overview-process-summary"), "open disclosure");
 // A control that is off after the redraw leaves the focus on the panel heading, not on the page body.
 byId("overview-stop").focus();
 await redraw({state: "STOPPING", readiness: null});

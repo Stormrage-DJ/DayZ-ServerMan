@@ -20,6 +20,7 @@ const modReviewTexts = Object.freeze({
     + "and start the server again. The server is offline during these steps.",
   changed: "The server state changed. The mods are downloaded; nothing was applied.",
   short: "No mod folder is copied. Missing key files are added.",
+  nothing: "Nothing is written to the server folder: every mod folder and key file is already in place.",
   cancelled: "Apply review cancelled. Downloaded content was not copied to the server.",
   title: "Apply downloaded mods and keys?",
   lead: "Review the server folders that will be updated. Changes use verified rollback protection.",
@@ -77,6 +78,18 @@ function refusedApplySentence(state) {
 // Report whether the reviewed plan would write into the server folder.
 function publicationPlanWrites(preview) {
   return (preview.targets || []).some((target) => target.current !== true) || preview.missing_key_count > 0;
+}
+
+// List what the reviewed plan writes (QF-055): only the mod folders that are not current and the missing key files,
+// or one sentence that nothing is written. The short form never lists a folder.
+function publicationReviewLines(preview, short) {
+  const folders = short ? [] : (preview.targets || []).filter((target) => target.current !== true)
+    .map((target) => `Workshop ${target.workshop_id}: ${target.target_relative}`);
+  const missing = Number(preview.missing_key_count) || 0;
+  const keys = missing > 0 ? `${missing} of ${preview.key_count} verified key file(s) are added`
+    : `${preview.key_count} verified key file(s), all already in place`;
+  if (folders.length) return [...folders, keys];
+  return missing > 0 ? [modReviewTexts.short, keys] : [modReviewTexts.nothing];
 }
 
 // Choose the row of the review: its sentence and what the confirm button submits (null: only "Close").
@@ -195,12 +208,9 @@ function showModPublicationReview(review, options = {}) {
   const sentence = modsNode("p", "mod-publication-variant", variant.sentence);
   if (variant.submit) dialog.append(title, modsNode("p", "", modReviewTexts.lead), sentence);
   else dialog.append(title, sentence, modsNode("p", "", modReviewTexts.notAppliedLead));
-  // Describe the update targets and the verified key files, or say that no folder is copied.
+  // Describe only what the apply writes: the folders that are not current and the missing key files.
   const list = modsNode("ul", "restore-targets");
-  if (options.short) list.append(modsNode("li", "", modReviewTexts.short));
-  else (preview.targets || []).forEach((target) => list.append(
-    modsNode("li", "", `Workshop ${target.workshop_id}: ${target.target_relative}`)));
-  list.append(modsNode("li", "", `${preview.key_count} verified key file(s)`));
+  publicationReviewLines(preview, options.short === true).forEach((line) => list.append(modsNode("li", "", line)));
   // A row that submits nothing has only "Close".
   const actions = modsNode("div", "action-row");
   const cancel = modsNode("button", "button", variant.submit ? "Cancel" : "Close"); cancel.type = "button";

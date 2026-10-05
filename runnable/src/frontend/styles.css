@@ -203,7 +203,8 @@ select { padding-right: 34px; }
 /* Empty-state illustration for lists without content */
 .empty-illustration { display: grid; width: 64px; height: 64px; place-items: center; border: 1px dashed var(--color-border); border-radius: 50%; color: var(--color-action); font-size: 24px; font-weight: 800; }
 /* Screen-reader-only text helper */
-.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+/* The negative margin keeps the 1 px box inside the page, so an announcer after the shell adds no scroll (QF-058) */
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 /* Drawer scrim and modal dialogs */
 .drawer-scrim { position: fixed; inset: 0; z-index: 15; background: var(--color-scrim); }
 .unsaved-guard, #backup-confirmation, #restore-confirmation, #profile-delete-confirmation, #mod-publication-confirmation, #lifecycle-confirmation, .starter-conversion-dialog { position: fixed; z-index: 40; top: 50%; left: 50%; width: min(92vw, 520px); transform: translate(-50%, -50%); box-shadow: var(--panel-shadow); background: var(--color-surface-raised); }

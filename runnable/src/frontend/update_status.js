@@ -35,7 +35,7 @@ function updateStatusSignature(status) {
   const mods = status.mods || {};
   const build = status.server_build || {};
   return [profile, status.revision, status.checking, mods.check_state, mods.last_success_at,
-    mods.error_code, mods.update_count, mods.pending_apply_count,
+    mods.error_code, mods.update_count, mods.pending_apply_count, mods.not_downloaded_count,
     build.revision, build.state, build.checking, build.waiting, build.paused].join("|");
 }
 
@@ -177,10 +177,16 @@ function updateSummary(rows = null, named = false) {
     parts.push(`${updateCountText(mods.update_count, `${noun}update`, `${noun}updates`)} available`);
   }
   if (mods.pending_apply_count > 0) parts.push(`${mods.pending_apply_count} downloaded - not applied`);
+  // A configured Workshop mod without its content folder needs a download (QF-054).
+  if (mods.not_downloaded_count > 0) parts.push(`${mods.not_downloaded_count} not downloaded`);
   const pending = parts.length > 0;
-  if (mods.check_state !== "OK") parts.push(`Could not check: ${updateCheckReason(mods.check_state)}`);
+  // The Overview shows a short head and the reason under it; the Mods header keeps the one-line text.
+  const why = mods.check_state === "OK" ? "" : updateCheckReason(mods.check_state);
+  if (why) parts.push(`Could not check: ${why}`);
   if (parts.length) {
-    return { text: parts.join(" · "),
+    const head = pending ? parts.slice(0, why ? -1 : parts.length).join(" · ") : "Could not check";
+    const reason = !why ? "" : pending ? `Could not check: ${why}.` : `${why[0].toUpperCase()}${why.slice(1)}.`;
+    return { text: parts.join(" · "), head, reason,
       tone: pending ? "warning" : mods.check_state === "FAILED" ? "error" : "neutral" };
   }
   // Nothing is pending: say "current" only when every row is verified or local.
@@ -203,6 +209,8 @@ function updateBadgeParts(mods) {
   const parts = [];
   if (mods.update_count > 0) parts.push(`${updateCountText(mods.update_count, "update", "updates")} available`);
   if (mods.pending_apply_count > 0) parts.push(`${mods.pending_apply_count} downloaded - not applied`);
+  // A configured Workshop mod without its content folder needs a download (QF-054).
+  if (mods.not_downloaded_count > 0) parts.push(`${mods.not_downloaded_count} not downloaded`);
   return parts;
 }
 
@@ -214,7 +222,8 @@ function updateBadge() {
   if (!updateStatusProfile() || updateStatusState.profileId !== updateStatusProfile()) return none;
   if (!status || !status.mods) return none;
   const mods = status.mods;
-  const count = (Number(mods.update_count) || 0) + (Number(mods.pending_apply_count) || 0);
+  const count = (Number(mods.update_count) || 0) + (Number(mods.pending_apply_count) || 0)
+    + (Number(mods.not_downloaded_count) || 0);
   // A pending count is shown in every check state; the name says when the check behind it is not fresh.
   if (count > 0) {
     const suffix = mods.check_state === "FAILED" ? ["last check failed"]

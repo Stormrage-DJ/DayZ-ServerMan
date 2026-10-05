@@ -60,7 +60,8 @@ def authenticate_interactive(
     # Require proven process-tree termination before trusting the result
     if not run.termination_confirmed:
         raise OperationFailure(
-            "UPDATE_RESULT_UNKNOWN", "SteamCMD process-tree exit could not be proven.",
+            # The reason names the sign-in, so the block sentence does not speak of a mod update (QF-075)
+            "UPDATE_RESULT_UNKNOWN", "SteamCMD process-tree exit after the sign-in could not be proven.",
             recovery_required=True,
         )
     # A non-zero exit did not complete authentication

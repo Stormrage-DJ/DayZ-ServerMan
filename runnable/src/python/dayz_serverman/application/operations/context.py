@@ -28,6 +28,11 @@ class OperationContext:
         """Report whether cancellation has been requested for the operation."""
         return self._pending.cancellation.is_set()
 
+    @property
+    def admitted_through_recovery_block(self) -> bool:
+        """Report whether the lane admitted this operation through "no DayZ server folder" blocks (QF-069)."""
+        return self._pending.admitted_through_recovery_block
+
     def checkpoint(self, phase: str, progress_percent: int) -> None:
         """Report progress and stop at a safe point when cancellation was requested."""
         # Reject progress values outside the documented 0-100 contract

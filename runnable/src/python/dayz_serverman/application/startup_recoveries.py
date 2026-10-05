@@ -19,7 +19,7 @@ from ..repositories.restore_journal import RestoreJournalRepository
 from .installation_guard import InstallationGuard
 from .operations.manager import OperationManager
 from .profile_provisioning import ProfileProvisioningError, ProfileProvisioningService
-from .restores import RECOVERY_NOT_STOPPED, RESTORE_KIND, RestoreService
+from .restores import RECOVERY_NO_DAYZ_ROOT, RECOVERY_NOT_STOPPED, RESTORE_KIND, RestoreService
 from .settings import SettingsService
 
 
@@ -38,6 +38,9 @@ def recover_interrupted_restores(
     if recovery.get("reason") == RECOVERY_NOT_STOPPED:
         # A busy installation, or a server that is not proven stopped: recover at a later start
         operations.block_for_recovery(RECOVERY_NOT_STOPPED, owner=RESTORE_KIND)
+    elif recovery.get("reason") == RECOVERY_NO_DAYZ_ROOT:
+        # No DayZ server folder: a save that sets only that folder may pass this block (QF-069)
+        operations.block_for_missing_dayz_root(RECOVERY_NO_DAYZ_ROOT, owner=RESTORE_KIND)
     elif recovery["blocked"]:
         # No readable DayZ folder, or a state that recovery cannot prove
         operations.block_for_recovery("Mutations are blocked by unresolved restore recovery.", owner=RESTORE_KIND)
@@ -86,14 +89,21 @@ def recover_interrupted_profile_restores(
         pending, records = True, None
     if not pending:
         return
+    # Each cause has its own reason, so the operator sentence names a way out that fits it (QF-075)
+    if records is None:
+        operations.block_for_recovery("Direct profile restore journals could not be read.")
+        return
+    dayz_root = settings.load().dayz_root
+    if dayz_root is None:
+        # A save that sets only the DayZ server folder may pass this block (QF-069)
+        operations.block_for_missing_dayz_root("Direct profile restore recovery requires a configured DayZ root.")
+        return
     blocked = True
-    current = settings.load()
     try:
-        if records is not None and current.dayz_root is not None:
-            root = Path(current.dayz_root).resolve(strict=True)
-            # The state is read under the mutex; a refusal writes nothing
-            with guard.stopped(root):
-                blocked = storage.inspect(root)["blocked"]
+        root = Path(dayz_root).resolve(strict=True)
+        # The state is read under the mutex; a refusal writes nothing
+        with guard.stopped(root):
+            blocked = storage.inspect(root)["blocked"]
     except LifecycleFailure:
         operations.block_for_recovery(
             "Mutations are blocked by an interrupted direct profile restore while the server is not proven stopped."

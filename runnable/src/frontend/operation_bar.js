@@ -230,6 +230,8 @@ async function cancelOperationFromBar(operationId) {
       window.ServerManOperationMessages.bridgeError(result, "The operation could not be cancelled."));
   }
   refreshOperationBar();
+  // The note in the row is plain text, so the refusal is also spoken assertively (QF-071).
+  announceOperationCancelRefusal(operationBarState.cancelErrors.get(operationId));
 }
 
 // Remove a result row for this window session.

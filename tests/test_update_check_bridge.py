@@ -58,7 +58,11 @@ class UpdateCheckBridgeTests(unittest.TestCase):
         base = Path(self.temporary.name)
         root = base / "steamapps/workshop/content/221100"
         root.mkdir(parents=True)
+        self.content_root = root
         ids = [str(1000 + number) for number in range(MOD_COUNT)]
+        # A downloaded item has its content folder; without it the row reads "Not downloaded" (QF-054)
+        for key in ids:
+            (root / key).mkdir()
         # Every item is installed with the remote time; the first one is older
         installed = " ".join(
             f'"{key}" {{ "manifest" "8" "size" "1" "timeupdated" '
@@ -102,9 +106,17 @@ class UpdateCheckBridgeTests(unittest.TestCase):
         self.assertEqual(value["mods"], {
             "check_state": "NEVER", "checked_at": None, "last_success_at": None,
             "error_code": None, "update_count": 0, "pending_apply_count": MOD_COUNT,
+            "not_downloaded_count": 0,
         })
         self.assertEqual((value["server_build"], value["checking"], value["revision"]),
                          (None, False, 0))
+
+    def test_a_missing_content_folder_is_counted_as_not_downloaded(self) -> None:
+        """QF-054: a manifest record without its content folder is counted, so the badge shows it."""
+        (self.content_root / "1003").rmdir()
+        value = self.status()
+        self.assertEqual((value["mods"]["not_downloaded_count"], value["mods"]["pending_apply_count"]),
+                         (1, MOD_COUNT - 1))
 
     def test_request_runs_and_counts_agree_with_the_rows(self) -> None:
         """A forced request starts a run; the counts equal the inventory rows."""
@@ -117,6 +129,7 @@ class UpdateCheckBridgeTests(unittest.TestCase):
         self.assertEqual(value["mods"]["checked_at"], value["mods"]["last_success_at"])
         self.assertEqual(value["mods"]["update_count"], states.count("UPDATE_AVAILABLE"))
         self.assertEqual(value["mods"]["pending_apply_count"], states.count("PENDING_APPLY"))
+        self.assertEqual(value["mods"]["not_downloaded_count"], states.count("NOT_DOWNLOADED"))
         self.assertEqual((value["mods"]["update_count"], value["revision"]), (1, 2))
         # A second forced request inside the debounce time starts nothing
         again = self.call("request_update_check", {"scope": "mods", "force": True})

@@ -115,6 +115,35 @@ check(barText().includes("Writing the file list"), "an older record replaced a n
 """
 
 
+# Refused Cancel (QF-071): the plain note in the row is also spoken through the alert element; focus stays on Cancel
+REFUSED_CANCEL = r"""
+await start();
+const alertNode = document.getElementById("operation-alert");
+const spoken = [];
+new MutationObserver(() => spoken.push(alertNode.textContent))
+  .observe(alertNode, {childList: true, characterData: true, subtree: true});
+await push(record("run", "UPDATE_WORKSHOP_ITEMS", "RUNNING", {cancellable: true, progress_phase: "verify_items",
+  progress_percent: 75}));
+// An accepted cancellation speaks nothing through the alert element.
+barButton("Cancel").click(); await wait(20);
+check(spoken.length === 0 && barButton("Cancelling…"), `an accepted cancellation was alerted: ${spoken}`);
+await push(record("run", "UPDATE_WORKSHOP_ITEMS", "RUNNING", {cancellable: true, progress_phase: "verify_items",
+  progress_percent: 80}));
+// A refused cancellation shows the note and speaks it assertively, without moving the focus.
+host.cancelAnswer = () => fail("OPERATION_NOT_CANCELLABLE", "operation is not cancellable in its current state");
+barButton("Cancel").focus(); barButton("Cancel").click(); await wait(20);
+const note = "This operation can no longer be cancelled.";
+check(bar().querySelector(".operation-note")?.textContent === note, "note missing");
+check(alertNode.textContent === note && spoken.at(-1) === note, `refusal not alerted: ${JSON.stringify(spoken)}`);
+check(document.activeElement === barButton("Cancel")
+  && !barButton("Cancel").hasAttribute("aria-disabled"), "focus left Cancel or Cancel stayed locked");
+// A second refusal is spoken again.
+const before = spoken.length;
+barButton("Cancel").click(); await wait(20);
+check(spoken.length > before && alertNode.textContent === note, "a second refusal was not alerted");
+"""
+
+
 @unittest.skipUnless(EDGE.is_file(), "Microsoft Edge is unavailable")
 class OperationBarStateDynamicTests(unittest.TestCase):
     """Specification sections 1, 4 and 6: rebuild, announcements, and the two whole-workspace panels."""
@@ -126,6 +155,10 @@ class OperationBarStateDynamicTests(unittest.TestCase):
     def test_host_error_and_submit_acknowledgement(self) -> None:
         """Host error hides only the active row; adopt and the revision rule."""
         self.assertEqual(run_shell_harness(HOST_ERROR), "PASS")
+
+    def test_refused_cancel_is_announced_and_keeps_focus(self) -> None:
+        """QF-071: a refused Cancel is spoken through the alert element; Cancel keeps the focus."""
+        self.assertEqual(run_shell_harness(REFUSED_CANCEL), "PASS")
 
 
 if __name__ == "__main__":

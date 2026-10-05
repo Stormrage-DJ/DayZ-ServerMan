@@ -81,6 +81,12 @@ input[type="radio"] {
 .button[disabled], .button[aria-disabled="true"] { color: var(--color-text-subtle); cursor: not-allowed; opacity: .72; }
 /* A locked primary button keeps a readable label: light text on the darkened action colour (5.1:1 on a panel) */
 .button-primary[disabled], .button-primary[aria-disabled="true"] { border-color: transparent; background: color-mix(in srgb, var(--color-action) 45%, var(--color-surface)); color: var(--color-text); }
+/* Compact button for actions inside a list row (32 px, above the 24 px target minimum) */
+.button-compact { min-height: 32px; padding: 0 var(--primitive-space-3); font-size: 13px; white-space: nowrap; }
+/* Button that reads as a link: a disclosure trigger inside text; the arrow follows the open state */
+.link-button { min-height: 24px; padding: 0; border: 0; background: none; color: var(--color-action-strong); cursor: pointer; font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
+.link-button[aria-expanded]::after { display: inline-block; margin-left: 4px; content: "▸"; text-decoration: none; }
+.link-button[aria-expanded="true"]::after { content: "▾"; }
 .tab-button { border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface-raised); color: var(--color-text-muted); padding: .55rem .8rem; cursor: pointer; }
 .tab-button:hover, .tab-button.is-active { color: var(--color-text); border-color: var(--color-action); background: var(--nav-background-current); }
 .menu-button { position: relative; display: none; width: 40px; height: 40px; padding: 10px; border: 1px solid var(--control-border); border-radius: var(--radius-control); background: var(--control-background); }

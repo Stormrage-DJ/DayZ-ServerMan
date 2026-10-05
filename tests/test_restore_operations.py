@@ -172,9 +172,9 @@ class RestoreOperationTests(unittest.TestCase):
         (journals / "broken.json").write_text("{broken", encoding="utf-8")
         composition = build_composition(manager)
         try:
-            # Queries stay available and report the unresolved recovery
+            # Queries stay available; without a DayZ server folder the block names that cause (QF-069)
             snapshot = composition.coordinator.get_application_snapshot({})
-            self.assertIn("unresolved restore recovery", snapshot["mutation_block"])
+            self.assertEqual(snapshot["mutation_block"], "Backup restore recovery requires a configured DayZ root.")
             # QF-045, additive: the snapshot names the owner, so the notice can point to Backups
             self.assertEqual(snapshot["mutation_block_owner"], "RESTORE_BACKUP")
             inspection = composition.restore_coordinator.inspect_restore_recovery({})

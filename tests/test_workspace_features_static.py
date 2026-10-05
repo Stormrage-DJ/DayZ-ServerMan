@@ -108,7 +108,9 @@ class WorkspaceFeaturesStaticTests(unittest.TestCase):
             "RUNNING_EXTERNAL", "diagnostic_code",
         ):
             self.assertIn(value, self.script)
-        self.assertIn("actions.append(backupChoice, start, stop, restart)", self.script)
+        # "Backup after stop" stands above the three buttons it affects, before them in the focus order (D17)
+        self.assertIn("controls.append(window.ServerManOverviewBackup.choice(context.profile), buttons)",
+                      self.script)
         self.assertNotIn("force_kill", self.script)
 
     def test_overview_follows_the_sidebar_selection_and_the_choice_is_persisted(self) -> None:

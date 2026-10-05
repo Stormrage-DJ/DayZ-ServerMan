@@ -131,6 +131,8 @@ class LifecycleBridgeTests(unittest.TestCase):
         self.assertEqual(status["value"], {
             "state": "STOPPED", "process_id": None, "diagnostic_code": None, "readiness": None,
             "query_port": None, "profile_id": None, "started_at": None,
+            # D18: the player count is not known while the server does not run
+            "players": None, "max_players": None,
         })
         self.assertEqual(CONTRACT_VERSION, 1)
         # A start request queues and completes on the operation lane

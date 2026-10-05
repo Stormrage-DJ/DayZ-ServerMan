@@ -11,6 +11,10 @@ class OperationalHostMethods:
         """Return the current server status."""
         return self._invoke("get_server_status", {})
 
+    def get_online_players(self) -> dict[str, Any]:
+        """Return the names of the players online for the open names panel; the answer is not kept."""
+        return self._invoke("get_online_players", {})
+
     def start_server(
         self,
         profile_id: object,

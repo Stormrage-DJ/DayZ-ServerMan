@@ -21,6 +21,8 @@ from .settings import SettingsService
 
 # Block reason of a restore recovery that the installation guard refused
 RECOVERY_NOT_STOPPED = "Mutations are blocked by an interrupted backup restore while the server is not proven stopped."
+# Block reason of a restore recovery without a configured DayZ server folder; a repair save may pass it (QF-069)
+RECOVERY_NO_DAYZ_ROOT = "Backup restore recovery requires a configured DayZ root."
 # Operation kind of a restore apply; it owns every block that the restore recovery may lift
 RESTORE_KIND = "RESTORE_BACKUP"
 
@@ -146,7 +148,16 @@ class RestoreService:
         try:
             settings = self._settings.load()
             if settings.dayz_root is None:
-                raise RestoreStorageError("PATH_INVALID", "DayZ root is not configured.")
+                # Named before the guard, so the block can be passed by a save that sets the folder (QF-069)
+                return {
+                    "blocked": True,
+                    "reason": RECOVERY_NO_DAYZ_ROOT,
+                    "diagnostics": [{
+                        "code": "RECOVERY_REQUIRED",
+                        "message": "Restore recovery needs a configured DayZ server folder.",
+                        "usable": False,
+                    }],
+                }
             root = Path(settings.dayz_root)
             # The guard refuses before the block runs; the state is read under the mutex
             with InstallationGuard(self._lifecycle, self._mutex).stopped(root):

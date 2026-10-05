@@ -170,14 +170,21 @@ commitSection("logs"); await wait(20);
 updateStatusState.readAt -= 31000;
 await tick();
 check(!badge.hidden && badge.textContent === "1", "the shell poll did not feed the badge outside Mods");
-same(byId("operation-announcer").textContent, "1 mod update needs attention for Alpha.", "rise announcement");
+same(byId("operation-announcer").textContent, "Mods need attention for Alpha: 1 update available.", "rise announcement");
 // A rise is spoken once; a fall and an equal count are not.
 byId("operation-announcer").textContent = "";
 await land(updates({update_count: 3}));
-same(byId("operation-announcer").textContent, "3 mod updates need attention for Alpha.", "second rise");
+same(byId("operation-announcer").textContent, "Mods need attention for Alpha: 3 updates available.", "second rise");
 byId("operation-announcer").textContent = "";
 await land(updates({update_count: 2})); await land(updates({update_count: 2, pending_apply_count: 0}, "STALE"));
 same(byId("operation-announcer").textContent, "", "a fall was spoken");
+// QF-061: a rise from mods that are only not downloaded or not applied names them as such, never as updates.
+await land(updates({update_count: 2, not_downloaded_count: 1, pending_apply_count: 1}));
+same(byId("operation-announcer").textContent,
+  "Mods need attention for Alpha: 2 updates available, 1 downloaded - not applied, 1 not downloaded.", "mixed rise");
+byId("operation-announcer").textContent = "";
+await land(updates({update_count: 0, not_downloaded_count: 0})); await land(updates({not_downloaded_count: 1}));
+same(byId("operation-announcer").textContent, "Mods need attention for Alpha: 1 not downloaded.", "not-downloaded rise");
 // One request-and-read on a profile change, and after each operation that can change mod content.
 let sent = requests.length;
 window.ServerManProfileContext.select("bravo"); await wait(60);

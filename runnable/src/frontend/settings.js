@@ -16,6 +16,8 @@ const resolvedSettingsFields = Object.freeze([
 const pathFieldNames = Object.freeze([
   ...settingsFields.map(([role]) => role), "custom_backup_root",
 ]);
+// Notice after a save that set the DayZ server folder while changes were blocked (QF-069).
+const SETTINGS_RESTART_TEXT = "Restart DayZ-ServerMan. It then checks the interrupted work in this DayZ server folder.";
 // Settings state: revisions, path values, diagnostics, and pending work.
 const settingsState = {
   generation: 0, revision: null, paths: null, original: null,
@@ -217,9 +219,13 @@ function settingsOperationFinished(operation) {
   if (!["SUCCEEDED", "FAILED", "CANCELLED", "RECOVERY_REQUIRED"].includes(operation.state)) return true;
   settingsState.pending = null; settingsState.busy = false;
   if (operation.state === "SUCCEEDED") {
-    // Reload after a successful save.
+    // Reload after a successful save; a save that passed the blocks asks for the restart afterwards.
     window.ServerManTransitions.setDirty("settings-paths", false);
-    openSettings();
+    const reload = openSettings();
+    const generation = settingsState.generation;
+    if (operation.result?.restart_required === true) {
+      void reload.then(() => { if (generation === settingsState.generation) settingsFeedback(SETTINGS_RESTART_TEXT); });
+    }
   } else {
     // Return the form and report the failure.
     renderSettings();

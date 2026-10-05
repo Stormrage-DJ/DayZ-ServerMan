@@ -115,6 +115,10 @@ class LifecycleSnapshot:
     profile_id: str | None = None
     # UTC time of that start, ISO-8601 with milliseconds; None when the profile is None
     started_at: str | None = None
+    # Players online and player slots from the readiness probe's A2S_INFO answer (D18); None when the
+    # server does not run under this manager or the answer gave no count. Never a player name.
+    players: int | None = None
+    max_players: int | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Return the snapshot as its persisted object."""
@@ -126,6 +130,8 @@ class LifecycleSnapshot:
             "query_port": self.query_port,
             "profile_id": self.profile_id,
             "started_at": self.started_at,
+            "players": self.players,
+            "max_players": self.max_players,
         }
 
 

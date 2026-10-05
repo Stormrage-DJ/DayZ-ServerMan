@@ -30,6 +30,8 @@ class RowInputs:
     fact: RemoteFact | None
     check_state: CheckState | None
     target: TargetProof
+    # Whether the Workshop content folder of the item exists; a record without it is not downloaded (QF-054)
+    content_present: bool = True
 
 
 @dataclass(frozen=True)
@@ -49,7 +51,8 @@ def row_state(inputs: RowInputs) -> RowState:
         return RowState("LOCAL", remote_check=_not_applicable(inputs))
     if not inputs.cache_readable:
         return RowState("UNAVAILABLE", remote_check=_not_applicable(inputs))
-    if inputs.installed_manifest_id is None:
+    # A manifest record whose content folder is gone has nothing to apply, as "Update all" already assumes
+    if inputs.installed_manifest_id is None or not inputs.content_present:
         return RowState("NOT_DOWNLOADED", remote_check=_not_applicable(inputs))
     fact = inputs.fact
     fact_ok = fact is not None and fact.result is RemoteItemResult.OK

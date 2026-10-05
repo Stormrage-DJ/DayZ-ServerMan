@@ -115,6 +115,9 @@ const answer = (first, second) => () => ok({profile_id: "alpha", publication_fin
 // One target is copied and one is current: the mark is on the copied one only.
 previewAnswer = answer(false, true);
 await runUpdate(false, updateResult);
+// QF-055: the review lists only the folder that the apply writes.
+check(dialog().textContent.includes("Workshop 111: mods\\alpha") && !dialog().textContent.includes("mods\\beta")
+  && dialog().textContent.includes("2 verified key file(s), all already in place"), `review list: ${dialog().textContent}`);
 dialogButton("Apply mods and keys").click(); await wait(30);
 check(cell(0).endsWith("Applying to the server folder…"), `copied target: ${cell(0)}`);
 check(!cell(1).includes("Applying to the server folder"), `current target is marked: ${cell(1)}`);
@@ -132,7 +135,7 @@ await finish("publish-2", "PUBLISH_MODS_AND_KEYS", {profile_id: "alpha", start_s
 // The short review says that no mod folder is copied: no row is marked while that apply runs.
 previewAnswer = answer(true, true);
 await runUpdate(true, currentResult);
-check(dialog().textContent.includes("No mod folder is copied."), "short review");
+check(dialog().textContent.includes("Nothing is written to the server folder"), "short review");
 dialogButton("Apply mods and keys").click(); await wait(30);
 await push(record("publish-3", "PUBLISH_MODS_AND_KEYS", "RUNNING", {target_profile_id: "alpha",
   progress_phase: "VERIFY_BEFORE_START", progress_percent: 90})); await wait(20);

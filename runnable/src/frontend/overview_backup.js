@@ -31,7 +31,7 @@ async function saveBackupControl(profile, checkbox) {
 
 // Build the backup-after-stop checkbox with its explanatory tooltip.
 function createBackupControl(profile) {
-  const label = window.ServerManUi.element("label", "check-row");
+  const label = window.ServerManUi.element("label", "check-row overview-backup-choice");
   const checkbox = document.createElement("input");
   checkbox.type = "checkbox";
   checkbox.id = "backup-after-stop";

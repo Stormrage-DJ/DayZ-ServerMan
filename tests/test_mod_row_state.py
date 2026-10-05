@@ -53,6 +53,8 @@ class RowStateTests(unittest.TestCase):
             ("LOCAL", {"source_kind": "external"}),
             ("UNAVAILABLE", {"cache_readable": False}),
             ("NOT_DOWNLOADED", {"installed_manifest_id": None}),
+            # QF-054: a manifest record whose content folder is missing is not downloaded
+            ("NOT_DOWNLOADED", {"content_present": False}),
         )
         for state, changes in cases:
             # A newer fact and a missing target must not outrank these rows

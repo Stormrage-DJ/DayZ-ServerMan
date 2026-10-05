@@ -3,62 +3,77 @@
 from __future__ import annotations
 
 import socket
+import time
+from typing import Callable
+
+from ..domain.online_players import InformationAnswer
+from .a2s_codec import (
+    INFO_QUERY, challenge_token, is_information, parse_information_count, parse_information_identity,
+)
+from .a2s_transport import LOCALHOST, MAX_DATAGRAM_BYTES, from_queried_server, udp_socket
 
 
-# A2S_INFO request defined by the Steam server-query protocol
-INFO_QUERY = b"\xff\xff\xff\xffTSource Engine Query\x00"
-# Steam connectionless response prefix and supported response kinds
-RESPONSE_PREFIX = b"\xff\xff\xff\xff"
-INFO_RESPONSE = 0x49
-CHALLENGE_RESPONSE = 0x41
+# Datagrams from other senders that one exchange ignores before it gives up
+MAX_STRAY_DATAGRAMS = 4
 
 
 class SteamQueryProbe:
-    """Report whether a localhost Steam query endpoint answers A2S_INFO."""
+    """Report whether a localhost Steam query endpoint answers A2S_INFO, and the player count it gives."""
 
-    def __init__(self, timeout_seconds: float = 0.25) -> None:
-        """Store the bounded receive timeout used by each query exchange."""
+    def __init__(
+        self, timeout_seconds: float = 0.25, *,
+        socket_factory: Callable[[], socket.socket] = udp_socket,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        """Store the bounded wait of each query exchange, the socket source (a fake in tests) and the clock."""
         if timeout_seconds <= 0:
             raise ValueError("Steam query timeout must be positive")
         self._timeout_seconds = timeout_seconds
+        self._socket_factory = socket_factory
+        self._clock = clock
 
     def is_ready(self, port: int) -> bool:
         """Return True for a valid direct or challenge-based information reply."""
+        return self.information(port) is not None
+
+    def information(self, port: int) -> InformationAnswer | None:
+        """Return the valid information answer with its player count, or None when none arrived.
+
+        The count is taken from the same answer that proves readiness, so it costs no extra query.
+        """
         if not 1 <= port <= 65_535:
-            return False
+            return None
         try:
             # Keep one source endpoint for the complete challenge exchange
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
-                client.settimeout(self._timeout_seconds)
+            with self._socket_factory() as client:
                 response = self._exchange(client, port, INFO_QUERY)
-                if self._is_information(response):
-                    return True
                 # Complete one challenge round trip when required by the server
-                if self._is_challenge(response):
-                    challenged = self._exchange(client, port, INFO_QUERY + response[5:9])
-                    return self._is_information(challenged)
+                token = challenge_token(response)
+                if token is not None:
+                    response = self._exchange(client, port, INFO_QUERY + token)
         except OSError:
             # Timeout and local network failures mean not ready for this poll
-            return False
-        return False
+            return None
+        if not is_information(response):
+            return None
+        name, game_port = parse_information_identity(response)
+        return InformationAnswer(parse_information_count(response), name, game_port)
 
-    @staticmethod
-    def _exchange(client: socket.socket, port: int, payload: bytes) -> bytes:
-        """Send one bounded UDP request and return the received datagram."""
-        client.sendto(payload, ("127.0.0.1", port))
-        response, _address = client.recvfrom(65_535)
-        return response
+    def _exchange(self, client: socket.socket, port: int, payload: bytes) -> bytes:
+        """Send one request and return the queried server's datagram within the bounded wait.
 
-    @staticmethod
-    def _is_information(response: bytes) -> bool:
-        """Return whether the datagram is an A2S information response."""
-        return len(response) >= 5 and response[:4] == RESPONSE_PREFIX and response[4] == INFO_RESPONSE
-
-    @staticmethod
-    def _is_challenge(response: bytes) -> bool:
-        """Return whether the datagram carries a complete A2S challenge."""
-        return (
-            len(response) >= 9
-            and response[:4] == RESPONSE_PREFIX
-            and response[4] == CHALLENGE_RESPONSE
-        )
+        Datagrams from another address or port are ignored, as the names reader does; a datagram above the
+        size cap fails the receive, and a passed wait raises `TimeoutError`.
+        """
+        client.sendto(payload, (LOCALHOST, port))
+        deadline = self._clock() + self._timeout_seconds
+        for _datagram in range(MAX_STRAY_DATAGRAMS + 1):
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                break
+            # Each receive waits only for what is left of this exchange's wait
+            client.settimeout(remaining)
+            response, address = client.recvfrom(MAX_DATAGRAM_BYTES)
+            if from_queried_server(address, port):
+                return response
+        raise TimeoutError("no answer from the queried server")

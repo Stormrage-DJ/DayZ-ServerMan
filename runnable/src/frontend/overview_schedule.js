@@ -1,4 +1,5 @@
-// "Next scheduled action" card of the Overview: the daily schedule at a glance, its editor behind a disclosure.
+// "Next scheduled action" row of the Overview status board: the daily schedule at a glance, and its editor as a
+// row under it that "Change schedule" opens.
 "use strict";
 
 // Create a UI element through the shared interface helper.
@@ -54,20 +55,20 @@ function scheduleStatusText(schedule) {
   return `${next}${last}`;
 }
 
-// Build the schedule card and wire its load, validation, and save behavior.
-function createScheduleControl(profile) {
-  const card = scheduleNode("article", "panel overview-card schedule-card"); card.id = "overview-schedule";
-  card.dataset.profileId = profile?.profile_id || "";
-  const summary = scheduleNode("strong", "overview-card-lead schedule-summary", "Checking…");
-  // Announce the next run, the last run, and every problem politely.
-  const status = scheduleNode("small", "schedule-status", "Loading schedule…");
-  status.setAttribute("role", "status");
-  status.setAttribute("aria-live", "polite");
-  // Hour and minute are local time; the note says so also before a schedule exists (QF-031).
-  const note = scheduleNode("p", "overview-card-meta", "Runs at local time, only while DayZ-ServerMan is open.");
-  // The editor stays closed until the operator asks for it; a problem opens it.
-  const editor = scheduleNode("details", "schedule-editor");
-  const toggle = scheduleNode("summary", "", "Set schedule");
+// Tone of the summary dot: none set is neutral, a set schedule is green, a run that could not be queued is amber.
+function scheduleTone(schedule) {
+  if (!schedule.action) return "neutral";
+  return schedule.last_status === "QUEUE_FAILED" ? "warning" : "normal";
+}
+
+// Call the host; a thrown bridge call counts as a failed answer, so the page stays (QF-056).
+async function scheduleCall(call) {
+  try { return await call(); } catch (_error) { return null; }
+}
+
+// Build the schedule editor row: hour, minute, the two actions, "Cancel" and "Save schedule".
+function scheduleEditor() {
+  const row = scheduleNode("li", "overview-editor"); row.id = "overview-schedule-editor"; row.hidden = true;
   // Offer hour and minute inputs for the daily run time.
   const fields = scheduleNode("div", "schedule-time");
   const hour = scheduleTimeField("Hour", 0, 23);
@@ -75,39 +76,90 @@ function createScheduleControl(profile) {
   fields.append(hour.label, minute.label);
   // Offer the save-and-stop and save-and-restart actions.
   const choices = scheduleNode("fieldset", "schedule-choices");
-  const legend = scheduleNode("legend", "sr-only", "Scheduled action");
   const stop = scheduleChoice("Save & Stop");
   const restart = scheduleChoice("Save & Restart");
-  choices.append(legend, stop.label, restart.label);
-  const save = scheduleNode("button", "button", "Save schedule");
-  save.type = "button";
-  editor.append(toggle, fields, choices, save);
-  // Enable or disable every interactive control at once.
-  const setDisabled = (disabled) => {
-    [hour.input, minute.input, stop.input, restart.input, save]
-      .forEach((control) => { control.disabled = disabled; });
-  };
+  choices.append(scheduleNode("legend", "sr-only", "Scheduled action"), stop.label, restart.label);
+  const cancel = scheduleNode("button", "button button-compact", "Cancel"); cancel.type = "button";
+  const save = scheduleNode("button", "button button-compact button-primary", "Save schedule"); save.type = "button";
+  const actions = scheduleNode("div", "overview-editor-actions");
+  actions.append(cancel, save);
+  row.append(fields, choices, actions);
   // Keep only one scheduled action selected.
-  const selectOnly = (selected, other) => {
-    if (selected.checked) other.checked = false;
-  };
+  const selectOnly = (selected, other) => { if (selected.checked) other.checked = false; };
   stop.input.addEventListener("change", () => selectOnly(stop.input, restart.input));
   restart.input.addEventListener("change", () => selectOnly(restart.input, stop.input));
-  setDisabled(true);
-  card.append(scheduleNode("h2", "", "Next scheduled action"), summary, status, note, editor);
+  return { row, hour: hour.input, minute: minute.input, stop: stop.input, restart: restart.input, cancel, save };
+}
 
-  // Show a stored schedule in the card while it is still current.
+// Build the schedule row and its editor row, and wire their load, validation, and save behavior.
+function createScheduleControl(profile) {
+  const { row: card, body, action } = window.ServerManOverviewCards.row("overview-schedule", "schedule",
+    "Next scheduled action");
+  card.dataset.profileId = profile?.profile_id || "";
+  const summary = scheduleNode("p", "status-label overview-status schedule-summary status-neutral", "Checking…");
+  // Announce the next run, the last run, and every problem politely.
+  const status = scheduleNode("p", "overview-meta schedule-status", "Loading schedule…");
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  // Hour and minute are local time; the note says so also before a schedule exists (QF-031).
+  const note = scheduleNode("p", "overview-meta overview-meta-subtle", "Runs at local time, only while DayZ-ServerMan is open.");
+  const metas = scheduleNode("div", "overview-metas");
+  metas.append(status, note);
+  body.append(summary, metas);
+  // The editor stays closed until the operator asks for it; a problem opens it.
+  const editor = scheduleEditor();
+  const toggle = scheduleNode("button", "button button-compact schedule-toggle", "Set schedule");
+  toggle.type = "button"; toggle.id = "overview-schedule-toggle";
+  toggle.setAttribute("aria-expanded", "false"); toggle.setAttribute("aria-controls", editor.row.id);
+  action.append(toggle);
+  let stored = null;
+  // Enable or disable every interactive control at once.
+  const setDisabled = (disabled) => {
+    [editor.hour, editor.minute, editor.stop, editor.restart, editor.save, toggle]
+      .forEach((control) => { control.disabled = disabled; });
+  };
+  // Open or close the editor row; closing puts the stored values back.
+  const setOpen = (open) => {
+    editor.row.hidden = !open;
+    toggle.setAttribute("aria-expanded", String(open));
+    if (!open && stored) mirror(stored);
+  };
+  // Mirror a stored schedule into the editor controls.
+  const mirror = (schedule) => {
+    editor.hour.value = String(schedule.hour);
+    editor.minute.value = String(schedule.minute).padStart(2, "0");
+    editor.stop.checked = schedule.action === "stop";
+    editor.restart.checked = schedule.action === "restart";
+  };
+  setDisabled(true);
+  toggle.addEventListener("click", () => {
+    setOpen(editor.row.hidden);
+    if (!editor.row.hidden) editor.hour.focus();
+  });
+  // Cancel drops the edits and any save or validation problem: the row shows the stored schedule again and the
+  // application status no longer warns, because nothing is pending (QF-060).
+  editor.cancel.addEventListener("click", () => {
+    setOpen(false);
+    if (stored) status.textContent = scheduleStatusText(stored);
+    window.ServerManUi.clearHostStatus("schedule");
+    toggle.focus();
+  });
+
+  // Show a stored schedule in the row while it is still current.
   const render = (schedule) => {
     if (!card.isConnected || card.dataset.profileId !== schedule.profile_id) return;
-    // Mirror the stored schedule into the summary and the controls.
-    summary.textContent = scheduleSummaryText(schedule);
+    stored = schedule;
+    setOverviewCardText(summary, scheduleSummaryText(schedule),
+      `status-label overview-status schedule-summary status-${scheduleTone(schedule)}`);
     toggle.textContent = schedule.action ? "Change schedule" : "Set schedule";
-    hour.input.value = String(schedule.hour);
-    minute.input.value = String(schedule.minute).padStart(2, "0");
-    stop.input.checked = schedule.action === "stop";
-    restart.input.checked = schedule.action === "restart";
+    mirror(schedule);
     status.textContent = scheduleStatusText(schedule);
     setDisabled(false);
+  };
+  // A failed host call keeps the page: the row says what failed, the application status names it once.
+  const reportFailure = (text, hostText) => {
+    status.textContent = text;
+    window.ServerManUi.setHostStatus(hostText, "is-warning", "schedule");
   };
   // Load the stored schedule from the host service.
   const load = async () => {
@@ -116,43 +168,44 @@ function createScheduleControl(profile) {
       status.textContent = "Create a server profile before setting a schedule.";
       return;
     }
-    const result = await window.pywebview.api.get_lifecycle_schedule(profile.profile_id);
-    if (!result.success) {
-      summary.textContent = "No scheduled action";
-      status.textContent = "The schedule could not be loaded.";
-      window.ServerManUi.renderHostError(result);
-      return;
+    const result = await scheduleCall(() => window.pywebview.api.get_lifecycle_schedule(profile.profile_id));
+    if (!card.isConnected) return;
+    if (!result?.success) {
+      // The stored schedule is not known, so the head does not claim that none is set.
+      setOverviewCardText(summary, "Schedule not known", "status-label overview-status schedule-summary status-error");
+      return reportFailure("The schedule could not be loaded.", "Schedule could not be loaded");
     }
+    window.ServerManUi.clearHostStatus("schedule");
     render(result.value);
   };
   // Validate the entered time and save the chosen schedule action.
-  save.addEventListener("click", async () => {
+  editor.save.addEventListener("click", async () => {
     // Refuse invalid time values before saving; the editor stays open with the problem.
-    if (!hour.input.checkValidity() || !minute.input.checkValidity()) {
+    if (!editor.hour.checkValidity() || !editor.minute.checkValidity()) {
       status.textContent = "Enter an hour from 0–23 and a minute from 0–59.";
-      editor.open = true;
-      hour.input.reportValidity();
+      setOpen(true);
+      editor.hour.reportValidity();
       return;
     }
     setDisabled(true);
     status.textContent = "Saving schedule…";
-    const action = restart.input.checked ? "restart" : stop.input.checked ? "stop" : null;
-    const result = await window.pywebview.api.save_lifecycle_schedule(
-      profile.profile_id, Number(hour.input.value), Number(minute.input.value), action,
-    );
-    if (!result.success) {
-      status.textContent = "The schedule could not be saved.";
-      editor.open = true;
+    const chosen = editor.restart.checked ? "restart" : editor.stop.checked ? "stop" : null;
+    const result = await scheduleCall(() => window.pywebview.api.save_lifecycle_schedule(
+      profile.profile_id, Number(editor.hour.value), Number(editor.minute.value), chosen));
+    if (!result?.success) {
       setDisabled(false);
-      window.ServerManUi.renderHostError(result);
-      return;
+      setOpen(true);
+      return reportFailure("The schedule could not be saved.", "Schedule could not be saved");
     }
+    window.ServerManUi.clearHostStatus("schedule");
     render(result.value);
+    setOpen(false);
+    toggle.focus();
   });
-  // Start loading the stored schedule as the card is created.
+  // Start loading the stored schedule as the row is created.
   load();
-  return card;
+  return [card, editor.row];
 }
 
-// Publish the schedule card factory for the overview workspace.
+// Publish the schedule row factory for the overview workspace.
 window.ServerManOverviewSchedule = Object.freeze({ create: createScheduleControl });

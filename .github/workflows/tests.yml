@@ -11,9 +11,10 @@ jobs:
   unit:
     name: Unit and static tests
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install pinned packages
@@ -22,30 +23,43 @@ jobs:
         run: python -m compileall -q runnable/src/python
       - name: Run tests that do not start Microsoft Edge
         shell: pwsh
+        # tests.ci_run runs unittest unchanged, then prints each failure and the
+        # counts as annotations, which the public API serves without the job log.
         run: |
           $env:PYTHONPATH = (Resolve-Path .\runnable\src\python).Path
           $edge = Select-String -Path tests\test_*.py -Pattern 'msedge|\bEDGE\b' -CaseSensitive -List | ForEach-Object { $_.Path }
           $modules = Get-ChildItem tests -Filter test_*.py |
             Where-Object { $edge -notcontains $_.FullName } |
             ForEach-Object { "tests.$($_.BaseName)" }
-          python -m unittest $modules
+          python -m tests.ci_run --label=Unit $modules
 
   browser:
     name: Edge-driven interface tests
     runs-on: windows-latest
+    timeout-minutes: 30
     # Hosted runners can keep the temporary Edge profile locked; see docs/development.md.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install pinned packages
         run: python -m pip install -r runnable/requirements.txt
+      - name: Record the Microsoft Edge version
+        shell: pwsh
+        run: |
+          $edge = Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'
+          if (Test-Path $edge) {
+            $version = (Get-Item $edge).VersionInfo.ProductVersion
+            "::notice title=Edge::$edge $version"
+          } else {
+            "::warning title=Edge::msedge.exe is missing at $edge"
+          }
       - name: Run tests that start Microsoft Edge
         shell: pwsh
         run: |
           $env:PYTHONPATH = (Resolve-Path .\runnable\src\python).Path
           $modules = Select-String -Path tests\test_*.py -Pattern 'msedge|\bEDGE\b' -CaseSensitive -List |
             ForEach-Object { "tests.$([IO.Path]::GetFileNameWithoutExtension($_.Path))" }
-          python -m unittest $modules
+          python -m tests.ci_run --label=Edge $modules

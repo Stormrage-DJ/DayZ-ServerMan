@@ -105,14 +105,19 @@ previewAnswer = () => ok({profile_id: "alpha", publication_fingerprint: "b".repe
   missing_key_count: 1, plain_apply_guarded: false,
   targets: [{workshop_id: "111", target_relative: "mods\\alpha", current: true}]});
 await runUpdate(false, currentResult);
-check(dialog() && dialog().textContent.includes("mods\\alpha"), "a missing key did not open the review");
+// QF-055: the review lists only what is written: no current folder, the missing key file.
+check(dialog() && dialog().textContent.includes("No mod folder is copied. Missing key files are added.")
+  && dialog().textContent.includes("1 of 2 verified key file(s) are added") && !dialog().textContent.includes("mods\\alpha"),
+  `a missing key did not open the review: ${dialog()?.textContent}`);
 dialogButton("Cancel").click();
 previewAnswer = () => ok({profile_id: "alpha", publication_fingerprint: "b".repeat(64), key_count: 2,
   missing_key_count: 0, plain_apply_guarded: false,
   targets: [{workshop_id: "111", target_relative: "mods\\alpha", current: true}]});
 // Update & start keeps the review in its short form, because it confirms the start.
 await runUpdate(true, currentResult);
-check(dialog().textContent.includes("No mod folder is copied. Missing key files are added.")
+// QF-055: with no missing key file the short review says that nothing is written.
+check(dialog().textContent.includes("Nothing is written to the server folder: every mod folder and key file is already in place.")
+  && !dialog().textContent.includes("Missing key files are added")
   && dialog().textContent.includes("will start this server") && !dialog().textContent.includes("mods\\alpha"),
   `case E start: ${dialog().textContent}`);
 dialogButton("Cancel").click();
@@ -130,9 +135,12 @@ await serverState("STOPPED");
 await runUpdate(false, empty);
 same(feedback(), "This profile has no Workshop mods.", "case N, Update all");
 await runUpdate(true, empty);
-check(dialog()?.textContent.includes("No mod folder is copied."), "case N start has no short review");
+check(dialog()?.textContent.includes("Nothing is written to the server folder"), "case N start has no short review");
 dialogButton("Cancel").click();
 // Any other verified result opens the full review; a failed preview opens none.
+previewAnswer = () => ok({profile_id: "alpha", publication_fingerprint: "b".repeat(64), key_count: 2,
+  missing_key_count: 0, plain_apply_guarded: false,
+  targets: [{workshop_id: "111", target_relative: "mods\\alpha", current: false}]});
 await runUpdate(false, updateResult);
 check(dialog().textContent.includes("Workshop 111: mods\\alpha") && dialog().textContent.includes("2 verified key file(s)"),
   "case A review");

@@ -118,6 +118,12 @@ ERROR_TEXTS: dict[str, str] = {
     "GAMEPLAY_NOT_ENABLED": "Turn on “Use gameplay configuration” in Configuration first.",
     "OPERATION_NOT_CANCELLABLE": "This operation can no longer be cancelled.",
 }
+# Text per operation kind for a code whose general text names another operation; it wins over the general text
+KIND_ERROR_TEXTS: dict[str, dict[str, str]] = {
+    "AUTHENTICATE_STEAMCMD": {
+        "UPDATE_RESULT_UNKNOWN": "SteamCMD did not close cleanly after the Steam sign-in, so the sign-in cannot be confirmed. Changes are blocked.",
+    },
+}
 # Known host sentences of a rejected request, by a fragment of the host message
 REQUEST_TEXTS: tuple[tuple[str, str], ...] = (
     ("must contain only letters, digits, or underscore", "The Steam account name may contain only letters, digits and underscores."),
@@ -137,15 +143,22 @@ _IMPORT_BLOCK = ("A legacy import was interrupted and could not be undone safely
                  "Restart DayZ-ServerMan; it checks the unfinished import again when it starts.")
 # Known reasons of a recovery block, by a fragment of the host reason; the first match wins
 BLOCK_REASONS: tuple[tuple[str, str], ...] = (
-    ("Direct profile restore", "A profile restore from a backup archive did not finish. Stop the DayZ server, then restart DayZ-ServerMan; it checks the unfinished restore when it starts."),
+    # A direct profile restore is worded by cause (QF-075); these rows come before "restore recovery"
+    ("Direct profile restore journals", "A profile restore from a backup archive did not finish, and its restore records cannot be read, so DayZ-ServerMan cannot finish or undo it. Restart DayZ-ServerMan to read them again."),
+    ("Direct profile restore recovery requires a configured DayZ root", "A profile restore from a backup archive did not finish, and it cannot be checked because no DayZ server folder is set. In Settings, set the DayZ server folder that the restore used and change nothing else. Then save and restart DayZ-ServerMan."),
+    ("Direct profile restore recovery requires attention", "A profile restore from a backup archive did not finish, and DayZ-ServerMan cannot finish or undo it safely because the DayZ server folder or the restored files changed or cannot be opened. If a drive or folder was unavailable, make it available again, then restart DayZ-ServerMan."),
+    ("Direct profile restore requires recovery", "A profile restore from a backup archive did not finish. Stop the DayZ server, then restart DayZ-ServerMan; it checks the unfinished restore when it starts."),
+    # A backup restore without a DayZ server folder (QF-069); it contains "restore recovery", so it comes first
+    ("Backup restore recovery requires a configured DayZ root", "A backup restore did not finish, and it cannot be checked because no DayZ server folder is set. In Settings, set the DayZ server folder that the restore used and change nothing else. Then save, and open Backups or restart DayZ-ServerMan."),
     ("restore recovery", "A backup restore did not finish cleanly. Open Backups; DayZ-ServerMan checks the unfinished restore again there."),
     ("mod publication recovery", "Applying mods to the server folder was interrupted and could not be undone safely. Restart DayZ-ServerMan; it checks the server folder again when it starts."),
-    ("unresolved mod publication", "Applying mods to the server folder was interrupted, and it cannot be checked because no DayZ server folder is set."),
+    ("unresolved mod publication", "Applying mods to the server folder was interrupted, and it cannot be checked because no DayZ server folder is set. In Settings, set the DayZ server folder that the apply used and change nothing else. Then save and restart DayZ-ServerMan."),
     ("interrupted mod publication", "Applying mods to the server folder was interrupted and must be finished. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then restart DayZ-ServerMan."),
     ("interrupted backup restore", "A backup restore was interrupted and must be finished. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then open Backups again or restart DayZ-ServerMan."),
     ("interrupted direct profile restore", "A profile restore from a backup archive was interrupted and must be finished. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then restart DayZ-ServerMan."),
     ("interrupted profile creation", "Creating a profile was interrupted and must be finished. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then restart DayZ-ServerMan."),
     ("interrupted SteamCMD update", "A mod update was interrupted, so its result is not known. Restart DayZ-ServerMan, then update the mods again."),
+    ("process-tree exit after the sign-in", "SteamCMD did not close cleanly after the Steam sign-in, so the sign-in cannot be confirmed. Close SteamCMD, restart DayZ-ServerMan, then sign in again."),
     ("process-tree exit", "SteamCMD did not close cleanly, so the mod update cannot be confirmed. Close SteamCMD, restart DayZ-ServerMan, then update the mods again."),
     ("Profile provisioning recovery", "Creating a profile was interrupted and could not be undone safely. Restart DayZ-ServerMan; it checks the unfinished profile again when it starts."),
     ("migration recovery", _IMPORT_BLOCK),
@@ -162,6 +175,8 @@ ROLE_LABELS: dict[str, str] = {
 # An upper-case identifier, a snake_case word, a camelCase word, or a bracketed list of names
 _IDENTIFIER = re.compile(r"[A-Z]{2,}_[A-Z_]+|\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b|\b[a-z]+[A-Z]\w*|[\[\]{}]")
 _STATE_NAME = re.compile(r"\b(" + "|".join(SERVER_STATES) + r")\b")
+# A sentence that states the block; a result whose own sentence states it drops it from its error text
+BLOCK_SENTENCE = re.compile(r"\s*Changes are blocked(?: until [^.]*)?\.")
 _ROLE_NAME = re.compile(r"\b(" + "|".join(sorted(ROLE_LABELS, key=len, reverse=True)) + r")\b")
 
 
@@ -183,6 +198,11 @@ def plain_sentence(message: object) -> str | None:
     # Start with a capital letter and end with a full stop
     text = text[0].upper() + text[1:]
     return text if text[-1] in ".!?" else f"{text}."
+
+
+def without_block_sentence(text: str) -> str:
+    """Return an error text without the sentences that state the block, for a result that states it itself."""
+    return BLOCK_SENTENCE.sub("", text).strip()
 
 
 def restart_apply_text(
@@ -240,8 +260,12 @@ def conflict_text(message: object, reason: object = None, owner: object = None) 
     return f"{BLOCKED_TEXT} {block_reason_text(text, owner)}"
 
 
-def error_text(code: object, message: object, owner: object = None) -> str:
-    """Turn a host error code and message into operator text; a code is never printed."""
+def error_text(code: object, message: object, owner: object = None, kind: object = None) -> str:
+    """Turn a host error code and message into operator text; a code is never printed.
+
+    `kind` is the operation kind of the error; it picks its own text for a code
+    whose general text names another operation.
+    """
     text = str(message or "")
     # A message that names a server state becomes one sentence about that state
     states = _STATE_NAME.findall(text)
@@ -249,6 +273,9 @@ def error_text(code: object, message: object, owner: object = None) -> str:
         return f"This cannot be done while the server is {SERVER_STATES[states[-1] if states else 'RUNNING_EXTERNAL']}."
     if code == "MUTATION_CONFLICT":
         return conflict_text(text, owner=owner)
+    own = KIND_ERROR_TEXTS.get(kind, {}) if isinstance(kind, str) else {}
+    if code in own:
+        return own[str(code)]
     if code in ERROR_TEXTS:
         return ERROR_TEXTS[str(code)]
     # A rejected request with a known host sentence has its own wording

@@ -212,3 +212,5 @@ class PendingOperation:
     correlation_id: str | None = None
     log_fields: Mapping[str, Any] = field(default_factory=dict)
     cancellation: Event = field(default_factory=Event)
+    # True only for a repair save that the lane admitted through "no DayZ server folder" blocks (QF-069)
+    admitted_through_recovery_block: bool = False

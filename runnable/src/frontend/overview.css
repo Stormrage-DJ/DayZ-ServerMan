@@ -1,51 +1,106 @@
-/* Styles for the Overview: notice area, server panel, and the three cards */
-.overview-top { display: grid; gap: var(--primitive-space-4); }
+/* Styles for the Overview (variant C, D17, tightened for QF-059): a one-row heading, compact notice, the server strip,
+   and the status board */
 .workspace { container: workspace / inline-size; }
-/* Server panel: the state at the left, the four controls at the right */
-.overview-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--primitive-space-4) var(--primitive-space-6); align-items: start; }
-.overview-server-state { display: grid; justify-items: start; gap: var(--primitive-space-2); min-width: 0; }
-.overview-server-state h2, .overview-server-state p { margin: 0; }
-.overview-state { font-size: 24px; }
-.overview-uptime { color: var(--color-text-muted); }
-.overview-process { width: 100%; max-width: 34rem; color: var(--color-text-muted); }
-.overview-process summary, .schedule-editor summary { width: fit-content; min-height: 28px; cursor: pointer; }
-.overview-process .detail-list { margin-top: var(--primitive-space-2); }
-.overview-controls .action-row { align-items: center; justify-content: flex-end; margin: 0; }
-/* Cards: updates, last backup, next scheduled action */
-.overview-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--primitive-space-4); align-items: start; }
-.overview-card { display: grid; gap: var(--primitive-space-2); min-width: 0; }
-.overview-card h2, .overview-card p { margin: 0; }
-.overview-card-body { display: grid; justify-items: start; gap: var(--primitive-space-2); min-width: 0; }
-.overview-card-lead { font-size: 15px; }
-.overview-card-meta, .schedule-status { color: var(--color-text-muted); font-size: 13px; line-height: 1.45; }
-.overview-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--primitive-space-1) var(--primitive-space-3); }
-.overview-card-meta[hidden] { display: none; }
-.overview-card-actions { margin-top: var(--primitive-space-2); }
-.overview-build { display: grid; justify-items: start; gap: var(--primitive-space-2); min-width: 0;
-  padding-top: var(--primitive-space-2); border-top: 1px solid var(--color-border); }
-.overview-build[hidden] { display: none; }
-.overview-build-title { margin: 0; font-size: 13px; font-weight: 600; }
-.overview-build p { margin: 0; }
-.overview-build-summary { align-items: baseline; }
-.overview-build-summary::before { flex: none; transform: translateY(-1px); }
-/* Schedule editor inside its disclosure: time fields, the two actions, and the save button */
-.schedule-editor { color: var(--color-text-muted); }
-.schedule-editor[open] { display: grid; justify-items: start; gap: var(--primitive-space-3); }
+.overview-top { display: grid; gap: var(--primitive-space-4); }
+/* T1: 12 px between the stacked blocks of the Overview */
+body[data-section="overview"] .content-region, .overview-top { gap: var(--primitive-space-3); }
+.overview-panel [hidden], .overview-board [hidden] { display: none; }
+/* Heading on Overview only: title, server context and description on one baseline row; it wraps when narrow */
+/* T1: 16 px above the heading, 12 px under it */
+body[data-section="overview"] main { padding-top: var(--primitive-space-4); padding-bottom: var(--primitive-space-4); }
+body[data-section="overview"] .page-heading { align-items: center; margin-bottom: var(--primitive-space-3); }
+body[data-section="overview"] .page-heading-copy { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--primitive-space-4); }
+body[data-section="overview"] h1 { margin: 0; font-size: 26px; }
+body[data-section="overview"] .page-heading p { line-height: 1.4; }
+body[data-section="overview"] #page-description { color: var(--color-text-subtle); font-size: 13px; }
+/* Compact notice (T2): 10 px block padding; the title runs in at the start of the text */
+.overview-notice { padding: 10px var(--primitive-space-4); font-size: 13px; line-height: 1.45; }
+.overview-notice h2, .overview-notice p { display: inline; margin: 0; font-size: 13px; line-height: 1.45; }
+.overview-notice h2 { margin-right: var(--primitive-space-2); color: var(--color-text); font-size: 14px; }
+.overview-notice .action-row { margin-top: var(--primitive-space-2); }
+/* Small upper-case heading, the style of the sidebar group labels; meta lines; status heads and reasons */
+.overview-eyebrow { margin: 0; color: var(--color-text-subtle); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.overview-meta { margin: 0; color: var(--color-text-muted); font-size: 13px; line-height: 1.45; }
+.overview-meta-subtle { color: var(--color-text-subtle); }
+.overview-metas { display: flex; flex-wrap: wrap; gap: 0 var(--primitive-space-3); }
+.overview-reason { color: var(--color-text); }
+.overview-status { margin: 0; font-size: 14px; line-height: 1.4; }
+.overview-status.status-label { align-items: baseline; }
+.overview-status.status-label::before { flex: none; transform: translateY(-1px); }
+.status-neutral.overview-status, .status-neutral.overview-state { color: var(--color-text); }
+.status-neutral.overview-status::before, .status-neutral.overview-state::before { background: var(--color-text-subtle); }
+/* Server strip: the state at the left, "Backup after stop" above the three lifecycle buttons at the right */
+.overview-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--primitive-space-3) var(--primitive-space-6); padding: var(--primitive-space-3) var(--primitive-space-5); }
+.overview-server-state { display: grid; justify-items: start; gap: 2px; min-width: 0; }
+.overview-state-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--primitive-space-1) var(--primitive-space-3); }
+.overview-state { font-size: 22px; line-height: 1.25; }
+.overview-state-detail { color: var(--color-text); }
+.overview-facts { display: flex; flex-wrap: wrap; gap: 0 var(--primitive-space-2); }
+.overview-facts span + span::before { margin-right: var(--primitive-space-2); content: "·"; }
+.overview-process-note { color: var(--color-status-warning); font-weight: 600; }
+.overview-process { width: 100%; max-width: 34rem; margin-top: var(--primitive-space-2); font-size: 13px; }
+.overview-controls { display: grid; justify-items: end; gap: var(--primitive-space-2); }
+.overview-backup-choice { color: var(--color-text-muted); }
+.overview-buttons { align-items: center; justify-content: flex-end; gap: var(--primitive-space-2); margin: 0; }
+.overview-button-gap { width: var(--primitive-space-3); }
+/* Status board (T4): two lists that read as one, named by a visually hidden heading; every row has the same four
+   columns (T6: a 104 px title column) */
+.overview-board { display: grid; padding: var(--primitive-space-1) var(--primitive-space-5); }
+.overview-list { display: grid; margin: 0; padding: 0; list-style: none; }
+.overview-list + .overview-list { border-top: 1px solid var(--color-border); }
+.overview-row { display: grid; grid-template-columns: 20px 104px minmax(0, 1fr) auto; align-items: start; gap: var(--primitive-space-3); padding: 8px 0; }
+.overview-row + .overview-row, .overview-editor { border-top: 1px solid var(--color-border); }
+.overview-row-icon { width: 20px; height: 20px; margin-top: 1px; fill: none; stroke: var(--color-text-subtle); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.overview-row-title { margin: 1px 0 0; color: var(--color-text-muted); font-size: 14px; font-weight: 600; line-height: 1.3; }
+.overview-row-body { display: grid; justify-items: start; gap: 2px; min-width: 0; }
+.overview-row-action { display: flex; gap: var(--primitive-space-2); }
+/* T5: "Check now" is a link button after "Last checked …" in the Mods row; off while a check runs */
+.overview-check-now { min-height: 20px; line-height: 1.45; }
+.overview-check-now:disabled { color: var(--color-text-subtle); cursor: not-allowed; text-decoration: none; }
+/* Schedule editor: a row under the schedule row */
+.overview-editor { display: flex; flex-wrap: wrap; align-items: end; gap: var(--primitive-space-3) var(--primitive-space-5); padding: var(--primitive-space-3) 0 var(--primitive-space-3) 144px; }
+.overview-editor .schedule-choices { padding-bottom: 8px; }
+.overview-editor-actions { display: flex; gap: var(--primitive-space-2); margin-left: auto; }
 .schedule-time { display: flex; gap: var(--primitive-space-2); }
-.schedule-time-field { display: grid; gap: var(--primitive-space-1); font-size: 12px; }
+.schedule-time-field { display: grid; gap: var(--primitive-space-1); color: var(--color-text-muted); font-size: 12px; }
 .schedule-time-field input { width: 72px; }
 .schedule-choices { display: flex; flex-wrap: wrap; min-width: 0; gap: var(--primitive-space-3); border: 0; margin: 0; padding: 0; }
 .schedule-choice { white-space: nowrap; }
-/* Medium workspace: two columns, the schedule card spans both; the controls wrap under the state */
-@container workspace (max-width: 979px) {
-  .overview-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .schedule-card { grid-column: 1 / -1; }
-}
-@container workspace (max-width: 859px) {
+/* D18 player count: a link button after the state, like "Process details"; a full server adds a neutral "Full" mark */
+/* Like "Check now" (T5): a 20 px link, so a count that wraps under a long state adds no more than the text line */
+.overview-players-toggle { min-height: 20px; line-height: 1.45; font-variant-numeric: tabular-nums; }
+.overview-players-unknown { margin: 0; color: var(--color-text-muted); font-size: 13px; }
+.overview-players-full { display: inline-flex; align-items: center; min-height: 20px; padding: 0 var(--primitive-space-2); border: 1px solid var(--color-border); border-radius: 999px; color: var(--color-text-muted); font-size: 12px; font-weight: 600; }
+/* Names panel: a full-width part of the server strip under the state and the controls */
+.overview-players { grid-column: 1 / -1; display: grid; gap: var(--primitive-space-2); padding-top: var(--primitive-space-3); border-top: 1px solid var(--color-border); }
+.overview-players-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--primitive-space-1) var(--primitive-space-3); }
+/* The busy line of a read sits centred in the head, so a refresh does not move the list */
+.overview-players-head .mods-update-busy { align-self: center; }
+/* Names: a grid of name and time connected, 7 rows high, then it scrolls inside; the lower edge fades while more
+   names follow, and the cue line under the list says how many */
+.overview-players-scroll { position: relative; min-width: 0; }
+.overview-players-scroll.has-more::after { position: absolute; right: 0; bottom: 0; left: 0; height: 20px; background: linear-gradient(to bottom, transparent, var(--panel-background)); content: ""; pointer-events: none; }
+.overview-players-list { position: relative; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 var(--primitive-space-5); max-height: 182px; margin: 0; padding: 0 var(--primitive-space-1) 0 0; overflow-y: auto; list-style: none; }
+.overview-players-list li { display: flex; align-items: baseline; justify-content: space-between; gap: var(--primitive-space-3); min-width: 0; padding: 4px 0; border-bottom: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent); font-size: 13px; line-height: 1.4; }
+.overview-player-name { min-width: 0; overflow: hidden; color: var(--color-text); text-overflow: ellipsis; white-space: nowrap; }
+.overview-player-name.is-unnamed { color: var(--color-text-subtle); font-style: italic; }
+.overview-player-time { flex: none; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+.overview-players-list:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
+.overview-players-more { color: var(--color-text-subtle); font-size: 12px; }
+.overview-players-more::before { margin-right: var(--primitive-space-1); content: "▾"; }
+/* Medium and narrow workspace: the controls go under the state; in each row the title goes above the state */
+@container workspace (max-width: 759px) {
+  .overview-players-list { grid-template-columns: 1fr; max-height: 240px; }
   .overview-panel { grid-template-columns: 1fr; }
-  .overview-controls .action-row { justify-content: flex-start; }
+  .overview-controls { justify-items: start; }
+  .overview-buttons { justify-content: flex-start; }
+  .overview-row { grid-template-columns: 20px minmax(0, 1fr) auto; row-gap: var(--primitive-space-1); }
+  .overview-row-title { grid-column: 2; }
+  .overview-row-body { grid-column: 2 / -1; grid-row: 2; }
+  .overview-row-action { grid-column: 3; grid-row: 1; }
+  .overview-editor { padding-left: 32px; }
 }
-/* Narrow workspace: one column */
-@container workspace (max-width: 659px) {
-  .overview-cards { grid-template-columns: 1fr; }
+/* Forced colours: the row icons and the status dots follow the system colours */
+@media (forced-colors: active) {
+  .overview-row-icon { stroke: CanvasText; }
 }

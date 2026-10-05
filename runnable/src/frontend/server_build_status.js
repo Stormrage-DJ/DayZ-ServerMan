@@ -1,5 +1,5 @@
-// Server build status: the operator wording of the DayZ server build check and its part of the Overview
-// "Updates" card. No raw state, reason, class or code is printed.
+// Server build status: the operator wording of the DayZ server build check and its row of the Overview
+// status board. No raw state, reason, class or code is printed.
 "use strict";
 
 // Why the newest build could not be read, per failure code of the check run.
@@ -71,8 +71,10 @@ function serverBuildSummary(build) {
     const reason = serverBuildUnknownReasons[build.reason] || "the Steam installation record could not be read";
     return { text: `The installed DayZ server build is not known: ${reason}.`, tone: "neutral" };
   }
-  return { text: `Could not check the DayZ server build: ${serverBuildCheckReason(build)}.`,
-    tone: build.check_state === "FAILED" ? "error" : "neutral" };
+  // The row shows a short head and the reason under it in normal weight.
+  const reason = serverBuildCheckReason(build);
+  return { text: `Could not check the DayZ server build: ${reason}.`, head: "Could not check",
+    reason: `${reason[0].toUpperCase()}${reason.slice(1)}.`, tone: build.check_state === "FAILED" ? "error" : "neutral" };
 }
 
 // Return the detail line: installed build, Steam build with its time, and the last check.
@@ -102,28 +104,32 @@ function serverBuildLines(build) {
   return Object.freeze({ ...serverBuildSummary(build), detail: serverBuildDetail(build), advice, busy });
 }
 
-// Build the server part of the "Updates" card; the card fills it on every update-state change.
+// Build the "DayZ server" row of the status board; the board fills it on every update-state change.
 function renderServerBuildPart() {
-  const part = overviewNode("div", "overview-build"); part.id = "overview-build"; part.hidden = true;
-  part.append(overviewNode("h3", "overview-build-title", "DayZ server"),
-    overviewNode("p", "status-label overview-build-summary"), overviewNode("p", "overview-card-meta overview-build-detail"),
-    overviewNode("p", "overview-card-meta overview-build-advice"), overviewNode("p", "overview-card-meta overview-build-busy"));
-  return part;
+  const { row, body } = window.ServerManOverviewCards.row("overview-build", "server", "DayZ server");
+  row.hidden = true;
+  // Guidance stands before the build numbers; every line after the head wraps beside the others.
+  const metas = overviewNode("div", "overview-metas");
+  metas.append(overviewNode("p", "overview-meta overview-reason overview-build-reason"),
+    overviewNode("p", "overview-meta overview-reason overview-build-advice"),
+    overviewNode("p", "overview-meta overview-build-busy"), overviewNode("p", "overview-meta overview-build-detail"));
+  body.append(overviewNode("p", "status-label overview-status overview-build-summary"), metas);
+  return row;
 }
 
-// Write the server build state into the card part; an answer without it hides the part.
+// Write the server build state into its row; an answer without it hides the row.
 function fillServerBuildPart(status) {
-  const part = document.getElementById("overview-build");
-  if (!part) return;
+  const row = document.getElementById("overview-build");
+  if (!row) return;
   const build = status?.server_build;
-  part.hidden = !build;
+  row.hidden = !build;
   if (!build) return;
   const lines = serverBuildLines(build);
-  setOverviewCardText(part.querySelector(".overview-build-summary"), lines.text,
-    `status-label overview-build-summary status-${lines.tone}`);
-  setOverviewCardText(part.querySelector(".overview-build-detail"), lines.detail);
+  window.ServerManOverviewCards.status(row.querySelector(".overview-build-summary"),
+    row.querySelector(".overview-build-reason"), lines, "overview-build-summary");
+  setOverviewCardText(row.querySelector(".overview-build-detail"), lines.detail);
   for (const [selector, text] of [[".overview-build-advice", lines.advice], [".overview-build-busy", lines.busy]]) {
-    const node = part.querySelector(selector);
+    const node = row.querySelector(selector);
     setOverviewCardText(node, text);
     node.hidden = !text;
   }

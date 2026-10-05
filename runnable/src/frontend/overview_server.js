@@ -1,4 +1,5 @@
-// Overview "Server" panel: the state once, the uptime, the process details, and the four lifecycle controls.
+// Overview server strip: the state once, the process facts written out while the server runs, the
+// "Process details" disclosure while it does not, an always-visible diagnostic note, and the four lifecycle controls.
 "use strict";
 
 // Why a lifecycle control is off, per server state that the page read.
@@ -16,6 +17,8 @@ const overviewBlockReasons = Object.freeze({
   setup: "Complete the setup in Settings first.",
   profile: "Create a server profile first.",
 });
+// States in which a server process runs; only these show the uptime and the process facts in line.
+const OVERVIEW_RUNNING_STATES = Object.freeze(["RUNNING_MANAGED", "RUNNING_EXTERNAL"]);
 
 // Word a duration: under a minute, minutes, hours and minutes, and days and hours from 48 hours on.
 function overviewDuration(milliseconds) {
@@ -27,21 +30,22 @@ function overviewDuration(milliseconds) {
   return `${Math.floor(hours / 24)} d ${hours % 24} h`;
 }
 
-// Describe the uptime line: text, and the start time as tooltip when it is known.
+// Describe the uptime: text, and the start time as tooltip when it is known. A server that does not run has
+// no uptime, so the text is empty and no line is drawn (QF-057).
 function overviewUptime(status, now = Date.now()) {
-  const running = ["RUNNING_MANAGED", "RUNNING_EXTERNAL"].includes(status?.state);
-  if (!running) return { text: "Not running", title: "" };
+  if (!OVERVIEW_RUNNING_STATES.includes(status?.state)) return { text: "", title: "" };
   const started = status.state === "RUNNING_MANAGED" && status.started_at ? new Date(status.started_at) : null;
   if (!started || Number.isNaN(started.getTime())) return { text: "Uptime not known", title: "" };
   return { text: `Running for ${overviewDuration(now - started.getTime())}`,
     title: `Started ${started.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}` };
 }
 
-// Write the uptime line only when its text changed.
+// Write the uptime only when its text changed; without a running server there is no uptime element.
 function refreshOverviewUptime() {
   const line = document.getElementById("overview-uptime");
   if (!line || !overviewState.status) return;
   const uptime = overviewUptime(overviewState.status);
+  if (!uptime.text) return;
   if (line.textContent !== uptime.text) line.textContent = uptime.text;
   if (uptime.title) line.title = uptime.title; else line.removeAttribute("title");
 }
@@ -75,7 +79,7 @@ function overviewAction(label, action, reason) {
   if (reason) {
     button.disabled = true;
     button.title = reason;
-    // The notice above the panel says the same in full; the control refers to it when it is shown.
+    // The notice above the strip says the same in full; the control refers to it when it is shown.
     if (document.getElementById("overview-running-notice")) {
       button.setAttribute("aria-describedby", "overview-running-notice");
     }
@@ -84,57 +88,100 @@ function overviewAction(label, action, reason) {
   return window.ServerManBusy?.mark(button) || button;
 }
 
-// Build the closed "Process details" disclosure: process identifier, query port, and the diagnostic note.
-function overviewProcessDetails(status) {
-  const details = overviewNode("details", "overview-process"); details.id = "overview-process";
-  const summary = overviewNode("summary", "", "Process details"); summary.id = "overview-process-summary";
-  details.append(summary);
-  const list = overviewNode("dl", "detail-list");
-  [
+// Return the process values: identifier, query port, and the note; an empty value is said as such.
+function overviewProcessValues(status) {
+  return [
     ["Process ID", status.process_id ? String(status.process_id) : "None"],
     ["Steam query port", status.query_port ? String(status.query_port) : "Not known"],
     ["Note", status.diagnostic_code
       ? window.ServerManDiagnosticLabels.process(status.diagnostic_code) : "No problem reported."],
-  ].forEach(([term, description]) => {
-    list.append(overviewNode("dt", "", term), overviewNode("dd", "", description));
-  });
-  details.append(list);
-  return details;
+  ];
 }
 
-// Build the "Server" panel for the state, the selected profile, and the blockers of the page.
+// Build the facts of a running process in one line: uptime, process identifier, and query port.
+function overviewProcessFacts(status) {
+  const facts = overviewNode("p", "overview-meta overview-facts");
+  const uptime = overviewUptime(status);
+  const line = overviewNode("span", "", uptime.text); line.id = "overview-uptime";
+  if (uptime.title) line.title = uptime.title;
+  const [pid, port] = overviewProcessValues(status);
+  facts.append(line, overviewNode("span", "", `${pid[0]} ${pid[1]}`), overviewNode("span", "", `${port[0]} ${port[1]}`));
+  return facts;
+}
+
+// Build the "Process details" toggle and its closed list; the list keeps the empty values reachable (D17).
+function overviewProcessDisclosure(status) {
+  const toggle = overviewNode("button", "link-button overview-process-toggle", "Process details");
+  toggle.type = "button"; toggle.id = "overview-process-toggle";
+  toggle.setAttribute("aria-expanded", "false"); toggle.setAttribute("aria-controls", "overview-process");
+  const list = overviewNode("dl", "detail-list overview-process"); list.id = "overview-process"; list.hidden = true;
+  overviewProcessValues(status).forEach(([term, description]) => {
+    list.append(overviewNode("dt", "", term), overviewNode("dd", "", description));
+  });
+  toggle.addEventListener("click", () => setOverviewProcessOpen(list.hidden));
+  return { toggle, list };
+}
+
+// Open or close the process list; a redraw calls it to keep the operator's choice.
+function setOverviewProcessOpen(open) {
+  const list = document.getElementById("overview-process");
+  const toggle = document.getElementById("overview-process-toggle");
+  if (!list || !toggle) return;
+  list.hidden = !open;
+  toggle.setAttribute("aria-expanded", String(open));
+}
+
+// Build the server strip for the state, the selected profile, and the blockers of the page.
 function renderOverviewServer(context) {
-  const [stateLabel, stateClass, stateDetail] = window.ServerManOverviewReadiness.presentation(context.status);
+  const status = context.status;
+  const [stateLabel, stateClass, stateDetail] = window.ServerManOverviewReadiness.presentation(status);
   const panel = overviewNode("section", "panel overview-panel"); panel.id = "overview-server";
+  panel.setAttribute("aria-labelledby", "overview-server-title");
   const copy = overviewNode("div", "overview-server-state");
-  const uptime = overviewUptime(context.status);
-  const uptimeLine = overviewNode("p", "overview-uptime", uptime.text); uptimeLine.id = "overview-uptime";
-  if (uptime.title) uptimeLine.title = uptime.title;
   // The heading takes the focus when the control that held it is off after a redraw.
-  const title = overviewNode("h2", "", "Server"); title.id = "overview-server-title"; title.tabIndex = -1;
-  copy.append(title,
-    overviewNode("strong", `status-label overview-state ${stateClass}`, stateLabel),
-    overviewNode("p", "overview-state-detail", stateDetail), uptimeLine, overviewProcessDetails(context.status));
+  const title = overviewNode("h2", "overview-eyebrow", "Server"); title.id = "overview-server-title"; title.tabIndex = -1;
+  const row = overviewNode("div", "overview-state-row");
+  row.append(title, overviewNode("strong", `status-label overview-state ${stateClass}`, stateLabel));
+  // The player count follows the state while the server runs; its names panel is the last part of the strip (D18).
+  const players = window.ServerManOverviewPlayers.strip(status);
+  row.append(...players.row);
+  // A problem of the process is always visible, in warning colour, beside the detail sentence.
+  const metas = overviewNode("div", "overview-metas");
+  metas.append(overviewNode("p", "overview-meta overview-state-detail", stateDetail));
+  if (status.diagnostic_code) {
+    metas.append(overviewNode("p", "overview-meta overview-process-note",
+      window.ServerManDiagnosticLabels.process(status.diagnostic_code)));
+  }
+  copy.append(row, metas);
+  // A running process has its facts written out; otherwise the empty values sit behind "Process details".
+  if (OVERVIEW_RUNNING_STATES.includes(status.state)) copy.append(overviewProcessFacts(status));
+  else {
+    const disclosure = overviewProcessDisclosure(status);
+    row.append(disclosure.toggle);
+    copy.append(disclosure.list);
+  }
   // All four controls stay visible in every state; a control that is off says why.
   const controls = overviewNode("div", "overview-controls");
-  const actions = overviewNode("div", "action-row");
   const reasons = overviewControlStates(context);
-  const backupChoice = window.ServerManOverviewBackup.choice(context.profile);
-  const start = overviewAction("Start server", "start", reasons.start);
-  const stop = overviewAction("Save & Stop", "stop", reasons.stop);
-  const restart = overviewAction("Save & Restart", "restart", reasons.restart);
-  actions.append(backupChoice, start, stop, restart);
-  controls.append(actions);
+  const buttons = overviewNode("div", "action-row overview-buttons");
+  buttons.append(overviewAction("Start server", "start", reasons.start),
+    overviewNode("span", "overview-button-gap"),
+    overviewAction("Save & Stop", "stop", reasons.stop), overviewAction("Save & Restart", "restart", reasons.restart));
+  buttons.querySelector(".overview-button-gap").setAttribute("aria-hidden", "true");
+  // "Backup after stop" stands above the buttons it affects; the focus order follows the reading order.
+  controls.append(window.ServerManOverviewBackup.choice(context.profile), buttons);
   panel.append(copy, controls);
+  if (players.panel) panel.append(players.panel);
   return panel;
 }
 
 // The uptime follows the clock, so it is recomputed on each poll tick of the shell.
 document.addEventListener("serverman:poll-tick", refreshOverviewUptime);
 
-// Publish the server panel for the Overview page.
+// Publish the server strip for the Overview page.
 window.ServerManOverviewServer = Object.freeze({
   render: renderOverviewServer,
   uptime: overviewUptime,
   refreshUptime: refreshOverviewUptime,
+  setProcessOpen: setOverviewProcessOpen,
 });

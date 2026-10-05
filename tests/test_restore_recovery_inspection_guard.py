@@ -118,7 +118,7 @@ class RestoreRecoveryInspectionTests(RestoreGuardFixture, unittest.TestCase):
     def test_startup_unresolved_block_is_lifted_by_the_backups_inspection(self) -> None:
         """The DayZ folder could not be read at startup; the sentence says: open Backups."""
         self.assert_startup_block_is_lifted_by_the_inspection(
-            "Mutations are blocked by unresolved restore recovery.", unreadable=True)
+            "Backup restore recovery requires a configured DayZ root.", unreadable=True)
 
     def test_each_state_that_is_not_stopped_writes_nothing_and_stays_blocked(self) -> None:
         """Running, starting, stopping, outside the manager or unknown: no write, blocked with the reason."""

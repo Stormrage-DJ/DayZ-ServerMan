@@ -18,6 +18,7 @@ from dayz_serverman.application.server_readiness import (  # noqa: E402
 )
 from dayz_serverman.domain.lifecycle import LifecycleSnapshot, ServerReadiness, ServerState  # noqa: E402
 from dayz_serverman.domain.models import ManagerSettings  # noqa: E402
+from dayz_serverman.domain.online_players import InformationAnswer, PlayerCount  # noqa: E402
 from dayz_serverman.domain.profiles import ProfileInput, ProfileRecord  # noqa: E402
 from tests.profile_fixtures import profile_payload  # noqa: E402
 
@@ -62,12 +63,13 @@ class FakeProbe:
     def __init__(self) -> None:
         """Start not ready with no recorded calls."""
         self.ready = False
+        self.count: PlayerCount | None = None
         self.ports: list[int] = []
 
-    def is_ready(self, port: int) -> bool:
-        """Record the port and return the scripted result."""
+    def information(self, port: int) -> InformationAnswer | None:
+        """Record the port and return the scripted answer with its player count."""
         self.ports.append(port)
-        return self.ready
+        return InformationAnswer(self.count) if self.ready else None
 
 
 class FakeMissionProbe:
@@ -154,6 +156,39 @@ class ServerReadinessTests(unittest.TestCase):
         self.lifecycle.snapshot = LifecycleSnapshot(ServerState.RUNNING_MANAGED, 700)
         self.assertEqual(self.service.stop(4).profile_id, None)
         self.assertEqual(self.service.status().to_dict()["started_at"], None)
+
+    def test_player_count_comes_from_the_same_information_answer(self) -> None:
+        """D18: the count rides on the readiness query; it is null when not running or not known."""
+        self.assertEqual((self.service.status().players, self.service.status().max_players), (None, None))
+        self.service.start("livonia-main", 7, 4)
+        self.probe.ready, self.probe.count = True, PlayerCount(12, 60)
+        before = len(self.probe.ports)
+        status = self.service.status()
+        # One information exchange per status read gives both readiness and the count
+        self.assertEqual(len(self.probe.ports), before + 1)
+        self.assertEqual((status.to_dict()["players"], status.to_dict()["max_players"]), (12, 60))
+        # An answer without the player fields, and no answer, give no count
+        self.probe.count = None
+        self.assertEqual((self.service.status().players, self.service.status().max_players), (None, None))
+        self.probe.ready, self.probe.count = False, PlayerCount(3, 60)
+        self.assertIsNone(self.service.status().players)
+        # A process that this manager does not own gets no count
+        self.probe.ready = True
+        self.lifecycle.snapshot = LifecycleSnapshot(ServerState.RUNNING_EXTERNAL)
+        self.assertIsNone(self.service.status().players)
+
+    def test_running_query_port_names_only_a_managed_server(self) -> None:
+        """The names read finds the port of the managed launch, and nothing in any other state."""
+        self.assertIsNone(self.service.running_query_port())
+        self.service.start("livonia-main", 7, 4)
+        calls = len(self.probe.ports)
+        self.assertEqual(self.service.running_query_port(), 2405)
+        # Finding the port sends no information query
+        self.assertEqual(len(self.probe.ports), calls)
+        for state in (ServerState.RUNNING_EXTERNAL, ServerState.STOPPING, ServerState.UNKNOWN,
+                      ServerState.STOPPED):
+            self.lifecycle.snapshot = LifecycleSnapshot(state)
+            self.assertIsNone(self.service.running_query_port(), state)
 
     def test_missing_query_port_uses_legacy_default(self) -> None:
         """Legacy configs without steamQueryPort remain readiness-compatible."""

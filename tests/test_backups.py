@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -235,8 +236,22 @@ class BackupTests(unittest.TestCase):
             link.symlink_to(self.dayz / "Config Files" / "serverDZ.cfg")
         except OSError:
             self.skipTest("symlink creation is unavailable")
-        with self.assertRaisesRegex(BackupStorageError, "links or reparse"):
+        # The guard names links, reparse points and streams in one sentence (QF-067)
+        with self.assertRaisesRegex(BackupStorageError, "cannot contain links, reparse points") as caught:
             BackupStorage().source(self.dayz, "linked.cfg")
+        self.assertEqual(caught.exception.code, "PATH_INVALID")
+
+    @unittest.skipUnless(os.name == "nt", "Windows junction test")
+    def test_junction_in_the_source_chain_is_rejected(self) -> None:
+        """A junction in the source path is rejected; junctions need no symlink privilege."""
+        junction = self.dayz / "Linked Config"
+        made = subprocess.run(["cmd", "/c", "mklink", "/J", str(junction), str(self.dayz / "Config Files")],
+                              capture_output=True, text=True, check=False)
+        if made.returncode != 0:
+            self.skipTest("junction creation is unavailable")
+        with self.assertRaisesRegex(BackupStorageError, "cannot contain links, reparse points") as caught:
+            BackupStorage().source(self.dayz, "Linked Config\\serverDZ.cfg")
+        self.assertEqual(caught.exception.code, "PATH_INVALID")
 
     def test_cwd_and_manager_relocation_do_not_change_selected_roots(self) -> None:
         """Relocating the working directory never changes the selected roots."""

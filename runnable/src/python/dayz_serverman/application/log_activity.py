@@ -38,6 +38,8 @@ EVENT_TEXTS: dict[str, str] = {
         "SteamCMD did not close after the server build check. Close SteamCMD, then restart DayZ-ServerMan."),
     "server_build.cache_write_failed": f"The result of the server build check could not be saved. {DETAIL_HINT}",
     "server_build.scheduler_failed": f"The automatic server build check failed. {DETAIL_HINT}",
+    "operation_lane.recovery_block_bypass": (
+        "Saving the DayZ server folder was allowed while changes are blocked. Other changes stay blocked."),
 }
 # Wording of a scheduled action inside a sentence
 SCHEDULE_ACTIONS: dict[str, str] = {"stop": "save and stop", "restart": "save and restart"}
@@ -70,7 +72,8 @@ METHOD_TEXTS: dict[str, str] = {
     "save_backup_after_stop": "Saving the backup-after-stop setting",
     "get_lifecycle_schedule": "Reading the daily schedule", "save_lifecycle_schedule": "Saving the daily schedule",
     "start_server": "Starting the server", "stop_server": "Stopping the server", "restart_server": "Restarting the server",
-    "get_server_status": "Reading the server state", "get_application_snapshot": "Loading the workspace",
+    "get_server_status": "Reading the server state", "get_online_players": "Reading the players online",
+    "get_application_snapshot": "Loading the workspace",
     "get_operation": "Reading an operation", "read_operation_events": "Reading operation events",
     "request_operation_cancellation": "Cancelling an operation", "request_shutdown": "Closing DayZ-ServerMan",
     "save_settings": "Saving application locations", "save_steam_settings": "Saving Steam sign-in settings",
@@ -168,7 +171,11 @@ def _operation_sentence(fields: Mapping[str, Any]) -> str | None:
     launch = code == "LAUNCH_FAILED" and kind in ("START_SERVER", "RESTART_SERVER")
     if launch or said or (not code and not message):
         return failure
-    return f"{failure} {wording.error_text(code, message)}"
+    text = wording.error_text(code, message, kind=kind)
+    # The failure sentence states the block once, so the error text does not state it again
+    if state == "RECOVERY_REQUIRED":
+        text = wording.without_block_sentence(text)
+    return f"{failure} {text}" if text else failure
 
 
 def _schedule_sentence(event: str, fields: Mapping[str, Any]) -> str:

@@ -25,6 +25,7 @@ from .settings import (
     expand_location_roots,
     resolved_paths_for_selection,
 )
+from .settings_repair import SettingsRepair
 from .shutdown import ShutdownCoordinator
 
 
@@ -46,11 +47,13 @@ class ApplicationCoordinator:
         settings: SettingsService,
         operations: OperationManager,
         shutdown: ShutdownCoordinator,
+        repair: SettingsRepair | None = None,
     ) -> None:
-        """Bind settings, operations, and shutdown collaborators."""
+        """Bind settings, operations, and shutdown collaborators; without repair no save passes a block."""
         self._settings = settings
         self._operations = operations
         self._shutdown = shutdown
+        self._repair = repair
 
     def handlers(self) -> dict[str, Any]:
         """Return the bridge handler table for application use cases."""
@@ -186,8 +189,11 @@ class ApplicationCoordinator:
         # Expand the selected roots into the concrete paths to persist
         expanded = expand_location_roots(values)
 
-        def work(_context: object) -> dict[str, Any]:
+        def work(context: object) -> dict[str, Any]:
             """Persist the settings inside the operation lane."""
+            # QF-069: a save let through the "no DayZ server folder" blocks saves only that folder
+            if self._repair is not None and getattr(context, "admitted_through_recovery_block", False):
+                return {**self._settings_value(self._repair.save(values, expected)), "restart_required": True}
             try:
                 # Carry the stored steam fields forward unchanged
                 current = self._settings.load()
@@ -208,9 +214,11 @@ class ApplicationCoordinator:
                 ) from error
             return self._settings_value(saved)
 
+        # Only a request that sets the DayZ server folder and keeps the other folders may pass those blocks
+        repairs = self._repair is not None and self._repair.is_repair_shaped(values)
         # Queue the save in the mutation lane
         try:
-            operation = self._operations.submit("SAVE_SETTINGS", work)
+            operation = self._operations.submit("SAVE_SETTINGS", work, repairs_missing_dayz_root=repairs)
         except QueueUnavailable as error:
             raise ApplicationCallError(
                 ErrorCode.MUTATION_CONFLICT,

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 import unittest
+from dataclasses import replace
 
 try:
     from tests import server_build_fixtures  # noqa: F401
@@ -15,6 +16,7 @@ except ModuleNotFoundError:
 FakeVerifier = workshop_base.FakeVerifier
 
 from dayz_serverman.adapters.windows.steamcmd import SteamCmdRunResult
+from dayz_serverman.application import activity_wording as wording
 from dayz_serverman.application.steamcmd_guard import SteamCmdRunGuard
 from dayz_serverman.application.workshop_coordinator import WorkshopCoordinator
 from dayz_serverman.application.workshop_updates import WorkshopUpdateService
@@ -100,6 +102,24 @@ class GuardedLaneTests(workshop_base.WorkshopCoordinatorTests):
             self.assertEqual(self.order, [])
         finally:
             operations.shutdown(2)
+
+    def test_an_unproven_sign_in_exit_is_worded_as_a_sign_in(self) -> None:
+        """QF-075: the block of an unproven sign-in exit names the sign-in, never a mod update."""
+        sign_in = self.steamcmd.authenticate_interactive
+        self.steamcmd.authenticate_interactive = lambda *args: replace(sign_in(*args), termination_confirmed=False)
+        accepted = self.dispatch("authenticate_steamcmd", {"expected_settings_revision": self.settings_revision})
+        operation = self.wait(accepted["value"]["operation_id"])
+        self.assertEqual((operation.state.value, operation.terminal_error.code),
+                         ("RECOVERY_REQUIRED", "UPDATE_RESULT_UNKNOWN"))
+        self.assertTrue(self.guard.poisoned)
+        self.assertEqual(wording.block_reason_text(self.operations.recovery_block), (
+            "SteamCMD did not close cleanly after the Steam sign-in, so the sign-in cannot be confirmed. "
+            "Close SteamCMD, restart DayZ-ServerMan, then sign in again."))
+        # D19: the text of the error code names the sign-in too
+        error = operation.terminal_error
+        self.assertEqual(wording.error_text(error.code, error.message, kind=operation.kind), (
+            "SteamCMD did not close cleanly after the Steam sign-in, so the sign-in cannot be confirmed. "
+            "Changes are blocked."))
 
     def test_a_held_guard_shows_the_wait_phase_and_the_cancellation_stops_there(self) -> None:
         """While a check holds the guard the update waits at its safe point and can be cancelled."""

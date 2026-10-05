@@ -21,6 +21,8 @@ from dayz_serverman.repositories.restore_storage import RestoreStorage, RestoreS
 # Block reason of a restore recovery that the guard refused, and the reason that existed before
 NOT_STOPPED = "Mutations are blocked by an interrupted backup restore while the server is not proven stopped."
 UNRESOLVED = "Mutations are blocked by unresolved restore recovery."
+# Block reason of a restore recovery without a DayZ server folder (QF-069)
+NO_ROOT = "Backup restore recovery requires a configured DayZ root."
 
 
 def fail_publication_and_compensation(phase: str, _index: int) -> None:
@@ -101,12 +103,12 @@ class RestoreStartupRecoveryTests(RestoreGuardFixture, unittest.TestCase):
         self.assertEqual((self.operations.recovery_block, self.logged_blocks()), (None, []))
 
     def test_earlier_block_reason_is_kept(self) -> None:
-        """No DayZ folder, and a recovery that cannot prove the prior state, block with the earlier reason."""
+        """No DayZ folder blocks with its own reason (QF-069); an unprovable prior state keeps the earlier one."""
         self.interrupt()
         before = self.tree(*self.roots)
         self.settings.value.dayz_root = None
         self.recover()
-        self.assertEqual((self.operations.recovery_block, self.mutex.events), (UNRESOLVED, []))
+        self.assertEqual((self.operations.recovery_block, self.mutex.events), (NO_ROOT, []))
         self.assertEqual(self.tree(*self.roots), before)
         self.settings.value.dayz_root = str(self.dayz)
         # The live file changed after the interruption: the recovery runs in the guard and cannot prove it

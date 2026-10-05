@@ -10,23 +10,22 @@ from pathlib import Path, PureWindowsPath
 from typing import Callable, Protocol
 
 from ..domain.lifecycle import LifecycleSnapshot, ServerReadiness, ServerState
-from ..repositories.server_configuration import load_server_configuration
+from ..domain.online_players import InformationAnswer
+from .external_players import DEFAULT_STEAM_QUERY_PORT, ExternalServerMatch, read_profile_endpoint
 from .lifecycle import ServerLifecycleService
 from .profiles import ProfileService
 from .settings import SettingsService
 
 
-# DayZ uses this query port when the legacy server config omits steamQueryPort
-DEFAULT_STEAM_QUERY_PORT = 27_016
 # Slow installations remain in a non-terminal starting state for two minutes
 STARTUP_GRACE_SECONDS = 120.0
 
 
 class ReadinessProbe(Protocol):
-    """Check whether one local Steam query port answers."""
+    """Check whether one local Steam query port answers, and read the player count of that answer."""
 
-    def is_ready(self, port: int) -> bool:
-        """Return whether the endpoint provides a valid information reply."""
+    def information(self, port: int) -> InformationAnswer | None:
+        """Return the valid information reply of the endpoint, or None when it gave none."""
         ...
 
 
@@ -64,8 +63,9 @@ class ReadinessLifecycleService:
         *,
         clock: Callable[[], float] = time.monotonic,
         wall_clock_ns: Callable[[], int] = time.time_ns,
+        external: ExternalServerMatch | None = None,
     ) -> None:
-        """Bind the controlled lifecycle, query resolver, probe, and clock."""
+        """Bind the controlled lifecycle, query resolver, probe, clock, and the outside-manager match."""
         self._lifecycle = lifecycle
         self._profiles = profiles
         self._settings = settings
@@ -73,6 +73,7 @@ class ReadinessLifecycleService:
         self._mission_probe = mission_probe
         self._clock = clock
         self._wall_clock_ns = wall_clock_ns
+        self._external = external
         self._target: ReadinessTarget | None = None
         self._lock = threading.RLock()
 
@@ -122,6 +123,9 @@ class ReadinessLifecycleService:
         if snapshot.state == ServerState.STOPPED:
             self._clear_target()
             return snapshot
+        # A server outside the manager gains at most a player count; everything else stays as observed
+        if snapshot.state == ServerState.RUNNING_EXTERNAL:
+            return self._with_external_count(snapshot)
         with self._lock:
             target = self._target
         if target is None:
@@ -134,7 +138,10 @@ class ReadinessLifecycleService:
             )
         if snapshot.state != ServerState.RUNNING_MANAGED:
             return snapshot
-        query_ready = self._probe.is_ready(target.query_port)
+        # One information answer proves the query endpoint and carries the player count (D18)
+        answer = self._probe.information(target.query_port)
+        query_ready = answer is not None
+        count = answer.count if answer is not None else None
         mission_ready = target.mission_ready or self._mission_probe.is_ready(
             target.rpt_directory,
             target.started_after_ns,
@@ -151,7 +158,39 @@ class ReadinessLifecycleService:
             readiness = ServerReadiness.STARTING
         else:
             readiness = ServerReadiness.UNRESPONSIVE
-        return replace(snapshot, readiness=readiness, query_port=target.query_port)
+        return replace(
+            snapshot, readiness=readiness, query_port=target.query_port,
+            players=count.players if count is not None else None,
+            max_players=count.max_players if count is not None else None,
+        )
+
+    def _with_external_count(self, snapshot: LifecycleSnapshot) -> LifecycleSnapshot:
+        """Add the count of a server outside the manager when it answers as the selected profile (D18).
+
+        Readiness, query port, profile and state stay as observed, so no guard or control changes.
+        """
+        match = self._external.find() if self._external is not None else None
+        count = match[1].count if match is not None else None
+        if count is None:
+            return snapshot
+        return replace(snapshot, players=count.players, max_players=count.max_players)
+
+    def running_query_port(self) -> int | None:
+        """Return the query port whose players may be read, or None when there is none.
+
+        For a server that this manager runs it is the launch's port, found without a readiness query. For a
+        server outside the manager it is the selected profile's port, and only after an A2S_INFO answer
+        that matches that profile (D18 extension).
+        """
+        state = self._lifecycle.status().state
+        if state == ServerState.RUNNING_EXTERNAL:
+            match = self._external.find() if self._external is not None else None
+            return match[0] if match is not None else None
+        if state != ServerState.RUNNING_MANAGED:
+            return None
+        with self._lock:
+            target = self._target
+        return target.query_port if target is not None else None
 
     def _remember_target(self, profile_id: str, started_after_ns: int) -> None:
         """Resolve and store the launched profile's query endpoint."""
@@ -170,16 +209,7 @@ class ReadinessLifecycleService:
         """Return the configured Steam query port or the DayZ legacy default."""
         try:
             # Resolve the profile config inside the configured DayZ installation
-            profile = self._profiles.read(profile_id)
-            settings = self._settings.load()
-            if settings.dayz_root is None:
-                return DEFAULT_STEAM_QUERY_PORT
-            root = Path(settings.dayz_root).resolve(strict=False)
-            config = (root / profile.values.server_config).resolve(strict=False)
-            config.relative_to(root)
-            snapshot = load_server_configuration(config)
-            value = snapshot.values.get("steamQueryPort")
-            return value if isinstance(value, int) else DEFAULT_STEAM_QUERY_PORT
+            return read_profile_endpoint(self._profiles, self._settings, profile_id).query_port
         except (OSError, RuntimeError, ValueError):
             # Readiness must not turn a successful launch into an operation failure
             return DEFAULT_STEAM_QUERY_PORT

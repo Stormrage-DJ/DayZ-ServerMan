@@ -60,8 +60,8 @@ from .repositories.paths import PortablePaths
 from .repositories.profiles import ProfileRepository
 from .repositories.workshop_recovery import inspect_workshop_recovery
 from .profile_provisioning_composition import build_profile_provisioning
-from .lifecycle_composition import build_lifecycle
-from .profile_restore_composition import build_profile_restore
+from .lifecycle_composition import build_lifecycle, build_online_players
+from .profile_restore_composition import build_profile_restore, build_settings_repair
 from .update_check_composition import (
     ServerBuildParts, build_server_build, build_update_check, build_update_check_scheduler,
     build_update_status,
@@ -180,7 +180,7 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
     legacy_backup_coordinator = LegacyBackupCoordinator(legacy_backups, operations)
     # Build process control together with its independent readiness signal
     lifecycle, mutex = build_lifecycle(
-        settings, profiles, state_repository, operations, paths.logs,
+        settings, profiles, state_repository, operations, paths.logs, preferences,
     )
     # Recoveries that write into the DayZ root take the mutex and need a proven stopped server
     installation_guard = InstallationGuard(lifecycle, mutex)
@@ -219,7 +219,7 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
         update_check, workshop.mod_inventory, server_build.service,
     )
     # Assemble every coordinator's handlers into the bridge facade
-    coordinator = ApplicationCoordinator(settings, operations, shutdown)
+    coordinator = ApplicationCoordinator(settings, operations, shutdown, build_settings_repair(paths, settings, restore_journals))
     logs = LogQueryService(paths.logs / "manager.jsonl", paths.logs / "dayz-server.log")
     handlers = {
         **coordinator.handlers(),
@@ -235,6 +235,8 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
         **migration_coordinator.handlers(),
         **legacy_backup_coordinator.handlers(),
         **lifecycle_coordinator.handlers(),
+        # D18: the names of the players online, read only while the names panel is open
+        **build_online_players(lifecycle).handlers(),
         **schedules.handlers(),
         **workshop.workshop_coordinator.handlers(),
         **workshop.mod_inventory_coordinator.handlers(),

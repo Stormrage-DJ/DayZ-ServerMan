@@ -66,6 +66,9 @@ class StatusReadResilienceTests(unittest.TestCase):
         self.cache_root = base / "steamapps/workshop/content/221100"
         self.cache_root.mkdir(parents=True)
         ids = [str(1000 + number) for number in range(MOD_COUNT)]
+        # A downloaded item has its content folder (QF-054)
+        for key in ids:
+            (self.cache_root / key).mkdir()
         installed = " ".join(
             f'"{key}" {{ "manifest" "8" "size" "1" "timeupdated" "{REMOTE_TIME}" }}'
             for key in ids)

@@ -21,6 +21,9 @@ from dayz_serverman.repositories.profiles import ProfileNotFound  # noqa: E402
 # Block reason of a direct restore recovery that the guard refused, and the reason that existed before
 NOT_STOPPED = "Mutations are blocked by an interrupted direct profile restore while the server is not proven stopped."
 ATTENTION = "Direct profile restore recovery requires attention."
+# Block reasons of the two causes that a stop and restart does not resolve (QF-075)
+NO_ROOT = "Direct profile restore recovery requires a configured DayZ root."
+UNREADABLE = "Direct profile restore journals could not be read."
 
 
 def crash_after_profile_publication(phase: str) -> None:
@@ -93,13 +96,22 @@ class ProfileRestoreStartupRecoveryTests(GuardedStartupFixture, unittest.TestCas
         self.assertEqual((self.tree(*self.roots), self.mutex.events), (before, []))
         self.assertEqual((self.operations.recovery_block, self.logged_blocks()), (None, []))
 
-    def test_earlier_block_reason_is_kept(self) -> None:
-        """No DayZ folder, and an external change that recovery must not delete, block with the earlier reason."""
+    def test_each_cause_blocks_with_its_own_reason(self) -> None:
+        """QF-075: no DayZ folder, unreadable journals, and an external change each block with their own reason."""
         folder = self.interrupt()
         self.settings.value.dayz_root = None
         self.recover()
-        self.assertEqual((self.operations.recovery_block, self.mutex.events), (ATTENTION, []))
+        self.assertEqual((self.operations.recovery_block, self.mutex.events), (NO_ROOT, []))
         self.settings.value.dayz_root = str(self.dayz)
+        # A journal set that cannot be read is never acted on: nothing is written and the mutex is not taken
+        records = self.storage.journals.records
+        self.storage.journals.records = lambda: (_ for _ in ()).throw(OSError("unreadable"))
+        before = self.tree(*self.roots)
+        self.recover()
+        self.assertEqual((self.operations.recovery_block, self.mutex.events), (UNREADABLE, []))
+        self.assertEqual(self.tree(*self.roots), before)
+        self.storage.journals.records = records
+        # An external change that recovery must not delete keeps the earlier reason
         (folder / "serverDZ.cfg").write_bytes(b"external edit")
         self.recover()
         self.assertEqual(self.operations.recovery_block, ATTENTION)
@@ -115,6 +127,9 @@ class ProfileRestoreStartupRecoveryTests(GuardedStartupFixture, unittest.TestCas
             "Stop the server, then restart DayZ-ServerMan."))
         self.assertFalse(wording.leaks_identifier(sentence))
         self.assertNotEqual(wording.block_reason_text(ATTENTION), sentence)
+        # Only the run-time failure, which the next start undoes, asks for a stop and a restart
+        for reason in (ATTENTION, NO_ROOT, UNREADABLE):
+            self.assertNotIn("Stop the DayZ server", wording.block_reason_text(reason), reason)
 
     def build_through_composition(self, state: ServerState) -> tuple[Path, ...]:
         """Run the composition of the direct restore over the fixture's journals; return the watched roots."""

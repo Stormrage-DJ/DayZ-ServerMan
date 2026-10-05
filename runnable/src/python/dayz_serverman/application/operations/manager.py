@@ -89,14 +89,17 @@ class OperationManager(RecoveryBlockAccess):
         safe_points: frozenset[str] = frozenset(),
         log_fields: Mapping[str, Any] | None = None,
         target_profile_id: str | None = None,
+        repairs_missing_dayz_root: bool = False,
     ) -> OperationRecord:
         """Accept new work, enqueue it, and return the accepted record.
 
-        The submitter names the profile that the operation belongs to, if any.
+        The submitter names the profile that the operation belongs to, if any. Only a
+        settings save may set repairs_missing_dayz_root; it then passes the blocks while
+        every block is a "no DayZ server folder" block (QF-069).
         """
         with self._condition:
-            # Refuse new work while recovery or shutdown blocks the lane
-            reason, owner = self._recovery_blocks.latest()
+            # Refuse new work while recovery or shutdown blocks the lane; the rule is in recovery_blocks
+            reason, owner, bypass = self._recovery_blocks.admission(kind, repairs_missing_dayz_root)
             if reason is not None:
                 raise QueueUnavailable(reason, RECOVERY_BLOCK, owner)
             if not self._accepting:
@@ -117,6 +120,7 @@ class OperationManager(RecoveryBlockAccess):
                 safe_points,
                 current_correlation_id(),
                 dict(log_fields or {}),
+                admitted_through_recovery_block=bypass,
             )
             self._operations[operation_id] = pending
             self._persist_and_emit(pending, "state", {"state": record.state.value})
@@ -124,7 +128,10 @@ class OperationManager(RecoveryBlockAccess):
             self._transition(pending, OperationState.QUEUED, "queued", 0)
             self._queue.append(pending)
             self._condition.notify()
-            return record.snapshot()
+            snapshot = record.snapshot()
+        if bypass:
+            self._recovery_blocks.log_bypass(kind)
+        return snapshot
 
     def get(self, operation_id: str) -> OperationRecord:
         """Return a snapshot of the record for the given operation identifier."""

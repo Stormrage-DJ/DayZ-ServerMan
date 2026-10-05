@@ -82,6 +82,8 @@ class UpdateCheckCoordinator:
                 "error_code": view.error_code,
                 "update_count": states.count("UPDATE_AVAILABLE"),
                 "pending_apply_count": states.count("PENDING_APPLY"),
+                # Additive: Workshop mods that need a download before they can run (QF-054)
+                "not_downloaded_count": states.count("NOT_DOWNLOADED"),
             },
             "server_build": self._build_status(),
             "checking": view.checking,

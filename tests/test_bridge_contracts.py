@@ -75,6 +75,7 @@ class BridgeContractTests(unittest.TestCase):
                 "get_ui_preferences",
                 "get_operation",
                 "get_server_status",
+                "get_online_players",
                 "list_profiles",
                 "list_mod_inventory",
                 "get_update_status",

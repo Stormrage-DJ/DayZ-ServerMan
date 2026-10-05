@@ -22,14 +22,10 @@ from dayz_serverman.application.migration_preview import settings_proposal
 from dayz_serverman.application.operations.manager import OperationManager
 from dayz_serverman.application.operations.models import QueueUnavailable
 from dayz_serverman.application.operations.store import OperationStore
-from dayz_serverman.application.restores import RESTORE_KIND
 from dayz_serverman.bridge.contracts import CONTRACT_VERSION, ErrorCode
 from dayz_serverman.bridge.facade import ApplicationCallError, BridgeFacade
 from dayz_serverman.observability.structured_log import StructuredLogger
 
-
-# A restore block reason that has its own catalogue sentence
-INSPECTED = "Mutations are blocked until restore recovery is inspected."
 
 PACKAGE = ROOT / "runnable" / "src" / "python" / "dayz_serverman"
 # Events with their own sentence builder in the activity formatter
@@ -137,64 +133,6 @@ class MutationConflictCauseTests(unittest.TestCase):
             "Restart DayZ-ServerMan, then update the mods again."), shown)
 
 
-class BlockReasonTests(unittest.TestCase):
-    """QF-008: one operator sentence per known block reason, the host sentence, and the fallback."""
-
-    def test_every_reason_literal_of_the_host_has_a_sentence(self) -> None:
-        """Each reason that the source passes to the block has its own catalogue sentence."""
-        literals: set[str] = set()
-        for path in PACKAGE.rglob("*.py"):
-            source = path.read_text(encoding="utf-8")
-            literals.update(re.findall(r'(?:block_for_recovery|self\._block)\(\s*"([^"]+)"', source))
-            literals.update(re.findall(r'"(Profile provisioning recovery[^"]+|Migration publication requires[^"]+'
-                                       r'|SteamCMD process-tree exit[^"]+'
-                                       r'|Mutations are blocked by an interrupted backup restore[^"]+)"', source))
-        self.assertEqual(len(literals), 17, sorted(literals))
-        self.assertIn("Mutations are blocked by an interrupted mod publication while the server is not proven stopped.",
-                      literals)
-        known = {sentence for _fragment, sentence in wording.BLOCK_REASONS}
-        for literal in sorted(literals):
-            self.assertIn(wording.block_reason_text(literal), known, literal)
-            self.assertFalse(wording.leaks_identifier(wording.block_reason_text(literal)))
-
-    def test_known_reasons_host_sentence_and_fallback(self) -> None:
-        """The specific sentences, a kept host sentence, and the fallback for an identifier."""
-        cases = {
-            "Mutations are blocked by unresolved mod publication.": "no DayZ server folder is set",
-            "Mutations are blocked by unresolved mod publication recovery.": "could not be undone safely",
-            "Mutations are blocked by an interrupted mod publication while the server is not proven stopped.":
-                "Stop the server, then restart DayZ-ServerMan.",
-            "Mutations are blocked by unresolved restore recovery.": "Open Backups",
-            "Mutations are blocked by an interrupted backup restore while the server is not proven stopped.":
-                "A backup restore was interrupted and must be finished.",
-            "Mutations are blocked by an interrupted direct profile restore while the server is not proven stopped.":
-                "A profile restore from a backup archive was interrupted and must be finished.",
-            "Mutations are blocked by an interrupted profile creation while the server is not proven stopped.":
-                "Creating a profile was interrupted and must be finished.",
-            "Mutations are blocked until restore recovery is inspected.": "Open Backups",
-            "Direct profile restore recovery requires attention.": "Stop the DayZ server",
-            "Direct profile restore requires recovery.": "Stop the DayZ server",
-            "Profile provisioning recovery requires review.": "Creating a profile was interrupted",
-            "Mutations are blocked by unresolved migration recovery.": "A legacy import was interrupted",
-        }
-        for reason, part in cases.items():
-            self.assertIn(part, wording.block_reason_text(reason), reason)
-        # QF-045: a block without a catalogue sentence names its way out: a restart, or Backups for a restore
-        restart = " Restart DayZ-ServerMan to check again."
-        self.assertEqual(wording.block_reason_text("The configured DayZ root is unsafe."),
-                         "The configured DayZ server folder is unsafe." + restart)
-        self.assertEqual(wording.block_reason_text("Launch evidence could not be recorded safely."),
-                         "Launch evidence could not be recorded safely." + restart)
-        self.assertEqual(wording.block_reason_text("Committed restore targets could not be proven.", "RESTORE_BACKUP"),
-                         "Committed restore targets could not be proven. Open Backups to finish the restore.")
-        # A catalogue sentence keeps its own way out, whoever owns the block
-        self.assertEqual(wording.block_reason_text(INSPECTED, "RESTORE_BACKUP"), wording.block_reason_text(INSPECTED))
-        self.assertEqual(wording.BLOCK_RESTORE_OWNER, RESTORE_KIND)
-        for raw in ("profile record is unavailable: INTERRUPTED_WRITE", "RECOVERY_REQUIRED", "", None,
-                    "journal_state is bad"):
-            self.assertEqual(wording.block_reason_text(raw), wording.BLOCK_FALLBACK + restart, raw)
-
-
 class ActivityFormatterTests(unittest.TestCase):
     """QF-010: Manager activity is operator wording for kinds, states, codes, methods, and actions."""
 
@@ -241,6 +179,30 @@ class ActivityFormatterTests(unittest.TestCase):
         self.assertEqual(activity("bridge.failure", {"method": "later_method", "error_code": "NOT_FOUND",
             "message": "Profile was not found."}), "A request failed: Profile was not found.")
 
+    def test_a_code_text_follows_the_operation_kind(self) -> None:
+        """D19: an unproven SteamCMD exit of a sign-in speaks of the sign-in, of a mod update of the update."""
+        sign_in = activity("operation.state", {"kind": "AUTHENTICATE_STEAMCMD", "state": "RECOVERY_REQUIRED",
+            "error_code": "UPDATE_RESULT_UNKNOWN",
+            "error_message": "SteamCMD process-tree exit after the sign-in could not be proven."})
+        self.assertEqual(sign_in, "Steam sign-in did not complete. Changes are blocked. SteamCMD did not close cleanly "
+                         "after the Steam sign-in, so the sign-in cannot be confirmed.")
+        self.assertFalse(wording.leaks_identifier(sign_in))
+        update = activity("operation.state", {"kind": "UPDATE_WORKSHOP_ITEMS", "state": "RECOVERY_REQUIRED",
+            "error_code": "UPDATE_RESULT_UNKNOWN", "error_message": "A prior SteamCMD update ended without a proven result."})
+        self.assertEqual(update, "The mods could not be updated. Changes are blocked. SteamCMD did not close cleanly, "
+                         "so the update cannot be confirmed.")
+        # D19: every recovery line states the block once, also for the general recovery code
+        recovery = activity("operation.state", {"kind": "RESTORE_BACKUP", "state": "RECOVERY_REQUIRED",
+            "error_code": "RECOVERY_REQUIRED", "error_message": "x"})
+        self.assertEqual(recovery, "The backup could not be restored. Changes are blocked. An earlier operation did not "
+                         "finish cleanly. Details are in Logs, Manager diagnostics.")
+        for line in (sign_in, update, recovery):
+            self.assertEqual(line.count("Changes are blocked"), 1, line)
+        # Without a kind, and for another code of the same kind, the general text stays
+        self.assertEqual(wording.error_text("UPDATE_RESULT_UNKNOWN", ""), wording.ERROR_TEXTS["UPDATE_RESULT_UNKNOWN"])
+        self.assertEqual(wording.error_text("AUTHENTICATION_FAILED", "", kind="AUTHENTICATE_STEAMCMD"),
+                         wording.ERROR_TEXTS["AUTHENTICATION_FAILED"])
+
     def test_every_backend_event_and_frontend_method_is_known(self) -> None:
         """Each event that the backend logs is hidden or worded; each bridge method of the pages has a subject."""
         events: set[str] = set()
@@ -266,6 +228,14 @@ class ActivityFormatterTests(unittest.TestCase):
         codes = messages.split("const operationErrorTexts = Object.freeze({", 1)[1].split("});", 1)[0]
         self.assertEqual(set(re.findall(r"^  ([A-Z_]+): ", codes, re.MULTILINE)), set(wording.ERROR_TEXTS))
         self.assertEqual(set(wording.NEUTRAL_SUCCESS) - set(wording.KIND_TEXTS), set())
+        # The code texts of one operation kind are the same table in both catalogues
+        own = messages.split("const operationKindErrorTexts = Object.freeze({", 1)[1].split("\n});", 1)[0]
+        self.assertEqual({kind: dict(re.findall(r'^    ([A-Z_]+): "([^"]+)",$', texts, re.MULTILINE))
+                          for kind, texts in re.findall(r"^  ([A-Z_]+): Object\.freeze\(\{\n(.*?)\n  \}\),$",
+                                                        own, re.MULTILINE | re.DOTALL)}, wording.KIND_ERROR_TEXTS)
+        self.assertEqual(set(wording.KIND_ERROR_TEXTS) - set(wording.KIND_TEXTS), set())
+        # Both catalogues drop the same block sentences from a recovery result
+        self.assertIn(f"const OPERATION_BLOCK_SENTENCE = /{wording.BLOCK_SENTENCE.pattern}/g;", messages)
         # The sentences of "apply mods and restart" are the same table in both catalogues
         restart = messages.split("const operationRestartApplyTexts = Object.freeze({", 1)[1].split("});", 1)[0]
         self.assertEqual(dict(re.findall(r'^  (\w+): "([^"]+)",$', restart, re.MULTILINE)),

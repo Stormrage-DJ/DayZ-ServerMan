@@ -106,8 +106,11 @@ window.pywebview.api.get_application_snapshot = async () => { const value = snap
   value.mutation_block = block; value.mutation_block_owner = owner; return ok(value); };
 await start();
 const notice = () => document.querySelector("#content-region .notice-recovery")?.textContent || "";
-same(notice(), "Recovery required" + "A profile restore from a backup archive did not finish. Stop the DayZ server, "
-  + "then restart DayZ-ServerMan; it checks the unfinished restore when it starts." + TAIL, "Overview notice");
+// QF-075: changed or unreadable restore data is not resolved by a stop and restart, so none is offered.
+same(notice(), "Recovery required" + "A profile restore from a backup archive did not finish, and DayZ-ServerMan "
+  + "cannot finish or undo it safely because the DayZ server folder or the restored files changed or cannot be "
+  + "opened. If a drive or folder was unavailable, make it available again, then restart DayZ-ServerMan." + TAIL,
+  "Overview notice");
 block = "journal_state is RECOVERY_REQUIRED";
 await loadSnapshot(); window.clearTimeout(shellState.pollTimer); await wait(40);
 same(notice(), "Recovery required" + "An earlier operation did not finish cleanly." + RESTART + TAIL,
@@ -117,6 +120,22 @@ await loadSnapshot(); window.clearTimeout(shellState.pollTimer); await wait(40);
 same(notice(), "Recovery required" + block + " Open Backups to finish the restore." + TAIL, "Overview restore owner");
 // The texts shared with the Manager activity wording are the same in both catalogues.
 for (const [code, text] of Object.entries(ERROR_TEXTS)) same(messages.error({code, message: ""}), text, `code ${code}`);
+for (const [kind, texts] of Object.entries(KIND_ERROR_TEXTS)) for (const [code, text] of Object.entries(texts)) {
+  same(messages.error({code, message: ""}, "", kind), text, `code ${code} of ${kind}`);
+}
+// D19: the bar result of an unproven SteamCMD exit speaks of the operation that ran and states the block once.
+const unproven = (kind, message, code = "UPDATE_RESULT_UNKNOWN") => messages.result(record("u", kind,
+  "RECOVERY_REQUIRED", {progress_phase: "failed", terminal_error: {code, message}})).text;
+const once = (text, expected, name) => { same(text, expected, name);
+  same(text.split("Changes are blocked").length, 2, `${name} states the block once`); };
+once(unproven("AUTHENTICATE_STEAMCMD", "SteamCMD process-tree exit after the sign-in could not be proven."),
+  "Steam sign-in did not complete. Changes are blocked. SteamCMD did not close cleanly after the Steam sign-in, "
+  + "so the sign-in cannot be confirmed.", "sign-in result");
+once(unproven("UPDATE_WORKSHOP_ITEMS", "A prior SteamCMD update ended without a proven result."),
+  "The mods could not be updated. Changes are blocked. SteamCMD did not close cleanly, so the update cannot be "
+  + "confirmed.", "update result");
+once(unproven("RESTORE_BACKUP", "x", "RECOVERY_REQUIRED"), "The backup could not be restored. Changes are blocked. "
+  + "An earlier operation did not finish cleanly. Details are in Logs, Manager diagnostics.", "recovery result");
 for (const [role, label] of Object.entries(ROLE_LABELS)) same(window.ServerManDiagnosticLabels.role(role), label, role);
 for (const [fragment, text] of REQUEST_TEXTS) {
   same(messages.error({code: "INVALID_REQUEST", message: `value ${fragment}`}), text, `request ${fragment}`);
@@ -231,7 +250,8 @@ def shared_tables() -> str:
                "dayz_executable must be inside dayz_root", "The configured DayZ root is unsafe.",
                "write failed for applied_mod_state", "RECOVERY_REQUIRED", ""]
     tables = {
-        "ERROR_TEXTS": wording.ERROR_TEXTS, "ROLE_LABELS": wording.ROLE_LABELS,
+        "ERROR_TEXTS": wording.ERROR_TEXTS, "KIND_ERROR_TEXTS": wording.KIND_ERROR_TEXTS,
+        "ROLE_LABELS": wording.ROLE_LABELS,
         "REQUEST_TEXTS": wording.REQUEST_TEXTS, "SERVER_STATES": wording.SERVER_STATES,
         "BLOCK_REASONS": wording.BLOCK_REASONS,
         "SAMPLES": [[message, wording.plain_sentence(message)] for message in samples],
