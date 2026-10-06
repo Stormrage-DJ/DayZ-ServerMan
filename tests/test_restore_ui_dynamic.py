@@ -260,7 +260,7 @@ class RestoreUiDynamicTests(unittest.TestCase):
             completed = subprocess.run(
                 [str(EDGE), "--headless=new", "--disable-gpu", "--no-first-run",
                  f"--user-data-dir={root / 'edge-data'}", "--dump-dom", page.as_uri()],
-                capture_output=True, text=True, encoding="utf-8", timeout=20, check=False,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20, check=False,
             )
         # Keep both streams so browser errors surface in assertion messages
         evidence = completed.stdout + completed.stderr

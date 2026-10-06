@@ -231,12 +231,13 @@ cards.forEach((card, index) => {
 await push(record("busy", "UPDATE_WORKSHOP_ITEMS", "RUNNING", {progress_phase: "check_remote"}));
 const locked = document.getElementById("backup-create");
 check(locked.getAttribute("aria-disabled") === "true" && locked.classList.contains("button-primary"), "locked primary");
-// Parse rgb()/rgba() and color(srgb ...): skip the colour-space name, read exponents and "none" (QF-082)
+// Resolve a computed colour to sRGB bytes through a canvas, whatever form Edge serialises it in:
+// rgb(), color(srgb ...), or oklab() (QF-082)
+const paint = document.createElement("canvas").getContext("2d", {willReadFrequently: true});
 const rgb = (text) => {
-  check(/^(rgba?\(|color\(srgb )/.test(text), `unsupported colour format: ${text}`);
-  const parts = text.replace(/^color\(srgb /, "").match(/-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?|none/gi)
-    .slice(0, 3).map((part) => (part === "none" ? 0 : Number(part)));
-  return text.startsWith("color(") ? parts.map((part) => part * 255) : parts; };
+  check(CSS.supports("color", text), `unsupported colour format: ${text}`);
+  paint.clearRect(0, 0, 1, 1); paint.fillStyle = text; paint.fillRect(0, 0, 1, 1);
+  return [...paint.getImageData(0, 0, 1, 1).data.slice(0, 3)]; };
 const light = (colour) => { const [r, g, b] = colour.map((value) => { const part = value / 255;
   return part <= 0.03928 ? part / 12.92 : ((part + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
 const style = getComputedStyle(locked);

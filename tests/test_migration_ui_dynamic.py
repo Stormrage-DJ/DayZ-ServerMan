@@ -129,7 +129,7 @@ class MigrationUiDynamicTests(unittest.TestCase):
             completed = subprocess.run(
                 [str(EDGE), "--headless=new", "--disable-gpu", "--no-first-run",
                  f"--user-data-dir={root / 'edge-data'}", "--dump-dom", page.as_uri()],
-                capture_output=True, text=True, timeout=20, check=False,
+                capture_output=True, text=True, timeout=20, check=False, encoding="utf-8", errors="replace",
             )
         # Require a clean run that reached the PASS marker
         evidence = completed.stdout + completed.stderr

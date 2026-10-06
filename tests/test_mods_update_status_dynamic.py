@@ -1,19 +1,17 @@
 """Dynamic headless Edge test of the Mods update states, check header, and quiet refresh."""
 from __future__ import annotations
 
-import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from dayz_serverman.host.assets import compose_shell_html  # noqa: E402
-from tests.test_mods_ui_dynamic import EDGE, ROOT, _center_rgb, _read_stable_screenshot  # noqa: E402
+from tests.test_mods_ui_dynamic import EDGE  # noqa: E402
+from tests.ui_harness_support import run_page_harness  # noqa: E402
 
 
-# Browser harness that drives the update states through a fake host and paints pass or fail
+# Browser harness that drives the update states through a fake host and writes its verdict (QF-082)
 HARNESS = r"""
 <script>
 (async () => {
@@ -187,9 +185,11 @@ HARNESS = r"""
       "non-forced request on profile change");
     assert(host.statusReads.at(-1) === "second", "status follows the selected profile");
     document.body.replaceChildren(); document.body.style.background = "rgb(0, 255, 0)";
+    harnessVerdict("PASS");
   } catch (error) {
     document.body.replaceChildren(); document.body.style.background = "rgb(255, 0, 0)";
     document.body.textContent = error.message;
+    harnessVerdict(`FAIL: ${error.stack || error.message}`);
   }
 })();
 </script>
@@ -201,28 +201,8 @@ class ModsUpdateStatusDynamicTests(unittest.TestCase):
     """Contract: the Mods page shows every update state and refreshes without disturbing input."""
     def test_labels_reasons_header_check_now_and_quiet_refresh(self) -> None:
         """Drive each label row, the reasons, the header, Check now, and revision refresh."""
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            # Compose the shell page with the browser harness appended
-            page = root / "mods.html"
-            html = compose_shell_html(ROOT / "runnable" / "src" / "frontend").replace(
-                "</body>", HARNESS + "</body>"
-            )
-            page.write_text(html, encoding="utf-8")
-            screenshot = root / "result.png"
-            profile = root / "edge-data"
-            # Execute the harness in headless Edge
-            completed = subprocess.run([
-                str(EDGE), "--headless", "--disable-gpu", "--no-first-run",
-                "--hide-scrollbars", "--window-size=800,560", "--virtual-time-budget=4000",
-                f"--user-data-dir={profile}", f"--screenshot={screenshot}", page.as_uri(),
-            ], capture_output=True, text=True, timeout=30, check=False)
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            # The harness paints the body green only when every check passed
-            red, green, blue = _center_rgb(_read_stable_screenshot(screenshot, profile))
-            self.assertGreater(green, 240, "the harness reported a failed check")
-            self.assertLess(red, 15)
-            self.assertLess(blue, 15)
+        # The harness writes PASS only when every check passed; otherwise the failed check's message (QF-082)
+        self.assertEqual(run_page_harness(HARNESS, window_size="800,560", budget=4000, timeout=30), "PASS")
 
 
 if __name__ == "__main__":

@@ -191,7 +191,7 @@ class ProfileUiDynamicTests(unittest.TestCase):
             result = subprocess.run(
                 [str(EDGE), "--headless=new", "--disable-gpu", "--no-first-run",
                  f"--user-data-dir={root / 'edge-data'}", "--dump-dom", page.as_uri()],
-                capture_output=True, text=True, timeout=20, check=False,
+                capture_output=True, text=True, timeout=20, check=False, encoding="utf-8", errors="replace",
             )
         # The harness prints PASS only when every interaction passed
         evidence = result.stdout + result.stderr

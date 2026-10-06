@@ -96,7 +96,8 @@ class DirectRestoreUiTests(unittest.TestCase):
             target = root / "test.html"
             target.write_text(page, encoding="utf-8")
             result = subprocess.run([str(EDGE), "--headless=new", "--disable-gpu", "--no-first-run",
-                f"--user-data-dir={root / 'browser'}", "--dump-dom", target.as_uri()], capture_output=True, text=True, timeout=25)
+                f"--user-data-dir={root / 'browser'}", "--dump-dom", target.as_uri()], capture_output=True, text=True, timeout=25,
+                encoding="utf-8", errors="replace")
         match = re.search(r'<pre id="result">(.*?)</pre>', result.stdout, re.S)
         observed = html.unescape(match.group(1)) if match else result.stderr[-1000:]
         self.assertEqual(result.returncode, 0, observed)
