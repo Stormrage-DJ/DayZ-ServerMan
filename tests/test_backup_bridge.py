@@ -90,13 +90,17 @@ class BackupBridgeTests(unittest.TestCase):
 
     def wait_terminal(self, operation_id: str):
         """Wait for the operation to finish and return its final record."""
-        deadline = time.monotonic() + 3
+        # A restore takes under half a second locally; hosted runners write files far slower
+        deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             record_value = self.composition.operations.get(operation_id)
             if record_value.state in TERMINAL:
                 return record_value
             time.sleep(0.01)
-        raise AssertionError("backup operation did not finish")
+        raise AssertionError(
+            f"{record_value.kind} did not finish: state {record_value.state}, "
+            f"phase {record_value.progress_phase}, {record_value.progress_percent}%"
+        )
 
     def test_named_bridge_creates_verified_backup_and_history(self) -> None:
         """A named backup publishes verified history and restores via its preview."""
