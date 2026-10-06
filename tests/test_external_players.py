@@ -28,7 +28,7 @@ from dayz_serverman.domain.lifecycle import LifecycleSnapshot, ServerState  # no
 from dayz_serverman.domain.models import ManagerSettings  # noqa: E402
 from dayz_serverman.domain.online_players import InformationAnswer, PlayerCount  # noqa: E402
 from dayz_serverman.domain.profiles import ProfileInput, ProfileRecord  # noqa: E402
-from tests.a2s_fixtures import RECORDED_INFO, ScriptedSocket, information_answer  # noqa: E402
+from tests.a2s_fixtures import RECORDED_INFO, ScriptedSocket, frozen_clock, information_answer  # noqa: E402
 from tests.profile_fixtures import profile_payload  # noqa: E402
 from tests.test_server_readiness import FakeLifecycle, FakeMissionProbe, FakeProbe, _Profiles, _Settings  # noqa: E402
 
@@ -143,7 +143,8 @@ class ExternalMatchTests(unittest.TestCase):
             for name, script in cases.items():
                 with self.subTest(case=name):
                     fake = ScriptedSocket(QUERY_PORT, script)
-                    found = self.match(SteamQueryProbe(0.15, socket_factory=lambda: fake)).find()
+                    probe = SteamQueryProbe(0.15, socket_factory=lambda: fake, clock=frozen_clock)
+                    found = self.match(probe).find()
                     if name == "match":
                         self.assertEqual((found[0], found[1].count), (QUERY_PORT, PlayerCount(25, 60)))
                         self.assertEqual(fake.sent, [(INFO_QUERY, ("127.0.0.1", QUERY_PORT))])
@@ -168,6 +169,8 @@ class ComposedExternalProbeTests(unittest.TestCase):
                 # A silent port: each receive waits for the rest of 0.15 s at most
                 fake = ScriptedSocket(QUERY_PORT, [])
                 probe._socket_factory = lambda: fake
+                # A fixed clock reading keeps deadline minus now exact on a coarse clock (QF-067)
+                probe._clock = frozen_clock
                 with mock.patch("socket.socket", side_effect=AssertionError("a test opened a real socket")):
                     self.assertIsNone(probe.information(QUERY_PORT))
                 self.assertTrue(fake.timeouts and all(0 < value <= 0.15 for value in fake.timeouts))

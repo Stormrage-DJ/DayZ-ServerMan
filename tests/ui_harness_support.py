@@ -1,6 +1,7 @@
 """Shared headless Edge runner for harness scripts that drive the composed shell."""
 from __future__ import annotations
 
+import html
 import os
 import re
 import subprocess
@@ -122,3 +123,38 @@ def run_shell_harness(body: str, *, window_size: str = "1100,800", budget: int =
     found = RESULT_PATTERN.findall(completed.stdout)
     # The last match is the live element; earlier matches are text inside the script source
     return found[-1] if found else f"NO RESULT (exit {completed.returncode}): {completed.stderr[-400:]}"
+
+
+# Defines harnessVerdict(text) for a self-contained page harness; it writes the result element
+VERDICT_SCRIPT = (
+    "<script>\nwindow.harnessVerdict = (text) => { const result = document.createElement(\"pre\");\n"
+    "  result.id = \"harness-result\"; result.hidden = true; result.textContent = text;\n"
+    "  document.body.append(result); };\n</script>\n"
+)
+
+
+def run_page_harness(harness: str, *, window_size: str, budget: int, timeout: int = 40) -> str:
+    """Run a self-contained `<script>` harness in the composed shell and return its verdict text.
+
+    The harness calls `harnessVerdict("PASS")` or `harnessVerdict("FAIL: ...")` at its end. The verdict is
+    read from the dumped document, so a failed check reports its own message (QF-082). A missing verdict
+    reports PENDING with Edge's exit code and the end of its error output.
+    """
+    # Edge may still hold its profile for a moment, so a cleanup error is not a test failure
+    with tempfile.TemporaryDirectory(
+            prefix="serverman_page_harness_", ignore_cleanup_errors=True) as temporary:
+        root = Path(temporary)
+        page = root / "page.html"
+        page.write_text(compose_shell_html(FRONTEND).replace(
+            "</body>", VERDICT_SCRIPT + harness + "</body>"), encoding="utf-8")
+        completed = subprocess.run(
+            [str(EDGE), "--headless=new", "--disable-gpu", "--no-first-run",
+             f"--window-size={window_size}", f"--virtual-time-budget={budget}",
+             f"--user-data-dir={root / 'edge-data'}", "--dump-dom", page.as_uri()],
+            capture_output=True, text=True, timeout=timeout, check=False, encoding="utf-8",
+            errors="replace",
+        )
+    found = RESULT_PATTERN.findall(completed.stdout)
+    if not found:
+        return f"PENDING (exit {completed.returncode}): {completed.stderr[-400:]}"
+    return html.unescape(found[-1])

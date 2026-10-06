@@ -25,13 +25,21 @@ function overviewPlayersView(result, count, now, previous = null) {
     return { kind: "failed", updated: previous?.updated || "" };
   }
   const updated = overviewPlayersClock(now);
-  // Keep a name and a whole number of seconds; a player without a name is still connecting and sorts last.
-  const players = value.players.map((player) => ({
+  // Keep a name and a whole number of seconds per player.
+  const entries = value.players.map((player) => ({
     name: typeof player?.name === "string" ? player.name.trim() : "",
     seconds: Number.isFinite(player?.duration_seconds) && player.duration_seconds >= 0 ? player.duration_seconds : null,
-  })).sort((first, second) => Number(first.name === "") - Number(second.name === "")
-    || overviewPlayersCollator.compare(first.name, second.name));
-  if (players.length) return { kind: "list", players, updated };
+  }));
+  // Named players sort by name (customer decision). DayZ leaves names empty (QF-083), so a row without a name
+  // reads "Player 1", "Player 2" … after them, longest connected first: every connection time grows at the same
+  // pace, so the numbers stay with the same players from one refresh to the next.
+  const named = entries.filter((player) => player.name)
+    .sort((first, second) => overviewPlayersCollator.compare(first.name, second.name));
+  const nameless = entries.filter((player) => !player.name)
+    .sort((first, second) => (second.seconds ?? -1) - (first.seconds ?? -1))
+    .map((player, index) => ({ ...player, label: `Player ${index + 1}` }));
+  const players = [...named, ...nameless];
+  if (players.length) return { kind: "list", players, updated, nameless: named.length === 0 };
   // An empty list while the status counts players means that the server does not report names.
   if (count?.kind === "count" && count.players > 0) return { kind: "unavailable", updated };
   return { kind: "empty", updated };
@@ -48,10 +56,15 @@ function overviewPlayersHead(view) {
   }
   const busy = view?.kind === "loading" ? "Loading player names…" : view?.refreshing ? "Updating…" : "";
   if (busy) head.append(overviewNode("p", "overview-meta mods-update-busy", busy));
+  // A server that leaves every name empty is said so once, in the head (QF-083).
+  if (view?.kind === "list" && view.nameless) {
+    head.append(overviewNode("p", "overview-meta",
+      "This server does not share player names. Connection times are shown."));
+  }
   return head;
 }
 
-// Build the list of names with the time connected; an empty name reads "Connecting player".
+// Build the list of names with the time connected; a row without a name reads "Player 1", "Player 2" …
 function overviewPlayersList(players) {
   const list = overviewNode("ul", "overview-players-list"); list.id = "overview-players-list";
   list.setAttribute("aria-label",
@@ -59,7 +72,7 @@ function overviewPlayersList(players) {
   players.forEach((player) => {
     const item = overviewNode("li");
     item.append(overviewNode("span", player.name ? "overview-player-name" : "overview-player-name is-unnamed",
-      player.name || "Connecting player"));
+      player.name || player.label));
     if (player.seconds !== null) {
       const time = overviewNode("span", "overview-player-time", overviewDuration(player.seconds * 1000));
       time.setAttribute("aria-label", `connected ${time.textContent}`);

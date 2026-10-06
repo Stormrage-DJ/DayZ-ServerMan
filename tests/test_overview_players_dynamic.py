@@ -6,47 +6,12 @@ from __future__ import annotations
 import unittest
 
 try:
-    from tests.overview_harness import OVERVIEW_HEAD
+    from tests.overview_players_harness import NAMELESS, PLAYERS_HEAD
     from tests.ui_harness_support import EDGE, run_shell_harness
 except ModuleNotFoundError:
-    from overview_harness import OVERVIEW_HEAD
+    from overview_players_harness import NAMELESS, PLAYERS_HEAD
     from ui_harness_support import EDGE, run_shell_harness
 
-
-# Fake names read, fake 10 s timers, and a roster that arrives unsorted with one player still connecting
-PLAYERS_HEAD = OVERVIEW_HEAD + r"""
-const realSetTimeout = window.setTimeout.bind(window);
-const realClearTimeout = window.clearTimeout.bind(window);
-const timers = new Map(); let timerId = 1000000;
-window.setTimeout = (callback, delay, ...rest) => {
-  if (delay !== 10000) return realSetTimeout(callback, delay, ...rest);
-  timerId += 1; timers.set(timerId, callback); return timerId;
-};
-window.clearTimeout = (id) => { if (timers.has(id)) timers.delete(id); else realClearTimeout(id); };
-// Run every planned 10 s callback once and report how many there were.
-const fire = async () => { const due = [...timers.values()]; timers.clear(); due.forEach((callback) => callback());
-  await wait(40); return due.length; };
-const reads = []; const answers = [];
-window.pywebview.api.get_online_players = () => { reads.push(shellState.section);
-  const next = answers.length ? answers.shift() : ok({state: "OK", players: []});
-  if (next === "pending") return new Promise(() => {});
-  return next instanceof Error ? Promise.reject(next) : Promise.resolve(next); };
-const LONG = "Chernarus_Survivor_With_A_Really_Long_Name_That_Does_Not_Fit";
-const roster = (count) => Array.from({length: count}, (_, index) => ({
-  name: `Survivor_${String(index).padStart(2, "0")}`,
-  duration_seconds: index * 600}));
-const named = [{name: "zelenoScout", duration_seconds: 40}, {name: "", duration_seconds: 3},
-  {name: "ash_Walker", duration_seconds: 11527}, {name: "Ärzte_Bob", duration_seconds: 3840},
-  {name: LONG, duration_seconds: 183600}, {name: "Bravo", duration_seconds: null}];
-const toggleButton = () => byId("overview-players-toggle");
-const panel = () => byId("overview-players");
-const names = () => [...panel().querySelectorAll(".overview-player-name")].map((node) => node.textContent);
-const openPanel = async () => { toggleButton().click(); await wait(60); };
-// One start time for every status of a test, so that a new count is the only change
-const runningBase = running();
-const running2 = (extra = {}) => ({...runningBase, ...extra});
-host.status = running2({players: 12, max_players: 60});
-"""
 
 # Count states in the strip, in-place updates without a redraw, and no announcement
 COUNT = PLAYERS_HEAD + r"""
@@ -125,9 +90,10 @@ toggleButton().click(); await wait(20);
 check(panel().hidden && !panel().children.length && toggleButton().getAttribute("aria-expanded") === "false", "closed");
 answers.push(ok({state: "OK", players: named}));
 await openPanel();
-// By name, case and accents aside; the player still connecting comes last.
-same(names().join("|"), `Ärzte_Bob|ash_Walker|Bravo|${LONG}|zelenoScout|Connecting player`, "sorted names");
-check(panel().querySelector(".is-unnamed").textContent === "Connecting player", "connecting player style");
+// By name, case and accents aside; a row without a name is numbered after the names (QF-083).
+same(names().join("|"), `Ärzte_Bob|ash_Walker|Bravo|${LONG}|zelenoScout|Player 1`, "sorted names");
+check(panel().querySelector(".is-unnamed").textContent === "Player 1", "nameless row style");
+check(!panel().textContent.includes("does not share player names"), "no-names note in a mixed list");
 same([...panel().querySelectorAll(".overview-player-time")].map((node) => node.textContent).join("|"),
   "1 h 4 min|3 h 12 min|2 d 3 h|less than a minute|less than a minute", "durations");
 same(panel().querySelector(".overview-player-time").getAttribute("aria-label"), "connected 1 h 4 min", "time name");
@@ -286,6 +252,10 @@ class OverviewPlayersDynamicTests(unittest.TestCase):
     def test_scroll_cue_for_a_long_list(self) -> None:
         """A list that scrolls inside says that more names follow and keeps its position on refresh."""
         self.assertEqual(run_shell_harness(SCROLL, window_size="1174,812", budget=8000), "PASS")
+
+    def test_nameless_rows_are_numbered_by_connection_time(self) -> None:
+        """QF-083: empty names read "Player 1" … longest connected first, with the no-names note in the head."""
+        self.assertEqual(run_shell_harness(PLAYERS_HEAD + NAMELESS, window_size="1174,812", budget=10000), "PASS")
 
     def test_narrow_list_has_one_column(self) -> None:
         """Below 760 px the names stand in one column with a higher list."""

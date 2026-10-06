@@ -19,6 +19,8 @@ UTF8_NAMES = ["Dr. Kovač", "Сергей_Волков", "玩家一号", "Ash �
 LONG_NAME = "Chernarus-Survivor-" + "x" * 101
 SEVERAL = [(0, "Ash_Walker", 0, 11520.5), (1, UTF8_NAMES[0], 3, 3840.0), (2, UTF8_NAMES[1], 0, 61.9),
            (3, UTF8_NAMES[2], 0, 59.0), (4, UTF8_NAMES[3], -2, 0.0), (5, "", 0, 4.0), (6, LONG_NAME, 0, 172800.0)]
+# The real run of QF-083: DayZ answered 2 players with empty names, connected 45 and 43 minutes
+NAMELESS_RUN = [(0, "", 0, 2712.4), (1, "", 0, 2591.0)]
 # 25 players with distinct names and falling connection times
 TWENTY_FIVE = [(index, f"Survivor_{index:02d}", 0, float(11520 - index * 450)) for index in range(25)]
 
@@ -112,3 +114,13 @@ class ScriptedSocket:
         if len(datagram) > size:
             raise OSError(10040, "message too long")
         return datagram, address
+
+
+def frozen_clock() -> float:
+    """Return one fixed clock reading, so that a wait computed as deadline minus now is exact.
+
+    Python 3.12 on Windows reads `time.monotonic` from GetTickCount64, in 15.6 ms steps. Two readings in one
+    step give `(t + wait) - t`, which exceeds `wait` by a rounding error at some uptimes. That happened on a
+    freshly started CI runner (QF-067). A fixed reading of 0.0 keeps the arithmetic exact.
+    """
+    return 0.0

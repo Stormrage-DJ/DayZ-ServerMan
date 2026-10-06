@@ -138,9 +138,15 @@ known** has three causes:
 Selecting the count opens a list of names with the connected time. The list
 uses an A2S_PLAYER query to `127.0.0.1` on the same query port. It is read when
 the list opens, then every 10 seconds while the list is open, the Overview is
-shown, and the window is visible. The names are sorted by name. A player
-without a name shows as **Connecting player**. If the server reports no names,
-the list says that names are not available, and the count stays.
+shown, and the window is visible. The names are sorted by name.
+
+DayZ can send the list without names. A row without a name shows as
+**Player 1**, **Player 2**, and so on, after the named rows. These rows are
+sorted by connected time, longest first, so each number stays with the same
+player from one refresh to the next. When no row has a name, the list head
+says **This server does not share player names. Connection times are shown.**
+If the server sends an empty list while the count shows players, the list says
+that names are not available, and the count stays.
 
 Player names are shown in the window only. They are never logged, saved in a
 file, or written into an operation record or error text.

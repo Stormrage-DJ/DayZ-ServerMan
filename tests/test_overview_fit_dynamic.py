@@ -122,8 +122,9 @@ FIT_CASES = {
                                                                   "Players 128 / 128", "Full", "1 not downloaded",
                                                                   "Server build checks are paused"]),
 }
-# QF-059: at least 16 px stay free under the content (the content bottom includes the bottom padding of main)
-FIT_MARGIN_BOTTOM = 704
+# QF-059, QF-081: at least 40 px (about two text lines) stay free under the content, so a font that wraps differently
+# (the hosted runner) still fits; the content bottom includes the bottom padding of main
+FIT_MARGIN_BOTTOM = 680
 
 
 def fit_body(case: str) -> str:
@@ -143,7 +144,7 @@ same(document.documentElement.scrollHeight <= window.innerHeight, true,
   `scrollHeight ${document.documentElement.scrollHeight}; below the fold: ${over.slice(0, 4).map((node) => node.className || node.tagName)}`);
 const bottom = Math.round(document.getElementById("content-region").getBoundingClientRect().bottom
   + parseFloat(getComputedStyle(document.querySelector("main")).paddingBottom));
-check(bottom <= limit, `content bottom ${bottom}: less than 16 px free under the content`);
+check(bottom <= limit, `content bottom ${bottom}: less than 40 px free under the content`);
 // D18: the player count shares the state row, so the strip is as high without it; the closed panel takes no space.
 const strip = document.getElementById("overview-server");
 const count = [document.getElementById("overview-players-toggle"), document.getElementById("overview-players-full"),
@@ -189,7 +190,7 @@ class OverviewFitDynamicTests(unittest.TestCase):
     """D17 and QF-059: the Overview fits 1150 x 720 with a margin in every worst case; QF-058."""
 
     def test_overview_has_no_vertical_scroll_at_1150_by_720(self) -> None:
-        """The 8.1 stress renders and QA's 8.3 worst cases: no scroll, and at least 16 px free (QF-059)."""
+        """The 8.1 stress renders and QA's 8.3 worst cases: no scroll, and at least 40 px free (QF-059, QF-081)."""
         for case in FIT_CASES:
             with self.subTest(case=case):
                 self.assertEqual(run_shell_harness(fit_body(case), window_size=FIT_WINDOW, budget=8000), "PASS")

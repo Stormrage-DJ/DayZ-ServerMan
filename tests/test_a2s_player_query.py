@@ -24,7 +24,7 @@ from dayz_serverman.adapters.a2s_codec import INFO_QUERY  # noqa: E402
 from dayz_serverman.adapters.steam_query import SteamQueryProbe  # noqa: E402
 from dayz_serverman.domain.online_players import InformationAnswer, PlayerCount  # noqa: E402
 from tests.a2s_fixtures import (  # noqa: E402
-    LONG_NAME, RECORDED_EMPTY_PLAYERS, RECORDED_INFO, SEVERAL, TWENTY_FIVE, ScriptedSocket, challenge,
+    LONG_NAME, NAMELESS_RUN, RECORDED_EMPTY_PLAYERS, RECORDED_INFO, SEVERAL, TWENTY_FIVE, ScriptedSocket, challenge,
     player_answer, split_packets,
 )
 
@@ -140,8 +140,10 @@ class PlayerListParserTests(unittest.TestCase):
     """Parsing of complete and malformed A2S_PLAYER answers."""
 
     def test_recorded_empty_answer_is_an_empty_list(self) -> None:
-        """The spike answer with 0 players."""
+        """The spike answer with 0 players, and the shape of the QF-083 run: names empty, times present."""
         self.assertEqual(parse_player_list(RECORDED_EMPTY_PLAYERS), ())
+        players = parse_player_list(player_answer(NAMELESS_RUN))
+        self.assertEqual([(player.name, int(player.duration_seconds)) for player in players], [("", 2712), ("", 2591)])
 
     def test_several_names_with_utf8_empty_and_long_names(self) -> None:
         """Index, name, score and duration of every entry; trailing bytes after the last entry are ignored."""

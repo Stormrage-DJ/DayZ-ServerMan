@@ -2,17 +2,14 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from dayz_serverman.host.assets import compose_shell_html  # noqa: E402
-from tests.test_mods_ui_dynamic import _center_rgb, _read_stable_screenshot  # noqa: E402
+from tests.ui_harness_support import run_page_harness  # noqa: E402
 
 
 EDGE = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / (
@@ -119,9 +116,11 @@ HARNESS = r"""
     check(document.querySelector("[data-backup-choice='custom'] .backup-choice-path").textContent.includes("Custom"),
       "custom backup selection");
     document.body.replaceChildren(); document.body.style.background = "rgb(0, 255, 0)";
+    harnessVerdict("PASS");
   } catch (error) {
     document.body.replaceChildren(); document.body.style.background = "rgb(255, 0, 0)";
     document.body.textContent = error.message;
+    harnessVerdict(`FAIL: ${error.stack || error.message}`);
   }
 })();
 </script>
@@ -133,30 +132,8 @@ class SettingsUiDynamicTests(unittest.TestCase):
     """Headless browser contract for the settings workspace behaviors."""
     def test_fresh_setup_races_dirty_guard_errors_and_backup_modes(self) -> None:
         """Run the fresh setup, dirty guard, error, and backup mode scenario."""
-        with tempfile.TemporaryDirectory(prefix="settings ui ő ") as temporary:
-            root = Path(temporary)
-            page = root / "settings.html"
-            # Compose the settings shell with the scenario harness
-            page.write_text(
-                compose_shell_html(ROOT / "runnable" / "src" / "frontend").replace(
-                    "</body>", HARNESS + "</body>"
-                ),
-                encoding="utf-8",
-            )
-            screenshot = root / "result.png"
-            profile = root / "edge-data"
-            # Render the page in headless Edge and capture a screenshot
-            completed = subprocess.run([
-                str(EDGE), "--headless", "--disable-gpu", "--no-first-run",
-                "--hide-scrollbars", "--window-size=800,560", "--virtual-time-budget=2500",
-                f"--user-data-dir={profile}", f"--screenshot={screenshot}", page.as_uri(),
-            ], capture_output=True, text=True, timeout=25, check=False)
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            # The green background proves the success path ran
-            red, green, blue = _center_rgb(_read_stable_screenshot(screenshot, profile))
-            self.assertGreater(green, 240)
-            self.assertLess(red, 15)
-            self.assertLess(blue, 15)
+        # The harness writes PASS only when every check passed; otherwise the failed check's message (QF-082)
+        self.assertEqual(run_page_harness(HARNESS, window_size="800,560", budget=2500, timeout=25), "PASS")
 
 
 if __name__ == "__main__":

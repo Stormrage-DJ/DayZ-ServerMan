@@ -231,7 +231,11 @@ cards.forEach((card, index) => {
 await push(record("busy", "UPDATE_WORKSHOP_ITEMS", "RUNNING", {progress_phase: "check_remote"}));
 const locked = document.getElementById("backup-create");
 check(locked.getAttribute("aria-disabled") === "true" && locked.classList.contains("button-primary"), "locked primary");
-const rgb = (text) => { const parts = text.match(/[\d.]+/g).slice(0, 3).map(Number);
+// Parse rgb()/rgba() and color(srgb ...): skip the colour-space name, read exponents and "none" (QF-082)
+const rgb = (text) => {
+  check(/^(rgba?\(|color\(srgb )/.test(text), `unsupported colour format: ${text}`);
+  const parts = text.replace(/^color\(srgb /, "").match(/-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?|none/gi)
+    .slice(0, 3).map((part) => (part === "none" ? 0 : Number(part)));
   return text.startsWith("color(") ? parts.map((part) => part * 255) : parts; };
 const light = (colour) => { const [r, g, b] = colour.map((value) => { const part = value / 255;
   return part <= 0.03928 ? part / 12.92 : ((part + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
@@ -240,7 +244,13 @@ const behind = rgb(getComputedStyle(locked.closest(".panel")).backgroundColor);
 const seen = (colour) => rgb(colour).map((value, index) => value * Number(style.opacity) + behind[index] * (1 - Number(style.opacity)));
 const pair = [light(seen(style.color)), light(seen(style.backgroundColor))].sort((a, b) => b - a);
 const ratio = (pair[0] + 0.05) / (pair[1] + 0.05);
-check(ratio >= 4.5 && Number(style.opacity) < 1, `locked primary label contrast ${ratio.toFixed(2)}`);
+// On failure, report the resolved colours, every opacity up the tree, forced colours and running transitions
+const chain = []; for (let node = locked; node instanceof Element; node = node.parentElement) {
+  const value = getComputedStyle(node).opacity; if (value !== "1") chain.push(`${node.id || node.className}=${value}`); }
+check(ratio >= 4.5 && Number(style.opacity) < 1, `locked primary label contrast ${ratio.toFixed(2)}; `
+  + `color ${style.color}; background ${style.backgroundColor}; panel ${getComputedStyle(locked.closest(".panel")).backgroundColor}; `
+  + `opacity chain ${chain.join(" > ") || "none"}; forced-colors ${matchMedia("(forced-colors: active)").matches}; `
+  + `animations ${locked.getAnimations().map((item) => item.transitionProperty || item.animationName).join(",") || "none"}`);
 """
 
 

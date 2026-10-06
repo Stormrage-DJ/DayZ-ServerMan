@@ -205,8 +205,14 @@ is **Starting**, no count shows. **Players not known** means one of these:
 
 Select the count to open the list of players. It shows each name and the time
 connected, sorted by name. The list refreshes every 10 seconds while it is open
-and the Overview is visible. If the server reports no names, the count stays
-and the list says that names are not available.
+and the Overview is visible.
+
+DayZ can send the list without names. Then a row shows **Player 1**,
+**Player 2**, and so on, with the time connected. The longest-connected player
+is first. When no row has a name, the list says **This server does not share
+player names. Connection times are shown.** If the server sends no list while
+the count shows players, the count stays and the list says that names are not
+available.
 
 <!-- shot:readme-09 -->
 ![Overview with the Players online list open, showing six fictional player names with their connected time and the privacy note](img/readme-09.png)

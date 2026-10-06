@@ -3,9 +3,7 @@ from __future__ import annotations
 
 import os
 import struct
-import subprocess
 import sys
-import tempfile
 import time
 import unittest
 import zlib
@@ -13,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from dayz_serverman.host.assets import compose_shell_html
+from tests.ui_harness_support import run_page_harness  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,7 +20,7 @@ EDGE = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / (
 )
 
 
-# Browser harness that drives the mods workspace and paints pass or fail
+# Browser harness that drives the mods workspace and writes its verdict (QF-082)
 HARNESS = r"""
 <script>
 (async () => {
@@ -175,9 +173,11 @@ HARNESS = r"""
     assert(!document.getElementById("mods-feedback").textContent.includes("Steam sign-in"),
       "the sign-in result was written under the check header");
     document.body.replaceChildren(); document.body.style.background = "rgb(0, 255, 0)";
+    harnessVerdict("PASS");
   } catch (error) {
     document.body.replaceChildren(); document.body.style.background = "rgb(255, 0, 0)";
     document.body.textContent = error.message;
+    harnessVerdict(`FAIL: ${error.stack || error.message}`);
   }
 })();
 </script>
@@ -189,29 +189,8 @@ class ModsUiDynamicTests(unittest.TestCase):
     """Contract: the mods workspace drives progress, cancellation, and explicit review."""
     def test_progress_cancel_auth_items_and_publication_gate(self) -> None:
         """Drive update progress, cancel, auth, items, and the publication gate."""
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            # Compose the shell page with the browser harness appended
-            page = root / "mods.html"
-            html = compose_shell_html(ROOT / "runnable" / "src" / "frontend").replace(
-                "</body>", HARNESS + "</body>"
-            )
-            page.write_text(html, encoding="utf-8")
-            screenshot = root / "result.png"
-            profile = root / "edge-data"
-            # Execute the harness in headless Edge
-            completed = subprocess.run([
-                str(EDGE), "--headless", "--disable-gpu", "--no-first-run",
-                "--hide-scrollbars", "--window-size=800,560", "--virtual-time-budget=2000",
-                f"--user-data-dir={profile}", f"--screenshot={screenshot}", page.as_uri(),
-            ], capture_output=True, text=True, timeout=20, check=False)
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            # The harness paints the body green only when every check passed
-            png = _read_stable_screenshot(screenshot, profile)
-            red, green, blue = _center_rgb(png)
-            self.assertGreater(green, 240)
-            self.assertLess(red, 15)
-            self.assertLess(blue, 15)
+        # The harness writes PASS only when every check passed; otherwise the failed check's message (QF-082)
+        self.assertEqual(run_page_harness(HARNESS, window_size="800,560", budget=2000, timeout=20), "PASS")
 
 
 def _read_stable_screenshot(screenshot: Path, profile: Path) -> bytes:
