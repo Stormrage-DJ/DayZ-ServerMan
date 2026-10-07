@@ -240,6 +240,10 @@ const rgb = (text) => {
   return [...paint.getImageData(0, 0, 1, 1).data.slice(0, 3)]; };
 const light = (colour) => { const [r, g, b] = colour.map((value) => { const part = value / 255;
   return part <= 0.03928 ? part / 12.92 : ((part + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+// Reduced motion (as on hosted runners) gives every property a .01 ms transition that may not have
+// advanced yet, so settle the transitions and measure the final colours
+document.getAnimations().filter((animation) => animation instanceof CSSTransition)
+  .forEach((animation) => animation.finish());
 const style = getComputedStyle(locked);
 const behind = rgb(getComputedStyle(locked.closest(".panel")).backgroundColor);
 const seen = (colour) => rgb(colour).map((value, index) => value * Number(style.opacity) + behind[index] * (1 - Number(style.opacity)));
