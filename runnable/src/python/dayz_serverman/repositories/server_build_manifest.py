@@ -14,6 +14,7 @@ import stat
 from pathlib import Path
 from typing import Any
 
+from ..adapters.windows.shared_files import open_shared
 from ..domain.server_build import (
     BRANCH_PATTERN,
     FLAG_FULLY_INSTALLED,
@@ -148,7 +149,7 @@ def _regular_file(path: Path, *, limit: int | None = MAX_MANIFEST_BYTES) -> bool
 
 def _bounded_text(path: Path) -> str:
     """Read at most the size cap as strict UTF-8 with an optional byte order mark."""
-    with path.open("rb") as stream:
+    with open_shared(path) as stream:
         raw = stream.read(MAX_MANIFEST_BYTES + 1)
     if len(raw) > MAX_MANIFEST_BYTES:
         raise ManifestUnreadable()

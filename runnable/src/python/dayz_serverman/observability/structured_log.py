@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Mapping
 
+from ..adapters.windows.shared_files import replace_file
 from ..security.sensitive import is_sensitive_name, redact_argument_tokens, redact_text
 
 # Correlation identifier carried across nested calls in the current context
@@ -120,8 +121,27 @@ class StructuredLogger:
         if not self.path.is_file() or self.path.stat().st_size + incoming_bytes <= self._maximum_bytes:
             return
         previous = self.path.with_name(f"{self.path.name}.1")
-        previous.unlink(missing_ok=True)
-        os.replace(self.path, previous)
+        # One replace over the previous file; a refused rotation keeps the active file and retries at the next record
+        try:
+            replace_file(self.path, previous)
+        except OSError:
+            return
+
+
+class NullStructuredLogger(StructuredLogger):
+    """Logger of an observer session: the interface of StructuredLogger, and no file is ever touched (A4)."""
+
+    def __init__(self) -> None:
+        """Name no real log file; the path is only a placeholder that nothing opens."""
+        super().__init__(Path(os.devnull))
+
+    def emit(self, event: str, **_kwargs: Any) -> None:
+        """Drop the record."""
+        return
+
+    def flush(self) -> None:
+        """Nothing is buffered."""
+        return
 
 
 def _redact(value: Any, key: str = "") -> Any:

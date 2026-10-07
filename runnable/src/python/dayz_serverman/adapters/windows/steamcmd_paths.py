@@ -10,6 +10,7 @@ from pathlib import Path, PureWindowsPath
 
 from ...domain.models import ManagerSettings
 from ...repositories.steam_vdf import VdfError, field, parse_vdf
+from .shared_files import read_text_shared
 
 
 # Steam application id of the DayZ game, which owns the Workshop content
@@ -164,7 +165,7 @@ class SteamCmdPreflight:
             cls._validate_chain(library_manifest)
             try:
                 # Read every registered library path from libraryfolders.vdf
-                parsed = parse_vdf(library_manifest.read_text(encoding="utf-8-sig"))
+                parsed = parse_vdf(read_text_shared(library_manifest, encoding="utf-8-sig"))
                 folders = field(parsed, "libraryfolders")
                 if not isinstance(folders, dict):
                     raise VdfError("Steam library list is invalid")

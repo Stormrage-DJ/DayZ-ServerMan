@@ -169,7 +169,7 @@ class UpdateCheckCacheTests(unittest.TestCase):
         """A failed swap returns False, logs one event and leaves no staged file."""
         first = UpdateCheckRecord(None, CHECKED, {"111": fact()})
         self.assertTrue(self.repository.save(first, {"111"}))
-        with patch.object(cache.os, "replace", side_effect=PermissionError("locked")):
+        with patch.object(cache, "replace_file", side_effect=PermissionError("locked")):
             saved = self.repository.save(UpdateCheckRecord(None, None, {}), set())
         self.assertFalse(saved)
         self.assertEqual(self.repository.load(), first)

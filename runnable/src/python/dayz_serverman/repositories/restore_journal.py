@@ -9,6 +9,7 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 
+from ..adapters.windows.shared_files import read_text_shared, replace_file
 from ..domain.backups import BACKUP_ID, SHA256
 from ..domain.profiles import validate_profile_id, validate_relative_path
 from ..domain.restores import RESTORE_JOURNAL_SCHEMA, RestoreGroup, RestoreJournal
@@ -31,10 +32,13 @@ class RestoreJournalError(RuntimeError):
 
 class RestoreJournalRepository:
     """Persist restore journals as atomic, fsync-verified JSON files."""
-    def __init__(self, root: Path, *, retire_hook: Callable[[str], None] | None = None) -> None:
-        """Store the journal root and the optional retirement hook."""
+    def __init__(
+        self, root: Path, *, retire_hook: Callable[[str], None] | None = None, create_root: bool = True,
+    ) -> None:
+        """Store the journal root and the optional retirement hook; an observer session creates no folder."""
         self.root = root.resolve(strict=False)
-        self.root.mkdir(parents=True, exist_ok=True)
+        if create_root:
+            self.root.mkdir(parents=True, exist_ok=True)
         # Default the retire hook to a no-op for callers without crash hooks
         self._retire_hook = retire_hook or (lambda _phase: None)
 
@@ -64,13 +68,13 @@ class RestoreJournalRepository:
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        replace_file(temporary, path)
         return path
 
     def load(self, path: Path) -> RestoreJournal:
         """Read a journal file and return the validated record."""
         try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
+            raw = json.loads(read_text_shared(path, encoding="utf-8"))
             return _parse(raw, path.stem)
         except RestoreJournalError:
             raise
@@ -106,7 +110,7 @@ class RestoreJournalRepository:
         if destination.exists():
             raise RestoreJournalError("retired restore journal already exists")
         self._retire_hook("BEFORE_RETIRE")
-        os.replace(active, destination)
+        replace_file(active, destination)
         self._retire_hook("AFTER_RETIRE")
         # Prove the archived copy survived the move byte for byte
         if self.load(destination).to_dict() != journal.to_dict():

@@ -12,6 +12,7 @@ from pathlib import Path
 from ..domain.lifecycle import LifecycleFailure
 from ..repositories.mod_publication_journal import PublicationJournalRepository
 from ..repositories.mod_publication_recovery import PublicationRecovery
+from .folder_writer_scope import STARTUP_RECOVERY_WAIT_SECONDS
 from .installation_guard import InstallationGuard
 from .operations.manager import OperationManager
 from .settings import SettingsService
@@ -35,8 +36,8 @@ def recover_interrupted_publications(
         return
     root = Path(current.dayz_root)
     try:
-        # The guard refuses before the block runs, so a refusal writes nothing
-        with guard.stopped(root):
+        # The guard refuses before the block runs, so a refusal writes nothing; it also holds the A13 writer side
+        with guard.stopped(root, folder_wait=STARTUP_RECOVERY_WAIT_SECONDS):
             blocked = PublicationRecovery(journals).inspect(root)["blocked"]
     except LifecycleFailure:
         # A busy installation, or a server that is not proven stopped: recover at a later start

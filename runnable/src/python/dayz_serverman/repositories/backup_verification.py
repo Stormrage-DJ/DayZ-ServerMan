@@ -8,6 +8,7 @@ import os
 import stat
 from pathlib import Path
 
+from ..adapters.windows.shared_files import open_shared, read_bytes_shared, read_text_shared
 from ..domain.backups import (
     BACKUP_SCHEMA_VERSION,
     BackupManifest,
@@ -52,7 +53,7 @@ def sha256_file(path: Path) -> str:
     """Return the SHA-256 hex digest of a file's contents."""
     # Stream the file in bounded chunks to keep memory flat
     digest = hashlib.sha256()
-    with path.open("rb") as stream:
+    with open_shared(path) as stream:
         while chunk := stream.read(1024 * 1024):
             digest.update(chunk)
     return digest.hexdigest()
@@ -67,7 +68,7 @@ def read_manifest(directory: Path, expected_backup_id: str | None = None) -> Bac
     if is_reparse(path):
         raise BackupVerificationError("Snapshot manifest is unsafe.")
     # Parse the JSON document and reject newer schemas
-    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw = json.loads(read_text_shared(path, encoding="utf-8"))
     if (
         isinstance(raw, dict)
         and isinstance(raw.get("schema_version"), int)
@@ -117,4 +118,4 @@ def verify_directory(directory: Path, manifest: BackupManifest) -> None:
         if actual_directories != expected_directories:
             raise BackupVerificationError("Snapshot directories do not match the manifest.")
         from .backup_reconstruction import verify_reconstruction_bytes
-        verify_reconstruction_bytes(manifest, (directory / manifest.reconstruction["config_entry"]).read_bytes())
+        verify_reconstruction_bytes(manifest, read_bytes_shared(directory / manifest.reconstruction["config_entry"]))

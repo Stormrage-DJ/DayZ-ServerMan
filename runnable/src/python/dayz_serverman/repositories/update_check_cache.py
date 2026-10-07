@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Collection, Mapping
 
+from ..adapters.windows.shared_files import open_shared, replace_file
 from ..domain.profiles import WORKSHOP_ID
 from ..domain.update_check import (
     MAX_CACHED_ITEMS,
@@ -52,7 +53,7 @@ class UpdateCheckCacheRepository:
         """Return the stored record, or None ("never checked") for any unusable file."""
         try:
             # Read at most one byte above the cap so an oversized file is detected
-            with self._path.open("rb") as stream:
+            with open_shared(self._path) as stream:
                 raw = stream.read(MAX_FILE_BYTES + 1)
             if len(raw) > MAX_FILE_BYTES:
                 return None
@@ -99,7 +100,7 @@ class UpdateCheckCacheRepository:
                 stream.flush()
                 os.fsync(stream.fileno())
             # Swap the staged file into place
-            os.replace(temporary, self._path)
+            replace_file(temporary, self._path)
         finally:
             # Remove the staged file when any step fails
             if temporary.exists():

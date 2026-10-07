@@ -8,6 +8,7 @@ import unicodedata
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 
+from ..adapters.windows.shared_files import open_shared
 from ..domain.backups import entry_path_key, normalized_entry_path
 from .backup_verification import is_reparse, path_has_reparse, sha256_file
 
@@ -115,7 +116,7 @@ def copy_verified(source: BackupSource, target: Path) -> None:
         raise BackupSourceError("BACKUP_SOURCE_CHANGED", "A backup source changed during backup creation.")
     # Stage the copy beside the target and flush it to disk
     target.parent.mkdir(parents=True, exist_ok=True)
-    with source.source.open("rb") as reader, target.open("xb") as writer:
+    with open_shared(source.source) as reader, target.open("xb") as writer:
         while chunk := reader.read(1024 * 1024):
             writer.write(chunk)
         writer.flush()

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from ..domain.models import RecordState, RecordUnavailable
-from .json_store import VersionedJsonRepository
+from .json_store import StagingPolicy, VersionedJsonRepository
 from .external_root import external_root_identity, validate_external_root
 from .legacy_backup_proof import (
     backup_format, backup_path_identity, backup_reference_id, is_sha256,
@@ -97,10 +97,10 @@ class LegacyBackupIndex:
 class LegacyBackupIndexRepository:
     """Load and save the legacy backup index with revision control."""
 
-    def __init__(self, path: Path) -> None:
-        """Store the index path and its versioned JSON backing store."""
+    def __init__(self, path: Path, *, staging: StagingPolicy = StagingPolicy.OWNER) -> None:
+        """Store the index path and its versioned JSON backing store with the session's staging-file rule."""
         self.path = path.resolve(strict=False)
-        self._repository = VersionedJsonRepository(self.path, 1)
+        self._repository = VersionedJsonRepository(self.path, 1, staging=staging)
 
     def load_optional(self) -> LegacyBackupIndex | None:
         """Return the stored index, or None when none has been written."""

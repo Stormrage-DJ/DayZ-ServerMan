@@ -61,8 +61,10 @@ class LifecycleCoordinator:
         profile_id, profile_revision, settings_revision = _start_parameters(parameters)
         return self._submit(
             "START_SERVER",
-            lambda _context: self._lifecycle.start(
+            lambda context: self._lifecycle.start(
                 profile_id, profile_revision, settings_revision,
+                # 6.5 marker: the record shows whether the refusal came before the launch
+                before_change=lambda: context.checkpoint("preflight", 11),
             ).to_dict(),
             {"profile_id": profile_id, "target_role": "dayz_server"},
         )
@@ -75,7 +77,10 @@ class LifecycleCoordinator:
         def action(context: OperationContext) -> Mapping[str, Any]:
             """Stop the server and optionally create the post-stop backup."""
             context.checkpoint("STOP_SERVER", 20)
-            result = self._lifecycle.stop(settings_revision).to_dict()
+            result = self._lifecycle.stop(
+                # 6.5 marker: the record shows whether the refusal came before the stop request
+                settings_revision, before_change=lambda: context.checkpoint("STOP_SERVER", 21),
+            ).to_dict()
             # Chain a verified backup after the server is confirmed stopped
             if backup:
                 result["backup"] = self._create_backup(
@@ -99,7 +104,8 @@ class LifecycleCoordinator:
             def action(context: OperationContext) -> Mapping[str, Any]:
                 """Stop, back up, then start the server again inside the lane."""
                 context.checkpoint("STOP_SERVER", 15)
-                self._lifecycle.stop(settings_revision)
+                # 6.5 marker before the stop request; a later refusal of the start exits 1
+                self._lifecycle.stop(settings_revision, before_change=lambda: context.checkpoint("STOP_SERVER", 16))
                 # Back up while the server is closed, then start it again
                 backup_result = self._create_backup(
                     profile_id, profile_revision, settings_revision, context,
@@ -111,9 +117,10 @@ class LifecycleCoordinator:
                 result["backup"] = backup_result
                 return result
         else:
-            # Without a backup, use the service restart path directly
-            action = lambda _context: self._lifecycle.restart(
+            # Without a backup, use the service restart path directly; 6.5 marker before the stop request
+            action = lambda context: self._lifecycle.restart(
                 profile_id, profile_revision, settings_revision,
+                before_change=lambda: context.checkpoint("preflight", 12),
             ).to_dict()
         # Allow replay only of backup checkpoints when a backup is chained
         return self._submit(

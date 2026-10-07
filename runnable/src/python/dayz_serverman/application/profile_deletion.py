@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+from collections.abc import Callable
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
@@ -11,6 +12,8 @@ from ..domain.models import RevisionConflict
 from ..repositories.applied_mod_state import AppliedModStateRepository
 from ..repositories.backup_verification import path_has_reparse
 from ..repositories.server_configuration import load_server_configuration
+from .folder_writer_scope import WriterScope
+from .lifecycle_ports import ServerFolderWriterPort
 from .mission_configuration import MissionPathError, resolve_profile_mission
 from .preferences import PreferenceCoordinator
 from .profiles import ProfileService
@@ -30,6 +33,7 @@ class ProfileDeletionService:
         self, profiles: ProfileService, settings: SettingsService, lifecycle: Any,
         preferences: PreferenceCoordinator, schedules: ScheduleCoordinator,
         applied_mod_state: AppliedModStateRepository,
+        folder_writer: ServerFolderWriterPort | None = None,
     ) -> None:
         self._profiles = profiles
         self._settings = settings
@@ -37,9 +41,15 @@ class ProfileDeletionService:
         self._preferences = preferences
         self._schedules = schedules
         self._applied_mod_state = applied_mod_state
+        self._folder_writer = folder_writer
 
-    def delete(self, profile_id: str, expected_revision: int) -> dict[str, object]:
-        """Delete live profile data while preserving its backup archives."""
+    def delete(
+        self, profile_id: str, expected_revision: int, *, before_change: Callable[[], None] | None = None,
+    ) -> dict[str, object]:
+        """Delete live profile data while preserving its backup archives.
+
+        `before_change` runs right before the first change, inside the writer side (6.5 marker).
+        """
         profile = self._profiles.read(profile_id)
         if profile.revision != expected_revision:
             raise RevisionConflict(
@@ -66,12 +76,16 @@ class ProfileDeletionService:
         if mission_is_exclusive:
             self._preflight_directory(mission, root)
 
-        self._schedules.delete_profile(profile_id)
-        self._preferences.delete_profile(profile_id)
-        self._applied_mod_state.delete_profile(profile_id)
-        removed_storage = self._remove_directory(mission) if mission_is_exclusive else self._remove_directory(storage) if storage_is_exclusive else 0
-        removed_generated = self._remove_directory(generated)
-        self._profiles.delete(profile_id, expected_revision)
+        # A13: the writer side is held from the first change to the last folder removal; a refusal changes nothing
+        with WriterScope(self._folder_writer).held_for():
+            if before_change is not None:
+                before_change()
+            self._schedules.delete_profile(profile_id)
+            self._preferences.delete_profile(profile_id)
+            self._applied_mod_state.delete_profile(profile_id)
+            removed_storage = self._remove_directory(mission) if mission_is_exclusive else self._remove_directory(storage) if storage_is_exclusive else 0
+            removed_generated = self._remove_directory(generated)
+            self._profiles.delete(profile_id, expected_revision)
         return {
             "profile_id": profile_id,
             "preserved_backups": True,

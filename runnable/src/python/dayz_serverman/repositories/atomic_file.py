@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Callable
 
+from ..adapters.windows.shared_files import read_bytes_shared, replace_file
 from .configuration_common import digest_bytes
 
 
@@ -18,7 +19,7 @@ class ContentChangedError(RuntimeError):
 class AtomicFilePublisher:
     """Publish a file in place only while its expected digest still matches."""
 
-    def __init__(self, replace: Callable[[Path, Path], None] = os.replace) -> None:
+    def __init__(self, replace: Callable[[Path, Path], None] = replace_file) -> None:
         """Store the replacement strategy used for the final swap."""
         self._replace = replace
 
@@ -59,6 +60,6 @@ class AtomicFilePublisher:
         """Return the digest of the current file bytes."""
         # Treat a missing target as changed content so the caller reloads it
         try:
-            return digest_bytes(path.read_bytes())
+            return digest_bytes(read_bytes_shared(path))
         except FileNotFoundError as error:
             raise ContentChangedError("configuration target is no longer present") from error

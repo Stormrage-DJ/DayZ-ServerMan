@@ -16,6 +16,7 @@ from ..domain.lifecycle import LifecycleFailure
 from ..repositories.profile_restore_storage import ProfileRestoreStorage
 from ..repositories.provisioning_journal import ProvisioningJournalRepository
 from ..repositories.restore_journal import RestoreJournalRepository
+from .folder_writer_scope import STARTUP_RECOVERY_WAIT_SECONDS
 from .installation_guard import InstallationGuard
 from .operations.manager import OperationManager
 from .profile_provisioning import ProfileProvisioningError, ProfileProvisioningService
@@ -34,7 +35,8 @@ def recover_interrupted_restores(
     # Without a journal nothing is read and nothing is written
     if not journals.records():
         return
-    recovery = restores.inspect_recovery()
+    # The A13 writer side waits up to 30 s for observer reads; a refusal takes the block path below
+    recovery = restores.inspect_recovery(wait_seconds=STARTUP_RECOVERY_WAIT_SECONDS)
     if recovery.get("reason") == RECOVERY_NOT_STOPPED:
         # A busy installation, or a server that is not proven stopped: recover at a later start
         operations.block_for_recovery(RECOVERY_NOT_STOPPED, owner=RESTORE_KIND)
@@ -101,8 +103,8 @@ def recover_interrupted_profile_restores(
     blocked = True
     try:
         root = Path(dayz_root).resolve(strict=True)
-        # The state is read under the mutex; a refusal writes nothing
-        with guard.stopped(root):
+        # The state is read under the mutex, then the A13 writer side is taken; a refusal writes nothing
+        with guard.stopped(root, folder_wait=STARTUP_RECOVERY_WAIT_SECONDS):
             blocked = storage.inspect(root)["blocked"]
     except LifecycleFailure:
         operations.block_for_recovery(

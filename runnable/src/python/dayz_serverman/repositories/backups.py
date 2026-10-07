@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import tempfile
 import uuid
@@ -12,6 +11,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from ..adapters.windows.shared_files import replace_file
 from ..domain.backups import (
     BACKUP_ID, BACKUP_SCHEMA_VERSION, BackupManifest, BackupManifestError,
     ManifestEntry, RESTORE_COMPATIBLE, restore_compatibility,
@@ -130,7 +130,7 @@ class BackupStorage:
             if validate_context is not None:
                 validate_context()
             # Publish the verified archive under its final name
-            os.replace(partial, final)
+            replace_file(partial, final)
             published = True
             return _verify_zip(final, selected_id, manifest, "published")
         finally:

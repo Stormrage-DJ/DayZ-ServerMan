@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
+from ..adapters.windows.shared_files import read_bytes_shared, replace_file
 from ..domain.models import RecordState, RecordUnavailable, RevisionConflict
 from ..domain.profiles import ProfileInput, ProfileRecord, ProfileValidationError, validate_profile_id
-from .json_store import VersionedJsonRepository
+from .json_store import StagingPolicy, VersionedJsonRepository
 from .profile_migration import (
     MigrationHook,
     ProfileMigrationError,
@@ -38,20 +38,30 @@ class ProfileStorageError(RuntimeError):
 
 class ProfileRepository:
     """Store each profile as its own versioned JSON file under one root."""
-    def __init__(self, root: Path, migration_hook: MigrationHook | None = None) -> None:
-        """Store the profile root and the optional migration hook."""
+    def __init__(
+        self, root: Path, migration_hook: MigrationHook | None = None, *,
+        staging: StagingPolicy = StagingPolicy.OWNER,
+    ) -> None:
+        """Store the profile root, the optional migration hook and the session's staging-file rule."""
         self.root = root.resolve(strict=False)
         self._migration_hook = migration_hook
+        self._staging = staging
+
+    @property
+    def _observer(self) -> bool:
+        """Report whether this repository reads for an observer session (4.2.2)."""
+        return self._staging is StagingPolicy.OBSERVER
 
     def list(self) -> tuple[ProfileRecord, ...]:
         """Return every stored profile, rejecting duplicates and interrupted writes."""
         if not self.root.exists():
             return ()
-        # Bring every stored file up to the current schema before listing
+        # Bring every stored file up to the current schema before listing; an observer never writes
         for path in sorted(self.root.glob("*.json"), key=lambda item: item.name.casefold()):
-            self._prepare_path(path)
-        # Refuse to list while an interrupted write is present
-        if any(self.root.glob(".*.json.*.tmp")):
+            if not self._observer:
+                self._prepare_path(path)
+        # Refuse to list while an interrupted write is present; an observer ignores staging files
+        if not self._observer and any(self.root.glob(".*.json.*.tmp")):
             raise ProfileStorageError(
                 "an interrupted profile write requires recovery", recovery_required=True,
             )
@@ -64,7 +74,9 @@ class ProfileRepository:
                 identifier = validate_profile_id(path.stem)
             except ProfileValidationError as error:
                 raise ProfileStorageError("a profile filename has an invalid identifier") from error
-            record = self._load_path(path, identifier)
+            record = self._observed(path, identifier) if self._observer else self._load_path(path, identifier)
+            if record is None:
+                continue
             folded = record.values.profile_id.casefold()
             if folded in identifiers:
                 raise ProfileStorageError("duplicate profile identifiers were found")
@@ -76,6 +88,11 @@ class ProfileRepository:
         """Load one profile record, rejecting missing or unreadable storage."""
         identifier = validate_profile_id(profile_id)
         path = self._path(identifier)
+        if self._observer:
+            record = self._observed(path, identifier)
+            if record is None:
+                raise ProfileNotFound("profile was not found")
+            return record
         self._prepare_path(path)
         inspection = self._repository(path).inspect()
         # Report absence specifically so callers can distinguish it
@@ -145,6 +162,30 @@ class ProfileRepository:
                     "profile schema migration requires recovery", recovery_required=True,
                 ) from error
 
+    def _observed(self, path: Path, identifier: str) -> ProfileRecord | None:
+        """Read one profile for an observer: no recovery, no migration write, staging files ignored."""
+        if not path.exists():
+            return None
+        try:
+            raw = read_raw_profile(path)
+        except ProfileMigrationError as error:
+            raise ProfileStorageError(str(error), recovery_required=True) from error
+        version = raw.get("schema_version")
+        if isinstance(version, int) and not isinstance(version, bool) and version > PROFILE_SCHEMA_VERSION:
+            raise ProfileStorageError("profile record uses a future schema", recovery_required=True)
+        if not (type(version) is int and version == 1):
+            return self._load_path(path, identifier)
+        # A schema 1 record is migrated in memory only; the owner migrates it on disk at its next use
+        try:
+            document = migrate_v1_document(raw)
+            values = ProfileInput.parse({key: value for key, value in document.items()
+                                         if key not in {"schema_version", "revision"}})
+        except (ProfileMigrationError, ProfileValidationError) as error:
+            raise ProfileStorageError("profile schema migration requires recovery", recovery_required=True) from error
+        if values.profile_id != identifier:
+            raise ProfileStorageError("profile identifier does not match its filename", recovery_required=True)
+        return ProfileRecord(document["revision"], values)
+
     def _recover_migration(self, path: Path, temporary: Path) -> None:
         """Verify a staged migration and publish or discard it safely."""
         try:
@@ -167,7 +208,7 @@ class ProfileRepository:
                 version = authoritative.get("schema_version")
                 if type(version) is int and version == PROFILE_SCHEMA_VERSION:
                     expected_bytes = serialize_profile_document(authoritative).encode("utf-8")
-                    if staged != authoritative or temporary.read_bytes() != expected_bytes:
+                    if staged != authoritative or read_bytes_shared(temporary) != expected_bytes:
                         raise ProfileMigrationError(
                             "migration staging conflicts with the authoritative record"
                         )
@@ -177,10 +218,10 @@ class ProfileRepository:
                     raise ProfileMigrationError("migration staging does not match the source")
                 expected = migrate_v1_document(authoritative)
                 expected_bytes = serialize_profile_document(expected).encode("utf-8")
-                if staged != expected or temporary.read_bytes() != expected_bytes:
+                if staged != expected or read_bytes_shared(temporary) != expected_bytes:
                     raise ProfileMigrationError("migration staging does not match the source")
             # Publish the staged migration only when it matches the source
-            os.replace(temporary, path)
+            replace_file(temporary, path)
         except (OSError, ProfileMigrationError, ProfileValidationError) as error:
             raise ProfileStorageError(
                 "interrupted profile migration requires recovery", recovery_required=True,
@@ -216,10 +257,9 @@ class ProfileRepository:
         """Return the file path that stores one profile identifier."""
         return self.root / f"{profile_id}.json"
 
-    @staticmethod
-    def _repository(path: Path) -> VersionedJsonRepository:
-        """Return the versioned repository bound to one profile file."""
-        return VersionedJsonRepository(path, PROFILE_SCHEMA_VERSION)
+    def _repository(self, path: Path) -> VersionedJsonRepository:
+        """Return the versioned repository bound to one profile file, with this session's staging rule."""
+        return VersionedJsonRepository(path, PROFILE_SCHEMA_VERSION, staging=self._staging)
 
     @staticmethod
     def _inspection_error(state: RecordState) -> ProfileStorageError:

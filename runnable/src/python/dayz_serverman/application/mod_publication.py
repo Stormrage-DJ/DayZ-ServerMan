@@ -15,7 +15,9 @@ from ..repositories.mod_publication_journal import PublicationJournalRepository
 from ..repositories.mod_publication_stage import ModPublicationStorage, PublicationCancelled
 from ..adapters.windows.publication_paths import PublicationPathError, dayz_root_identity
 from .content_proof_records import ContentProofRecorder
+from .folder_writer_scope import WriterScope
 from .installation_guard import PLAIN_APPLY_REQUIRES_GUARD, InstallationGuard
+from .lifecycle_ports import ServerFolderWriterPort
 from .mod_publication_apply import apply_publication, missing_keys, publication_writes
 from .operations.context import OperationContext
 from .operations.manager import OperationManager
@@ -60,11 +62,13 @@ class ModPublicationService:
         prestart: PrestartFingerprints | None = None,
         guard: InstallationGuard | None = None,
         guard_plain_apply: bool = PLAIN_APPLY_REQUIRES_GUARD,
+        folder_writer: ServerFolderWriterPort | None = None,
     ) -> None:
         """Store collaborators, the optional proof recorder, pre-start rule and write guard.
 
         `guard_plain_apply` is the policy of decision D10: whether a writing
         publication without a requested start also runs inside the guard.
+        `folder_writer` is the A13 writer side; None means no lock is wired.
         """
         self._profiles = profiles
         self._settings = settings
@@ -76,6 +80,7 @@ class ModPublicationService:
         self._prestart = prestart
         self._guard = guard
         self._guard_plain_apply = guard_plain_apply
+        self._folder_writer = folder_writer
 
     def preview(self, request: PublicationRequest) -> dict[str, object]:
         """Return the reviewed targets and the fingerprint publish must echo."""
@@ -121,9 +126,13 @@ class ModPublicationService:
 
     def publish(
         self, request: PublicationRequest, reviewed_fingerprint: str,
-        context: OperationContext,
+        context: OperationContext, *, writer_scope: WriterScope | None = None,
     ) -> dict[str, object]:
-        """Stage, publish, verify, and optionally start the reviewed targets."""
+        """Stage, publish, verify, and optionally start the reviewed targets.
+
+        An apply and restart passes the `writer_scope` that it took before the stop (QF-2);
+        then this run takes no writer side of its own.
+        """
         # Report preflight progress and rebuild the reviewed intent
         context.checkpoint("PUBLICATION_PREFLIGHT", 5)
         intent = self._rebuild(request, f"publication-{context.operation_id[:32].lower()}")
@@ -134,8 +143,13 @@ class ModPublicationService:
             intent, request.update_operation_id, start_requested,
         ) != reviewed_fingerprint:
             raise ModPublicationError("PUBLICATION_PREVIEW_STALE", "Publication preview changed.")
+        scope = writer_scope if writer_scope is not None else WriterScope(self._folder_writer)
         def storage_checkpoint(phase: str, index: int) -> None:
             """Relay storage progress while keeping cancellation authoritative."""
+            # A13: a writing run takes the writer side before BEFORE_PUBLICATION is relayed
+            if (writer_scope is None and self._folder_writer is not None and phase == "BEFORE_PUBLICATION"
+                    and publication_writes(final, Path(settings.dayz_root))):
+                scope.acquire()
             progress = min(50, 10 + max(index, 0) * 5)
             try:
                 context.checkpoint(phase, progress)
@@ -176,7 +190,7 @@ class ModPublicationService:
             storage=storage, journals=self._journals, intent=final,
             dayz_root=Path(settings.dayz_root), start_requested=final_start_requested,
             guard=self._guard, guard_plain_apply=self._guard_plain_apply,
-            record_proofs=record_proofs,
+            record_proofs=record_proofs, writer_scope=scope,
         )
         # Assemble the verified publication evidence for the operation
         result = verified_publication_result(

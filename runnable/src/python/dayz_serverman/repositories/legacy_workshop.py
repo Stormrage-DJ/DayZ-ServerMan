@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from ..adapters.windows.shared_files import read_text_shared
 from .backup_verification import is_reparse, path_has_reparse
 
 
@@ -87,7 +88,7 @@ def _read_metadata(root: Path, folder: Path, evidence: set[Path]) -> tuple[str |
             continue
         evidence.add(path)
         # Read tolerantly; undecodable bytes still yield best-effort text
-        text = path.read_text(encoding="utf-8", errors="ignore")
+        text = read_text_shared(path, encoding="utf-8", errors="ignore")
         if name == "meta.cpp":
             match = _ID_PATTERN.search(text)
             # Id zero marks an unpublished mod and cannot be a valid identity

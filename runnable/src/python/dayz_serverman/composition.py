@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
 from .adapters.windows.diagnostics import WindowsPathDiagnostics
@@ -13,24 +12,20 @@ from .application.backups import BackupService
 from .application.configuration import ConfigurationService
 from .application.configuration_coordinator import ConfigurationCoordinator
 from .application.installation_guard import InstallationGuard
+from .application.lifecycle_ownership import LaunchOwnership
+from .application.lifecycle_ports import ServerFolderWriterPort
 from .application.lifecycle_coordinator import LifecycleCoordinator, for_running_profile
-from .application.server_readiness import ReadinessLifecycleService
 from .application.logs import LogQueryService
 from .application.mission_configuration import MissionConfigurationService
 from .application.mission_configuration_coordinator import MissionConfigurationCoordinator
 from .application.medical_features import MedicalFeatureService
 from .application.medical_feature_coordinator import MedicalFeatureCoordinator
 from .application.migration_coordinator import MigrationCoordinator
-from .application.mod_publication import ModPublicationService
-from .application.mod_publication_coordinator import ModPublicationCoordinator
-from .application.mod_inventory import ModInventoryService
-from .application.mod_inventory_coordinator import ModInventoryCoordinator
 from .application.migrations import MigrationService
 from .application.legacy_backup_coordinator import LegacyBackupCoordinator
 from .application.legacy_backups import LegacyBackupService
 from .application.operations.manager import OperationManager
 from .application.operations.store import OperationStore
-from .application.profile_coordinator import ProfileCoordinator
 from .application.preferences import PreferenceCoordinator
 from .application.profiles import ProfileService
 from .application.restore_coordinator import RestoreCoordinator
@@ -39,14 +34,9 @@ from .application.schedules import ScheduleCoordinator
 from .application.settings import SettingsService
 from .application.shutdown import ShutdownCoordinator
 from .application.startup_recoveries import recover_interrupted_restores
-from .application.update_check import UpdateCheckService
-from .application.update_check_coordinator import UpdateCheckCoordinator
-from .application.update_check_scheduler import UpdateCheckScheduler
-from .application.workshop_coordinator import WorkshopCoordinator
-from .application.workshop_updates import WorkshopUpdateService
 from .bridge.facade import BridgeFacade
-from .observability.structured_log import StructuredLogger
-from .repositories.json_store import VersionedJsonRepository
+from .observability.structured_log import NullStructuredLogger, StructuredLogger
+from .repositories.json_store import StagingPolicy, VersionedJsonRepository
 from .repositories.migrations import MigrationStorage
 from .repositories.legacy_backup_index import LegacyBackupIndexRepository
 from .repositories.migration_journal import MigrationJournalRepository
@@ -58,96 +48,62 @@ from .repositories.restore_storage import RestoreStorage
 from .repositories.schedules import ScheduleRepository
 from .repositories.paths import PortablePaths
 from .repositories.profiles import ProfileRepository
+from .repositories.server_ownership import OWNERSHIP_FILE, ServerOwnershipRepository
 from .repositories.workshop_recovery import inspect_workshop_recovery
+from .bridge_composition import build_handler_table, observer_handlers
+from .composition_model import ApplicationComposition, SessionMode
 from .profile_provisioning_composition import build_profile_provisioning
-from .lifecycle_composition import build_lifecycle, build_online_players
+from .lifecycle_composition import build_lifecycle
 from .profile_restore_composition import build_profile_restore, build_settings_repair
 from .update_check_composition import (
-    ServerBuildParts, build_server_build, build_update_check, build_update_check_scheduler,
-    build_update_status,
+    build_server_build, build_update_check, build_update_check_scheduler, build_update_status,
 )
 from .workshop_composition import build_workshop
 
 
-@dataclass(frozen=True)
-class ApplicationComposition:
-    """Immutable graph of production services for one manager root."""
-    paths: PortablePaths
-    settings: SettingsService
-    settings_repository: VersionedJsonRepository
-    path_diagnostics: WindowsPathDiagnostics
-    state: VersionedJsonRepository
-    logger: StructuredLogger
-    operations: OperationManager
-    shutdown: ShutdownCoordinator
-    profile_repository: ProfileRepository
-    profiles: ProfileService
-    profile_coordinator: ProfileCoordinator
-    preferences: PreferenceCoordinator
-    backups: BackupService
-    backup_coordinator: BackupCoordinator
-    restores: RestoreService
-    restore_coordinator: RestoreCoordinator
-    configuration: ConfigurationService
-    configuration_coordinator: ConfigurationCoordinator
-    mission_configuration: MissionConfigurationService
-    mission_configuration_coordinator: MissionConfigurationCoordinator
-    medical_features: MedicalFeatureService
-    medical_feature_coordinator: MedicalFeatureCoordinator
-    migrations: MigrationService
-    migration_coordinator: MigrationCoordinator
-    legacy_backups: LegacyBackupService
-    legacy_backup_coordinator: LegacyBackupCoordinator
-    lifecycle: ReadinessLifecycleService
-    lifecycle_coordinator: LifecycleCoordinator
-    schedules: ScheduleCoordinator
-    logs: LogQueryService
-    workshop_updates: WorkshopUpdateService
-    workshop_coordinator: WorkshopCoordinator
-    mod_inventory: ModInventoryService
-    mod_inventory_coordinator: ModInventoryCoordinator
-    mod_publication: ModPublicationService
-    mod_publication_coordinator: ModPublicationCoordinator
-    update_check: UpdateCheckService
-    update_check_scheduler: UpdateCheckScheduler
-    update_check_coordinator: UpdateCheckCoordinator
-    server_build: ServerBuildParts
-    coordinator: ApplicationCoordinator
-    bridge: BridgeFacade
-    host_bridge: BridgeFacade
+def build_composition(
+    packaged_root: Path | None = None, *, mode: SessionMode = SessionMode.OWNER,
+    folder_writer: ServerFolderWriterPort | None = None,
+) -> ApplicationComposition:
+    """Create production services without consulting the working directory.
 
-
-def build_composition(packaged_root: Path | None = None) -> ApplicationComposition:
-    """Create production services without consulting the working directory."""
-    # Resolve the portable root and materialize the storage layout
+    The defaults are the GUI's owner session. An observer session (A4) creates no
+    folder, writes no log line, runs no recovery, refuses every submit and holds
+    only the read handlers. `folder_writer` is the A13 writer side of an owner.
+    """
+    observer = mode is SessionMode.OBSERVER
+    staging = StagingPolicy.OBSERVER if observer else StagingPolicy.OWNER
+    # Resolve the portable root and materialize the storage layout; only an owner creates it
     paths = (
         PortablePaths.from_root(packaged_root)
         if packaged_root is not None
         else PortablePaths.from_source(Path(__file__))
     )
-    paths.create_layout()
+    if not observer:
+        paths.create_layout()
     # Build the settings, diagnostics, and logging services
-    settings_repository = VersionedJsonRepository(paths.manager_config)
+    settings_repository = VersionedJsonRepository(paths.manager_config, staging=staging)
     path_diagnostics = WindowsPathDiagnostics()
     settings = SettingsService(settings_repository, paths, path_diagnostics)
-    logger = StructuredLogger(paths.logs / "manager.jsonl")
-    # Track long-running operations with durable records
-    operation_store = OperationStore(paths.operations)
+    logger = NullStructuredLogger() if observer else StructuredLogger(paths.logs / "manager.jsonl")
+    # Track long-running operations with durable records; an observer's lane refuses every submit
+    operation_store = OperationStore(paths.operations, create_root=not observer)
     operations = OperationManager(operation_store, logger=logger)
+    if observer:
+        operations.begin_shutdown()
     # An interrupted mod publication is recovered by the workshop composition, inside the write guard
     publication_journals = PublicationJournalRepository(paths.publication_journals)
-    # Block mutations after an interrupted SteamCMD update
-    workshop_recovery = inspect_workshop_recovery(paths.operations, WindowsChildProbe())
-    if workshop_recovery["blocked"]:
+    # Block mutations after an interrupted SteamCMD update; an observer only reports pending recoveries
+    if not observer and inspect_workshop_recovery(paths.operations, WindowsChildProbe())["blocked"]:
         operations.block_for_recovery(
             "Mutations are blocked by an interrupted SteamCMD update with an unknown result."
         )
     # Build the profile, preference, and backup services
-    state_repository = VersionedJsonRepository(paths.state_file)
-    profile_repository = ProfileRepository(paths.profiles)
+    state_repository = VersionedJsonRepository(paths.state_file, staging=staging)
+    profile_repository = ProfileRepository(paths.profiles, staging=staging)
     profiles = ProfileService(profile_repository, settings)
     preferences = PreferenceCoordinator(
-        VersionedJsonRepository(paths.ui_preferences), profiles,
+        VersionedJsonRepository(paths.ui_preferences, staging=staging), profiles,
     )
     backup_storage = BackupStorage()
     backups = BackupService(profiles, settings, backup_storage)
@@ -162,7 +118,7 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
     # Build migration services with legacy backup indexing
     migration_storage = MigrationStorage(paths.migrations)
     legacy_backup_repository = LegacyBackupIndexRepository(
-        paths.migrations / "legacy-backup-index.json",
+        paths.migrations / "legacy-backup-index.json", staging=staging,
     )
     migration_publication = MigrationPublication(
         paths.root, migration_storage,
@@ -174,33 +130,44 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
         migration_storage, publisher=migration_publication,
         backup_index_repository=legacy_backup_repository,
     )
-    migrations.inspect_recovery()
+    if not observer:
+        migrations.inspect_recovery()
     migration_coordinator = MigrationCoordinator(migrations, operations)
     legacy_backups = LegacyBackupService(legacy_backup_repository)
     legacy_backup_coordinator = LegacyBackupCoordinator(legacy_backups, operations)
+    # A6: the ownership record lets a session adopt a server that another session of this root started;
+    # only an owner writes it
+    ownership = LaunchOwnership(
+        ServerOwnershipRepository(paths.data / OWNERSHIP_FILE, staging=staging), paths.root,
+        logger=logger, writable=not observer, session_id=operations.session_id,
+    )
     # Build process control together with its independent readiness signal
     lifecycle, mutex = build_lifecycle(
-        settings, profiles, state_repository, operations, paths.logs, preferences,
+        settings, profiles, state_repository, operations, paths.logs, preferences, ownership=ownership,
     )
     # Recoveries that write into the DayZ root take the mutex and need a proven stopped server
     installation_guard = InstallationGuard(lifecycle, mutex)
     profile_provisioning_coordinator = build_profile_provisioning(
-        profiles, settings, operations, paths.operations, installation_guard,
+        profiles, settings, operations, paths.operations, installation_guard, recover=not observer,
     )
     # Build restore services and gate mutations on pending recovery
-    restore_journals = RestoreJournalRepository(paths.operations / "restore-journals")
+    restore_journals = RestoreJournalRepository(paths.operations / "restore-journals", create_root=not observer)
     restores = RestoreService(
         profiles, settings, backup_storage, RestoreStorage(), restore_journals,
-        paths.backup_recovery, lifecycle, mutex,
+        paths.backup_recovery, lifecycle, mutex, folder_writer,
     )
-    recover_interrupted_restores(restore_journals, restores, operations)
+    if not observer:
+        recover_interrupted_restores(restore_journals, restores, operations)
     restore_coordinator = RestoreCoordinator(restores, operations)
-    profile_restore_coordinator = build_profile_restore(paths, profiles, settings, backup_storage, lifecycle, mutex, operations)
+    profile_restore_coordinator = build_profile_restore(
+        paths, profiles, settings, backup_storage, lifecycle, mutex, operations,
+        folder_writer=folder_writer, recover=not observer,
+    )
     # Build shutdown and schedule coordination
     shutdown = ShutdownCoordinator(operations, logger, lifecycle.shutdown_safe)
     lifecycle_coordinator = LifecycleCoordinator(lifecycle, operations, backups)
     schedules = ScheduleCoordinator(
-        ScheduleRepository(VersionedJsonRepository(paths.schedules)),
+        ScheduleRepository(VersionedJsonRepository(paths.schedules, staging=staging)),
         profiles, settings, preferences, lifecycle, lifecycle_coordinator, logger,
     )
     # Build the remote update check; it never runs on the operation lane
@@ -214,6 +181,7 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
     workshop = build_workshop(
         paths, profiles, settings, operations, lifecycle, preferences, schedules,
         publication_journals, update_check, logger, backups, steamcmd_guard=server_build.guard,
+        folder_writer=folder_writer, recover=not observer,
     )
     update_check_coordinator = build_update_status(
         update_check, workshop.mod_inventory, server_build.service,
@@ -221,34 +189,35 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
     # Assemble every coordinator's handlers into the bridge facade
     coordinator = ApplicationCoordinator(settings, operations, shutdown, build_settings_repair(paths, settings, restore_journals))
     logs = LogQueryService(paths.logs / "manager.jsonl", paths.logs / "dayz-server.log")
-    handlers = {
-        **coordinator.handlers(),
-        **workshop.profile_coordinator.handlers(),
-        **profile_provisioning_coordinator.handlers(),
-        **preferences.handlers(),
-        **backup_coordinator.handlers(),
-        **restore_coordinator.handlers(),
-        **profile_restore_coordinator.handlers(),
-        **configuration_coordinator.handlers(),
-        **mission_configuration_coordinator.handlers(),
-        **medical_feature_coordinator.handlers(),
-        **migration_coordinator.handlers(),
-        **legacy_backup_coordinator.handlers(),
-        **lifecycle_coordinator.handlers(),
-        # D18: the names of the players online, read only while the names panel is open
-        **build_online_players(lifecycle).handlers(),
-        **schedules.handlers(),
-        **workshop.workshop_coordinator.handlers(),
-        **workshop.mod_inventory_coordinator.handlers(),
-        **workshop.mod_publication_coordinator.handlers(),
-        # "Update & restart" stops the running server, so it must name the running profile (D11)
-        **{name: for_running_profile(lifecycle, handler)
-           for name, handler in workshop.mod_restart_coordinator.handlers().items()},
-        **workshop.verification_coordinator.handlers(),
-        **update_check_coordinator.handlers(),
-        **logs.handlers(),
-    }
-    bridge = BridgeFacade(handlers, logger)
+    # "Update & restart" stops the running server, so it must name the running profile (D11)
+    mod_restart_handlers = {name: for_running_profile(lifecycle, handler)
+                            for name, handler in workshop.mod_restart_coordinator.handlers().items()}
+    handlers = build_handler_table(
+        coordinator=coordinator,
+        profile_coordinator=workshop.profile_coordinator,
+        profile_provisioning_coordinator=profile_provisioning_coordinator,
+        preferences=preferences,
+        backup_coordinator=backup_coordinator,
+        restore_coordinator=restore_coordinator,
+        profile_restore_coordinator=profile_restore_coordinator,
+        configuration_coordinator=configuration_coordinator,
+        mission_configuration_coordinator=mission_configuration_coordinator,
+        medical_feature_coordinator=medical_feature_coordinator,
+        migration_coordinator=migration_coordinator,
+        legacy_backup_coordinator=legacy_backup_coordinator,
+        lifecycle_coordinator=lifecycle_coordinator,
+        lifecycle=lifecycle,
+        schedules=schedules,
+        workshop_coordinator=workshop.workshop_coordinator,
+        mod_inventory_coordinator=workshop.mod_inventory_coordinator,
+        mod_publication_coordinator=workshop.mod_publication_coordinator,
+        mod_restart_handlers=mod_restart_handlers,
+        verification_coordinator=workshop.verification_coordinator,
+        update_check_coordinator=update_check_coordinator,
+        logs=logs,
+    )
+    # An observer's facade holds only the read handlers, so no write can be reached (4.3)
+    bridge = BridgeFacade(observer_handlers(handlers) if observer else handlers, logger)
     # Return the frozen composition consumed by the host runtime
     return ApplicationComposition(
         paths=paths,
@@ -294,4 +263,5 @@ def build_composition(packaged_root: Path | None = None) -> ApplicationCompositi
         coordinator=coordinator,
         bridge=bridge,
         host_bridge=bridge,
+        mode=mode,
     )

@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ..adapters.windows.shared_files import read_bytes_shared
+
 # UTF-8 byte-order mark preserved across read-modify-write cycles
 UTF8_BOM = b"\xef\xbb\xbf"
 
@@ -33,7 +35,7 @@ def read_utf8(path: Path) -> tuple[bytes, str, bool]:
     """Return the raw bytes, decoded text, and BOM flag of a UTF-8 file."""
     # Read raw bytes and report missing or unreadable targets as domain errors
     try:
-        content = path.read_bytes()
+        content = read_bytes_shared(path)
     except FileNotFoundError as error:
         raise ConfigurationFileError("configuration target was not found") from error
     except OSError as error:

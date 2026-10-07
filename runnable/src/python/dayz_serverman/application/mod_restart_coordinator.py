@@ -15,8 +15,10 @@ from ..bridge.facade import ApplicationCallError
 from ..domain.lifecycle import LifecycleFailure
 from .backup_coordinator import _query_error as backup_query_error
 from .backups import BackupService
+from .folder_writer_scope import WriterScope
 from .lifecycle import ServerLifecycleService
 from .lifecycle_coordinator import BACKUP_SAFE_POINTS
+from .lifecycle_ports import ServerFolderWriterPort
 from .mod_publication import ModPublicationService, PublicationRequest
 from .mod_publication_coordinator import (
     PUBLICATION_SAFE_POINTS,
@@ -37,12 +39,14 @@ class ModRestartCoordinator:
     def __init__(
         self, publication: ModPublicationService, lifecycle: ServerLifecycleService,
         backups: BackupService | None, operations: OperationManager,
+        folder_writer: ServerFolderWriterPort | None = None,
     ) -> None:
-        """Store the three services whose calls this coordinator orders, and the lane."""
+        """Store the three services whose calls this coordinator orders, the lane and the A13 writer side."""
         self._publication = publication
         self._lifecycle = lifecycle
         self._backups = backups
         self._operations = operations
+        self._folder_writer = folder_writer
 
     def handlers(self) -> dict[str, Any]:
         """Return the bridge handler table of the restart call."""
@@ -99,11 +103,21 @@ class ModRestartCoordinator:
             return _nothing_to_apply(request)
         # A cancellation that arrived during the plan check ends here: the server keeps running
         context.checkpoint("preflight", 3)
-        context.checkpoint("STOP_SERVER", 8)
-        self._lifecycle.stop(request.settings_revision)
-        backup_result = self._create_backup(request, context) if backup else None
-        # The publication takes the write guard, applies, checks and starts the server
-        result = self._publication.publish(request, fingerprint, _PublicationProgress(context))
+        # A13 (QF-2): the writer side is taken before the stop, so a refusal leaves the server running
+        scope = WriterScope(self._folder_writer)
+        scope.acquire()
+        try:
+            context.checkpoint("STOP_SERVER", 8)
+            # 6.5 marker right before the stop request: below 9 nothing has changed yet
+            self._lifecycle.stop(request.settings_revision,
+                                 before_change=lambda: context.checkpoint("STOP_SERVER", 9))
+            backup_result = self._create_backup(request, context) if backup else None
+            # The publication takes the write guard, applies, checks and starts the server; it
+            # releases the writer side right after the live changes, before its pre-start check
+            handover = {} if self._folder_writer is None else {"writer_scope": scope}
+            result = self._publication.publish(request, fingerprint, _PublicationProgress(context), **handover)
+        finally:
+            scope.release()
         return {**result, "backup": backup_result}
 
     def _create_backup(

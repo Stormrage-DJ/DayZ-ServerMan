@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+from ..adapters.windows.shared_files import read_bytes_shared
 from .migration_payload_identity import (
     MigrationPayloadIdentityError, validate_role_payload,
 )
@@ -48,7 +49,7 @@ def _validate_terminal(
     if not target.is_file():
         raise MigrationStorageError("Terminal migration payload evidence is missing.")
     _validate_bytes(
-        target.read_bytes(), destination, migration_id, prior=state == "ROLLED_BACK",
+        read_bytes_shared(target), destination, migration_id, prior=state == "ROLLED_BACK",
     )
 
 
@@ -58,7 +59,7 @@ def _validate_file(
     """Verify that one evidence file exists and matches its digest."""
     if not path.is_file():
         raise MigrationStorageError("Migration payload evidence is missing.")
-    _validate_bytes(path.read_bytes(), destination, migration_id, prior=prior)
+    _validate_bytes(read_bytes_shared(path), destination, migration_id, prior=prior)
 
 
 def _validate_bytes(

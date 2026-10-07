@@ -14,8 +14,9 @@ from ..domain.restores import RestorePreview
 from ..repositories.backups import BackupStorage, BackupStorageError
 from ..repositories.restore_journal import RestoreJournalRepository
 from ..repositories.restore_storage import RestoreStorage, RestoreStorageError
+from .folder_writer_scope import OWNER_WRITER_WAIT_SECONDS, WriterScope
 from .installation_guard import InstallationGuard
-from .lifecycle_ports import InstallationMutexPort
+from .lifecycle_ports import InstallationMutexPort, ServerFolderWriterPort
 from .profiles import ProfileService
 from .settings import SettingsService
 
@@ -40,8 +41,9 @@ class RestoreService:
         recovery_root: Path,
         lifecycle: Any,
         mutex: InstallationMutexPort,
+        folder_writer: ServerFolderWriterPort | None = None,
     ) -> None:
-        """Store the collaborators used by restore preview and apply."""
+        """Store the collaborators used by restore preview and apply, and the A13 writer side."""
         self._profiles = profiles
         self._settings = settings
         self._backups = backups
@@ -50,6 +52,7 @@ class RestoreService:
         self._recovery_root = recovery_root
         self._lifecycle = lifecycle
         self._mutex = mutex
+        self._folder_writer = folder_writer
 
     def preview(self, profile_id: object, backup_id: object) -> dict[str, Any]:
         """Return a signed restore preview for the selected backup."""
@@ -125,17 +128,21 @@ class RestoreService:
                     or current.fingerprint != preview_fingerprint
                 ):
                     raise RevisionConflict("Restore preview is stale or changed.")
-                # Apply the journaled restore through storage
-                return self._storage.restore(
-                    directory, manifest, dayz_root, self._recovery_root,
-                    self._journals, operation_id, checkpoint, profile.values.runtime_profile,
-                )
+                # Apply the journaled restore; A13: the writer side is taken before WRITE_JOURNAL is relayed
+                scope = WriterScope(self._folder_writer)
+                try:
+                    return self._storage.restore(
+                        directory, manifest, dayz_root, self._recovery_root, self._journals, operation_id,
+                        scope.relay_after_acquire("WRITE_JOURNAL", checkpoint), profile.values.runtime_profile,
+                    )
+                finally:
+                    scope.release()
 
     def recovery_pending(self) -> bool:
         """Report whether a restore journal exists, without reading settings or taking the mutex."""
         return bool(self._journals.records())
 
-    def inspect_recovery(self) -> dict[str, object]:
+    def inspect_recovery(self, wait_seconds: float = OWNER_WRITER_WAIT_SECONDS) -> dict[str, object]:
         """Finish or undo an interrupted restore and report whether recovery still blocks mutations.
 
         Recovery copies and renames files in the DayZ root, so it runs only under the
@@ -159,8 +166,9 @@ class RestoreService:
                     }],
                 }
             root = Path(settings.dayz_root)
-            # The guard refuses before the block runs; the state is read under the mutex
-            with InstallationGuard(self._lifecycle, self._mutex).stopped(root):
+            # The guard refuses before the block runs; the state is read under the mutex; A13 writer side inside
+            guard = InstallationGuard(self._lifecycle, self._mutex, self._folder_writer)
+            with guard.stopped(root, folder_wait=wait_seconds):
                 return self._storage.inspect(self._journals, root, self._recovery_root)
         except LifecycleFailure as failure:
             # A busy installation, or a server that is not proven stopped: recover later

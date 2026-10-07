@@ -7,6 +7,7 @@ import os
 import uuid
 from pathlib import Path
 
+from ..adapters.windows.shared_files import read_text_shared, replace_file
 from ..domain.content_proofs import target_directory_key
 from ..domain.mod_publication import PublicationIntent
 from ..domain.workshop import CacheProof
@@ -131,7 +132,7 @@ class AppliedModStateRepository:
         if not self._path.exists():
             return {"schema_version": 1, "profiles": {}}
         # Parse the persisted JSON document
-        raw = json.loads(self._path.read_text(encoding="utf-8"))
+        raw = json.loads(read_text_shared(self._path, encoding="utf-8"))
         # Reject documents that do not match the expected shape
         if (not isinstance(raw, dict) or raw.get("schema_version") != 1
                 or not isinstance(raw.get("profiles"), dict)):
@@ -152,7 +153,7 @@ class AppliedModStateRepository:
                 stream.flush()
                 os.fsync(stream.fileno())
             # Swap the staged file into place
-            os.replace(temporary, self._path)
+            replace_file(temporary, self._path)
         finally:
             # Remove the staged file when any step fails
             if temporary.exists():

@@ -11,6 +11,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
+from ..adapters.windows.shared_files import open_shared
 from ..domain.workshop import CacheProof, WorkshopObservation
 from .tree_metadata import TreeMetadataError, has_alternate_stream
 from .workshop_manifest import (  # noqa: F401 - re-exported for existing importers
@@ -244,7 +245,7 @@ class WorkshopCacheVerifier:
                 # Stream the bytes through one running hash; the size is what was read
                 digest = hashlib.sha256()
                 size = 0
-                with child.open("rb") as stream:
+                with open_shared(child) as stream:
                     while chunk := stream.read(HASH_CHUNK_BYTES):
                         digest.update(chunk)
                         size += len(chunk)

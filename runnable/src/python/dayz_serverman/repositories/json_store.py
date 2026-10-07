@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping
 
+from ..adapters.windows.shared_files import open_shared, replace_file
 from ..domain.models import (
     JsonValue,
     RecordInspection,
@@ -22,20 +24,32 @@ from ..domain.models import (
 RESERVED_FIELDS = frozenset(("schema_version", "revision"))
 
 
+class StagingPolicy(str, Enum):
+    """How a read treats a staging file beside the record (A4, R-4)."""
+
+    # Today's rule: a staging file is an interrupted write
+    OWNER = "OWNER"
+    # Observer sessions ignore it: an owner in another process may be writing right now
+    OBSERVER = "OBSERVER"
+
+
 class VersionedJsonRepository:
     """Read and atomically publish one versioned JSON record."""
 
-    def __init__(self, path: Path, schema_version: int = 1) -> None:
-        """Store the record path and the schema version this repository accepts."""
+    def __init__(
+        self, path: Path, schema_version: int = 1, *, staging: StagingPolicy = StagingPolicy.OWNER,
+    ) -> None:
+        """Store the record path, the schema version this repository accepts and the staging-file rule."""
         if schema_version < 1:
             raise ValueError("schema_version must be positive")
         self.path = path.resolve(strict=False)
         self.schema_version = schema_version
+        self.staging = staging
 
     def inspect(self) -> RecordInspection:
         """Classify the record file into a state with supporting evidence."""
-        # Look for leftover temporary files that indicate an interrupted write
-        interrupted = self._temporary_files()
+        # Look for leftover temporary files that indicate an interrupted write; observers read the record only
+        interrupted = self._temporary_files() if self.staging is StagingPolicy.OWNER else ()
         # Report a missing record, distinguishing interrupted writes
         if not self.path.exists():
             if interrupted:
@@ -156,12 +170,12 @@ class VersionedJsonRepository:
             stream.flush()
             os.fsync(stream.fileno())
         # Swap the staged file into place
-        os.replace(temporary, self.path)
+        replace_file(temporary, self.path)
 
     def _read_document(self, path: Path) -> VersionedDocument:
         """Parse a record file into a validated versioned document."""
         # Parse the file and require an object root
-        with path.open("r", encoding="utf-8") as stream:
+        with open_shared(path, "r", encoding="utf-8") as stream:
             data = json.load(stream)
         if not isinstance(data, dict):
             raise ValueError("record root must be a JSON object")

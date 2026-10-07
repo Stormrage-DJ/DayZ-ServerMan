@@ -6,6 +6,7 @@ import os
 import shutil
 from pathlib import Path, PurePosixPath
 
+from ..adapters.windows.shared_files import open_shared
 from ..domain.restores import RestoreGroup, RestoreJournal
 from ..domain.profiles import ProfileValidationError, validate_relative_path
 from .backup_verification import is_reparse, path_has_reparse, sha256_file
@@ -116,7 +117,7 @@ def copy_verified(source: Path, target: Path, digest: str | None) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
         raise RestorePathError("RESTORE_CONFLICT", "Restore staging path already exists.")
-    with source.open("rb") as reader, target.open("xb") as writer:
+    with open_shared(source) as reader, target.open("xb") as writer:
         shutil.copyfileobj(reader, writer, 1024 * 1024)
         writer.flush()
         os.fsync(writer.fileno())

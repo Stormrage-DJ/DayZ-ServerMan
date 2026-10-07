@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from ..adapters.windows.shared_files import read_bytes_shared
 from .migration_journal import MigrationJournalRepository
 from .migration_payload_identity import (
     MigrationPayloadIdentityError, validate_role_payload,
@@ -59,7 +60,7 @@ def prepare_publication(
             raise MigrationStorageError("Migration payload identity is invalid.") from error
         # Write the staged output before reading the prior target bytes
         _write_stage(stage / staged_relative, target.payload)
-        prior = target.path.read_bytes() if target.path.exists() else None
+        prior = read_bytes_shared(target.path) if target.path.exists() else None
         try:
             prior_payload_identity = (
                 validate_role_payload(target.role, target.label, migration_id, prior)
@@ -99,7 +100,7 @@ def prepare_publication(
     hook("PREPUBLICATION_MARKER")
     # Re-verify live targets before staging their recovery copies
     for target, destination, prior in zip(targets, destinations, prior_payloads):
-        current = target.path.read_bytes() if target.path.exists() else None
+        current = read_bytes_shared(target.path) if target.path.exists() else None
         # Abort when a live target changed after staging began
         if current != prior:
             raise MigrationStorageError("Migration target changed during staging.")

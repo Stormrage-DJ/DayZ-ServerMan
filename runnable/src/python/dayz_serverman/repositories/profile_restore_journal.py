@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from ..adapters.windows.shared_files import read_text_shared, replace_file
 from ..domain.backups import SHA256
 from ..domain.profiles import validate_relative_path
 from ..domain.profiles import ProfileInput, validate_profile_id
@@ -33,7 +34,7 @@ class ProfileRestoreJournal:
             json.dump(record, stream, sort_keys=True, allow_nan=False)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        replace_file(temporary, path)
 
     def records(self) -> list[dict[str, Any]]:
         """Read strict documents and reject unaccounted interrupted first writes."""
@@ -45,7 +46,7 @@ class ProfileRestoreJournal:
                 raise ValueError("Interrupted restore journal requires recovery.")
         for path in sorted(self.root.glob("*.json")):
             safe_exists(path)
-            record = json.loads(path.read_text(encoding="utf-8"))
+            record = json.loads(read_text_shared(path, encoding="utf-8"))
             validate_record(record)
             if path.stem != record["operation_id"]:
                 raise ValueError("Restore journal identity is inconsistent.")

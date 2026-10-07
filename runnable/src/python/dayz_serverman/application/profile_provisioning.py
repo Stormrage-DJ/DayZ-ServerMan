@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import uuid
 from pathlib import Path, PureWindowsPath
 from typing import Any, Mapping
 
+from ..adapters.windows.shared_files import read_text_shared, rename_directory
 from ..domain.models import RecordUnavailable
 from ..domain.profiles import ProfileInput, ProfileValidationError
 from ..repositories.backup_verification import path_has_reparse
@@ -125,7 +125,7 @@ class ProfileProvisioningService:
             self._write_marker(stage, operation_id)
             journal = self._phase(journal, "STAGED")
             checkpoint("publish_profile_files", 55)
-            os.replace(stage, target)
+            rename_directory(stage, target)
             journal = self._phase(journal, "PUBLISHED")
             checkpoint("save_profile", 75)
             record = self._profiles.save(values, None)
@@ -284,7 +284,7 @@ class ProfileProvisioningService:
             return
         marker = directory / ".serverman-provision.json"
         try:
-            raw = json.loads(marker.read_text(encoding="utf-8"))
+            raw = json.loads(read_text_shared(marker, encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as error:
             raise ProfileProvisioningError(
                 "Profile provisioning recovery requires review.", recovery_required=True,

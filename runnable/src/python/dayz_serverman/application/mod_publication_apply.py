@@ -6,6 +6,7 @@ from collections.abc import Callable
 from contextlib import nullcontext
 from pathlib import Path
 
+from ..adapters.windows.server_folder_lock import ServerFolderBusy
 from ..adapters.windows.publication_paths import (
     PublicationPathError,
     safe_dayz_root,
@@ -24,6 +25,7 @@ from ..repositories.mod_publication_stage import (
     PublicationStorageError,
 )
 from ..repositories.mod_publication_staging import StagingError, missing_key_count
+from .folder_writer_scope import WriterScope
 from .installation_guard import InstallationGuard
 from .mod_publication_start import ModPublicationError, empty_publication_journal
 from .operations.models import OperationCancelled
@@ -56,26 +58,33 @@ def apply_publication(
     intent: PublicationIntent, dayz_root: Path, start_requested: bool,
     guard: InstallationGuard | None, guard_plain_apply: bool,
     record_proofs: Callable[[PublicationJournal], None],
+    writer_scope: WriterScope | None = None,
 ) -> PublicationJournal:
     """Stage and publish the reviewed targets, inside the write guard when one is required.
 
     `record_proofs` receives the committed journal, which names the copied groups.
     The guard is held through staging, the live replace and the proof records;
     it is released when this function returns, before any pre-start check.
+    `writer_scope` (A13) is released right after the live changes or their
+    rollback, so the proof records, the pre-start check and the start run without it.
     """
+    scope = writer_scope if writer_scope is not None else WriterScope(None)
     # Decide before staging whether this run writes into the DayZ root
     writes = publication_writes(intent, dayz_root)
     # The one use of the plain-apply policy: a start request always needs the guard
     guarded = guard is not None and writes and (start_requested or guard_plain_apply)
     try:
         with guard.stopped(dayz_root) if guarded else nullcontext():
-            if intent.managed_sources or intent.keys:
-                # A run that decided not to write must not copy anything later
-                journal = (storage.stage(intent, dayz_root) if writes
-                           else storage.stage(intent, dayz_root, writes_allowed=False))
-                storage.publish(journal, dayz_root, journals)
-            else:
-                journal = empty_publication_journal(intent)
+            try:
+                if intent.managed_sources or intent.keys:
+                    # A run that decided not to write must not copy anything later
+                    journal = (storage.stage(intent, dayz_root) if writes
+                               else storage.stage(intent, dayz_root, writes_allowed=False))
+                    storage.publish(journal, dayz_root, journals)
+                else:
+                    journal = empty_publication_journal(intent)
+            finally:
+                scope.release()
             # Record the content proofs best effort; publication already succeeded
             record_proofs(journal)
         return journal
@@ -94,6 +103,9 @@ def apply_publication(
     except OSError as error:
         raise ModPublicationError("PUBLICATION_FAILED", "Publication storage failed.") from error
     except (PublicationInventoryError, PublicationStorageError) as error:
+        # A13: the writer side refused at BEFORE_PUBLICATION; the pre-publication path removed the stage
+        if isinstance(error.__cause__, ServerFolderBusy):
+            raise ModPublicationError("CONTROL_CONFLICT", error.__cause__.safe_message) from error
         raise ModPublicationError(
             getattr(error, "code", "PUBLICATION_FAILED"), str(error),
             recovery_required=getattr(error, "recovery_required", False),

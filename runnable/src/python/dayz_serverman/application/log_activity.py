@@ -20,7 +20,9 @@ HIDDEN_EVENTS = frozenset((
     "update_check.response", "update_check.scheduler_started", "update_check.scheduler_stopped",
     "mod_publication.prestart_check", "server_build.check_started", "server_build.check_skipped",
     "server_build.installed_read", "server_build.scheduler_started", "server_build.scheduler_stopped",
-    "steamcmd.guard_waited",
+    "steamcmd.guard_waited", "instance_lock.unsupported_folder",
+    # A6: the ownership record could not be read or written; the lifecycle result does not change
+    "server_ownership.unreadable", "server_ownership.unwritable", "server_ownership.write_failed",
 ))
 # Sentence shown for an event whose details stay in the diagnostics
 DETAIL_HINT = "Details are in Manager diagnostics."

@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import re
 import shutil
-import uuid
 from pathlib import Path
 from typing import Callable, Iterable
 
+from ..adapters.windows.shared_files import read_bytes_shared, write_bytes_atomically
 from .migration_destination_plan import (
     MigrationDestinationPlanError, validate_destination_plan,
 )
@@ -187,7 +186,7 @@ class MigrationPublication:
     def _replace_from_stage(self, stage: Path, destination: dict[str, object]) -> None:
         """Replace one target with its staged payload after a digest check."""
         source = stage / str(destination["staged_relative"])
-        payload = source.read_bytes()
+        payload = read_bytes_shared(source)
         # Refuse to publish bytes that changed after staging
         if _digest(payload) != destination["staged_sha256"]:
             raise MigrationStorageError("Migration staged output changed.")
@@ -196,14 +195,14 @@ class MigrationPublication:
     def _restore_prior(self, stage: Path, destination: dict[str, object]) -> None:
         """Restore the original target bytes from recovery evidence."""
         target = self._target(destination)
-        current = target.read_bytes() if target.exists() else None
+        current = read_bytes_shared(target) if target.exists() else None
         if destination["prior_exists"]:
             # The original bytes may already sit in place untouched
             if current is not None and _digest(current) == destination["prior_sha256"]:
                 return
             # Otherwise restore from the staged recovery copy after a digest check
             recovery = stage / str(destination["recovery_relative"])
-            payload = recovery.read_bytes()
+            payload = read_bytes_shared(recovery)
             if _digest(payload) != destination["prior_sha256"]:
                 raise MigrationStorageError("Migration recovery evidence changed.")
             self._atomic_bytes(target, payload)
@@ -221,7 +220,7 @@ class MigrationPublication:
         # Each target must exist and hold exactly the staged bytes
         for destination in document["destinations"]:  # type: ignore[union-attr]
             target = self._target(destination)
-            if not target.is_file() or _digest(target.read_bytes()) != destination["staged_sha256"]:
+            if not target.is_file() or _digest(read_bytes_shared(target)) != destination["staged_sha256"]:
                 raise MigrationStorageError("Published migration output could not be verified.")
 
     def _verify_prior(self, document: dict[str, object]) -> None:
@@ -230,7 +229,7 @@ class MigrationPublication:
         for destination in document["destinations"]:  # type: ignore[union-attr]
             target = self._target(destination)
             if destination["prior_exists"]:
-                if not target.is_file() or _digest(target.read_bytes()) != destination["prior_sha256"]:
+                if not target.is_file() or _digest(read_bytes_shared(target)) != destination["prior_sha256"]:
                     raise MigrationStorageError("Migration rollback could not be verified.")
             elif target.exists():
                 raise MigrationStorageError("Migration rollback left a new target.")
@@ -301,18 +300,8 @@ class MigrationPublication:
     @staticmethod
     def _atomic_bytes(path: Path, payload: bytes) -> None:
         """Write bytes through a temporary file and a final atomic swap."""
-        # Ensure the destination directory exists before staging
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.migration.tmp")
-        try:
-            with temporary.open("xb") as stream:
-                stream.write(payload)
-                stream.flush()
-                # Fsync before the swap so no partial bytes can survive
-                os.fsync(stream.fileno())
-            os.replace(temporary, path)
-        finally:
-            temporary.unlink(missing_ok=True)
+        # The shared helper creates the folder, fsyncs before the swap and removes its staging file
+        write_bytes_atomically(path, payload, ".migration.tmp")
 
     def _call(self, phase: str) -> None:
         """Forward a publication phase to the optional observer."""

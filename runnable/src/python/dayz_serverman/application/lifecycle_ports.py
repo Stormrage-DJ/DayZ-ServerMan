@@ -61,5 +61,12 @@ class InstallationMutexPort(Protocol):
     def guard(self, dayz_root: str) -> AbstractContextManager[None]: ...
 
 
+class ServerFolderWriterPort(Protocol):
+    """Owner side of the server-folder lock (A13) around one swap step."""
+
+    # Hold the writer side for the block; refuse with ServerFolderBusy after the bound
+    def exclusive(self, bound_seconds: float) -> AbstractContextManager[None]: ...
+
+
 # Type alias for the environment mapping handed to process launchers
 Environment = Mapping[str, str]

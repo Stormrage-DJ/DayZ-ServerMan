@@ -6,6 +6,7 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 
+from ..adapters.windows.shared_files import rename_directory
 from .profile_restore_inventory import inventory, safe_exists
 from .profile_restore_preparation import group_paths, stage_groups, remove_owned
 from .profile_restore_journal import ProfileRestoreJournal
@@ -131,7 +132,7 @@ class ProfileRestoreStorage:
         if inventory(target) != group["before"] or inventory(stage) != group["after"]:
             raise ValueError("Restore target or staged content changed before publication.")
         if group["before"] is not None:
-            os.rename(target, holding)
+            rename_directory(target, holding)
             group["held"] = True
             self.journals.write(record)
             self.hook("HELD_" + group["role"].upper())
@@ -144,7 +145,7 @@ class ProfileRestoreStorage:
         elif group["role"] == "profile":
             os.link(stage, target)
         else:
-            os.rename(stage, target)
+            rename_directory(stage, target)
         group["published"] = True
         self.journals.write(record)
 
@@ -173,7 +174,7 @@ class ProfileRestoreStorage:
             if held is not None:
                 if held != group["before"] or current is not None:
                     raise ValueError("Restore holding copy changed; compensation is blocked.")
-                os.rename(holding, target)
+                rename_directory(holding, target)
                 current = inventory(target)
             if current != group["before"]:
                 raise ValueError("Original restore content is unavailable; recovery is required.")

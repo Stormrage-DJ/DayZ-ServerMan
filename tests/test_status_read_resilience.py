@@ -236,12 +236,12 @@ class StatusReadResilienceTests(unittest.TestCase):
                 raise PermissionError(13, "Access is denied")
             real(source, target)
 
-        with patch.object(proof_module.os, "replace", refused_twice):
+        with patch.object(proof_module, "replace_file", refused_twice):
             self.assertTrue(self.store.record(targets=self.targets))
         self.assertEqual(len(attempts), 3)
         self.assertEqual(self.logger.events, [])
         # A replace that never succeeds costs the proof only
-        with patch.object(proof_module.os, "replace",
+        with patch.object(proof_module, "replace_file",
                           side_effect=PermissionError(13, "Access is denied")):
             self.assertFalse(self.store.record(targets=self.targets))
             # The pre-start records of a publication take the same path and stay silent

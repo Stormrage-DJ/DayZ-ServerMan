@@ -64,7 +64,7 @@ class CountingLifecycle:
         """Return a snapshot of the configured state."""
         return LifecycleSnapshot(self.state)
 
-    def stop(self, _settings_revision: int) -> LifecycleSnapshot:
+    def stop(self, _settings_revision: int, *, before_change=None) -> LifecycleSnapshot:
         """Stop the pretended server: the state becomes STOPPED."""
         self.state = ServerState.STOPPED
         return self.status()

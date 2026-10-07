@@ -8,6 +8,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
+from ..adapters.windows.shared_files import read_text_shared, replace_file
 from ..domain.profiles import ProfileInput, ProfileValidationError
 
 
@@ -24,7 +25,7 @@ def read_raw_profile(path: Path) -> dict[str, Any]:
     """Load a profile file as a raw JSON object."""
     # Read strict UTF-8 JSON so encoding problems surface as errors
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(read_text_shared(path, encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise ProfileMigrationError("profile record is not valid UTF-8 JSON") from error
     # The record root must be an object
@@ -101,7 +102,7 @@ def publish_migration(path: Path, document: Mapping[str, Any], hook: MigrationHo
     if hook is not None:
         hook("after_temp_fsync", path)
     # Swap only after the payload is fsynced
-    os.replace(temporary, path)
+    replace_file(temporary, path)
     if hook is not None:
         hook("after_replace", path)
 

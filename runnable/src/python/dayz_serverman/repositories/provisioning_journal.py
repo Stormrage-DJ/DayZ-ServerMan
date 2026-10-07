@@ -8,6 +8,8 @@ import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from ..adapters.windows.shared_files import read_text_shared, replace_file
+
 
 @dataclass(frozen=True)
 class ProvisioningJournal:
@@ -35,7 +37,7 @@ class ProvisioningJournalRepository:
         journals: list[ProvisioningJournal] = []
         for path in sorted(self.root.glob("*.json"), key=lambda item: item.name):
             try:
-                raw = json.loads(path.read_text(encoding="utf-8"))
+                raw = json.loads(read_text_shared(path, encoding="utf-8"))
                 if not isinstance(raw, dict) or set(raw) != {
                     "operation_id", "profile_id", "dayz_root", "stage_relative",
                     "target_relative", "phase",
@@ -57,7 +59,7 @@ class ProvisioningJournalRepository:
                 stream.write(payload)
                 stream.flush()
                 os.fsync(stream.fileno())
-            os.replace(temporary, path)
+            replace_file(temporary, path)
         finally:
             if temporary.exists():
                 temporary.unlink()

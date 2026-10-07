@@ -138,7 +138,7 @@ class JsonRepositoryTests(unittest.TestCase):
             calls.append((Path(source), Path(target)))
             real_replace(source, target)
 
-        with patch("dayz_serverman.repositories.json_store.os.replace", recording_replace):
+        with patch("dayz_serverman.repositories.json_store.replace_file", recording_replace):
             self.repository.save({"value": 1}, None)
         # The single swap must use a temporary file beside the target
         self.assertEqual(len(calls), 1)
@@ -199,7 +199,7 @@ class JsonRepositoryTests(unittest.TestCase):
         self.repository.save({"value": "old"}, None)
         # Force the replace to fail after the temporary file is written
         with patch(
-            "dayz_serverman.repositories.json_store.os.replace",
+            "dayz_serverman.repositories.json_store.replace_file",
             side_effect=OSError("injected replace failure"),
         ):
             with self.assertRaises(OSError):

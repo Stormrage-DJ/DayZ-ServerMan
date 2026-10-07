@@ -202,7 +202,7 @@ class ContentProofStoreTests(unittest.TestCase):
         """A failing replace returns False, logs one warning and leaves the document."""
         self.store.record(sources={"111": source_proof()})
         before = self.path.read_bytes()
-        with patch("dayz_serverman.repositories.content_proofs.os.replace",
+        with patch("dayz_serverman.repositories.content_proofs.replace_file",
                    side_effect=OSError("synthetic")):
             self.assertFalse(self.store.record(sources={"222": source_proof()}))
         self.assertEqual(self.path.read_bytes(), before)

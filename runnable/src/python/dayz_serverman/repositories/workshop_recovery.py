@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Protocol
 
 from ..adapters.windows.process_tree import ChildEvidence, ProcessIdentity
+from ..adapters.windows.shared_files import read_text_shared, replace_file
 
 
 # Update states that may still have a live SteamCMD child process
@@ -28,7 +29,7 @@ def inspect_workshop_recovery(root: Path, probe: ChildProbe) -> dict[str, object
     absence: dict[str, bool] = {}
     for path in sorted(root.glob("*.json"), key=lambda value: value.name.casefold()):
         try:
-            document = json.loads(path.read_text(encoding="utf-8"))
+            document = json.loads(read_text_shared(path, encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError):
             continue
         # Ignore records that are not workshop update journals
@@ -113,4 +114,4 @@ def _mark_recovery_required(path: Path, document: dict[str, object]) -> None:
         stream.flush()
         os.fsync(stream.fileno())
     # Replace atomically so a crash cannot leave a torn record
-    os.replace(temporary, path)
+    replace_file(temporary, path)

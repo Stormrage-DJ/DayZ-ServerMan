@@ -13,6 +13,7 @@ from ..domain.lifecycle import LifecycleSnapshot, ServerReadiness, ServerState
 from ..domain.online_players import InformationAnswer
 from .external_players import DEFAULT_STEAM_QUERY_PORT, ExternalServerMatch, read_profile_endpoint
 from .lifecycle import ServerLifecycleService
+from .lifecycle_ownership import LaunchOwnership
 from .profiles import ProfileService
 from .settings import SettingsService
 
@@ -64,8 +65,9 @@ class ReadinessLifecycleService:
         clock: Callable[[], float] = time.monotonic,
         wall_clock_ns: Callable[[], int] = time.time_ns,
         external: ExternalServerMatch | None = None,
+        ownership: LaunchOwnership | None = None,
     ) -> None:
-        """Bind the controlled lifecycle, query resolver, probe, clock, and the outside-manager match."""
+        """Bind the controlled lifecycle, query resolver, probe, clocks, outside-manager match and ownership record."""
         self._lifecycle = lifecycle
         self._profiles = profiles
         self._settings = settings
@@ -74,6 +76,8 @@ class ReadinessLifecycleService:
         self._clock = clock
         self._wall_clock_ns = wall_clock_ns
         self._external = external
+        # Shared with the lifecycle service: stages the record's readiness hint, restores an adopted target (A6)
+        self._ownership = ownership
         self._target: ReadinessTarget | None = None
         self._lock = threading.RLock()
 
@@ -87,32 +91,36 @@ class ReadinessLifecycleService:
 
     def start(
         self, profile_id: str, expected_profile_revision: int,
-        expected_settings_revision: int,
+        expected_settings_revision: int, *, before_change: Callable[[], None] | None = None,
     ) -> LifecycleSnapshot:
         """Start DayZ, remember its query target, and return initial readiness."""
         # Let the lifecycle service validate and establish process ownership first
         started_after_ns = self._wall_clock_ns()
+        self._stage_readiness(profile_id)
         snapshot = self._lifecycle.start(
-            profile_id, expected_profile_revision, expected_settings_revision,
+            profile_id, expected_profile_revision, expected_settings_revision, **_marker(before_change),
         )
         self._remember_target(profile_id, started_after_ns)
         return self._decorate(snapshot)
 
-    def stop(self, expected_settings_revision: int) -> LifecycleSnapshot:
+    def stop(
+        self, expected_settings_revision: int, *, before_change: Callable[[], None] | None = None,
+    ) -> LifecycleSnapshot:
         """Stop DayZ and clear readiness only after the process is verified absent."""
-        snapshot = self._lifecycle.stop(expected_settings_revision)
+        snapshot = self._lifecycle.stop(expected_settings_revision, **_marker(before_change))
         if snapshot.state == ServerState.STOPPED:
             self._clear_target()
         return snapshot
 
     def restart(
         self, profile_id: str, expected_profile_revision: int,
-        expected_settings_revision: int,
+        expected_settings_revision: int, *, before_change: Callable[[], None] | None = None,
     ) -> LifecycleSnapshot:
         """Restart DayZ and replace readiness timing with the new launch target."""
         started_after_ns = self._wall_clock_ns()
+        self._stage_readiness(profile_id)
         snapshot = self._lifecycle.restart(
-            profile_id, expected_profile_revision, expected_settings_revision,
+            profile_id, expected_profile_revision, expected_settings_revision, **_marker(before_change),
         )
         self._remember_target(profile_id, started_after_ns)
         return self._decorate(snapshot)
@@ -128,6 +136,8 @@ class ReadinessLifecycleService:
             return self._with_external_count(snapshot)
         with self._lock:
             target = self._target
+        if target is None and snapshot.state == ServerState.RUNNING_MANAGED:
+            target = self._restore_target()
         if target is None:
             return snapshot
         # Name the profile and the start time of the launch that this manager made
@@ -190,7 +200,36 @@ class ReadinessLifecycleService:
             return None
         with self._lock:
             target = self._target
+        if target is None:
+            target = self._restore_target()
         return target.query_port if target is not None else None
+
+    def _stage_readiness(self, profile_id: str) -> None:
+        """Give the ownership record the launch's readiness hint before the start (9.2)."""
+        if self._ownership is not None:
+            self._ownership.stage_readiness(profile_id, self._query_port(profile_id), self._rpt_directory(profile_id))
+
+    def _restore_target(self) -> ReadinessTarget | None:
+        """Build the readiness target of an adopted server from its record (9.4), or return None.
+
+        The profile gives D11 the running profile in every session; the grace counts
+        from the recorded launch, not from the adoption.
+        """
+        launch = self._ownership.adopted_launch() if self._ownership is not None else None
+        if launch is None:
+            return None
+        query_port = launch.query_port if launch.query_port is not None else self._query_port(launch.profile_id)
+        rpt_directory = (Path(launch.rpt_directory) if launch.rpt_directory is not None
+                         else self._rpt_directory(launch.profile_id))
+        elapsed = max(0.0, (self._wall_clock_ns() - launch.started_after_ns) / 1_000_000_000)
+        restored = ReadinessTarget(
+            query_port, self._clock() - elapsed, launch.started_after_ns, rpt_directory, profile_id=launch.profile_id,
+        )
+        with self._lock:
+            # A launch of this session that set its own target meanwhile wins
+            if self._target is None:
+                self._target = restored
+            return self._target
 
     def _remember_target(self, profile_id: str, started_after_ns: int) -> None:
         """Resolve and store the launched profile's query endpoint."""
@@ -233,6 +272,11 @@ class ReadinessLifecycleService:
         """Forget readiness context after a verified stop."""
         with self._lock:
             self._target = None
+
+
+def _marker(before_change: Callable[[], None] | None) -> dict[str, Callable[[], None]]:
+    """Forward a first-change marker (6.5) only when one is given, so callers without one see no keyword."""
+    return {} if before_change is None else {"before_change": before_change}
 
 
 def _utc_text(wall_clock_ns: int) -> str:

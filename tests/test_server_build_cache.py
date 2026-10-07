@@ -97,7 +97,7 @@ class CacheTests(unittest.TestCase):
         """The cache is disposable: a failed write returns False and logs the error type only."""
         self.document()
         before = self.path.read_bytes()
-        with patch("dayz_serverman.repositories.update_check_cache.os.replace", side_effect=OSError("disk")):
+        with patch("dayz_serverman.repositories.update_check_cache.replace_file", side_effect=OSError("disk")):
             self.assertFalse(self.cache.save(self.record()))
         self.assertEqual(self.path.read_bytes(), before)
         self.assertEqual(self.logger.events, [("server_build.cache_write_failed", {"error_type": "OSError"})])

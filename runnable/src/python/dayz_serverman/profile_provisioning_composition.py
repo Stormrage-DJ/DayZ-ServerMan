@@ -21,10 +21,12 @@ def build_profile_provisioning(
     operations: OperationManager,
     operations_root: Path,
     guard: InstallationGuard,
+    *, recover: bool = True,
 ) -> ProfileProvisioningCoordinator:
-    """Build provisioning services and recover interrupted work at startup, inside the guard."""
+    """Build provisioning services and recover interrupted work at startup, inside the guard; observers skip it."""
     journals = ProvisioningJournalRepository(operations_root / "profile-provisioning")
     service = ProfileProvisioningService(profiles, settings, MissionCatalog(), journals)
     # Recovery removes folders in the DayZ root, so it needs the mutex and a proven stopped server
-    recover_interrupted_provisioning(journals, service, settings, operations, guard)
+    if recover:
+        recover_interrupted_provisioning(journals, service, settings, operations, guard)
     return ProfileProvisioningCoordinator(service, operations)

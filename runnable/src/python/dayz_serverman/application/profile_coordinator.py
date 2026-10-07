@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from ..bridge.contracts import ErrorCode
 from ..bridge.facade import ApplicationCallError
+from ..domain.lifecycle import LifecycleFailure
 from ..domain.models import RecordUnavailable, RevisionConflict
 from ..domain.profiles import ProfileInput, ProfileValidationError, validate_profile_id
 from ..repositories.profiles import ProfileNotFound, ProfileStorageError
@@ -90,7 +91,7 @@ class ProfileCoordinator:
             raise ApplicationCallError(ErrorCode.INVALID_REQUEST, str(error)) from error
         return self._submit(
             "SAVE_PROFILE",
-            lambda: self._profiles.save(profile, expected).to_dict(),
+            lambda _context: self._profiles.save(profile, expected).to_dict(),
             profile.profile_id,
         )
 
@@ -105,19 +106,22 @@ class ProfileCoordinator:
             raise ApplicationCallError(ErrorCode.INVALID_REQUEST, str(error)) from error
         return self._submit(
             "DELETE_PROFILE",
-            lambda: self._deletion.delete(profile_id, expected),
+            # 6.5 marker: the generic phase "running" at 1 percent right before the first change
+            lambda context: self._deletion.delete(
+                profile_id, expected, before_change=lambda: context.checkpoint("running", 1),
+            ),
             profile_id,
         )
 
     def _submit(
-        self, kind: str, action: Callable[[], dict[str, Any]], profile_id: str,
+        self, kind: str, action: Callable[[Any], dict[str, Any]], profile_id: str,
     ) -> dict[str, str]:
         """Queue one mutation of the named profile and describe the queued operation."""
-        def work(_context: object) -> dict[str, Any]:
+        def work(context: Any) -> dict[str, Any]:
             """Run the mutation and map failures for the operation lane."""
             # Translate each failure family into a typed operation failure
             try:
-                return action()
+                return action(context)
             except RevisionConflict as error:
                 raise OperationFailure("REVISION_CONFLICT", str(error)) from error
             except ProfileNotFound as error:
@@ -135,6 +139,9 @@ class ProfileCoordinator:
                 ) from error
             except OSError as error:
                 raise OperationFailure("STORAGE_FAILURE", "Profile storage failed.") from error
+            except LifecycleFailure as error:
+                # A13: the server-folder writer side refused before any change
+                raise OperationFailure(error.code, error.safe_message, retryable=error.retryable) from error
 
         # Queue the mutation and surface a busy lane immediately
         try:

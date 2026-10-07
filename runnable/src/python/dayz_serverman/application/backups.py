@@ -7,6 +7,7 @@ from datetime import UTC, datetime, tzinfo
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
+from ..adapters.windows.shared_files import read_bytes_shared
 from ..domain.models import RevisionConflict
 from ..domain.backups import entry_path_key
 from ..domain.backups import restore_compatibility
@@ -190,7 +191,7 @@ class BackupService:
 def sources_config_bytes(sources: tuple[BackupSource, ...], profile: ProfileRecord) -> bytes:
     """Read the selected configuration from its already validated source identity."""
     entry = "payload/" + "/".join(PureWindowsPath(profile.values.server_config).parts)
-    return next(source.source.read_bytes() for source in sources if source.entry_path == entry)
+    return next(read_bytes_shared(source.source) for source in sources if source.entry_path == entry)
 
 
 def _require_revision(value: object, current: int, label: str) -> None:

@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..adapters.windows.shared_files import read_text_shared
 from .backup_verification import is_reparse
 
 
@@ -39,7 +40,7 @@ def read_mod_metadata(mod_root: Path) -> ModMetadata:
             # Oversized files are skipped because their content is unreliable
             if path.stat().st_size > MAX_METADATA_BYTES:
                 continue
-            text = path.read_text(encoding="utf-8-sig", errors="replace")
+            text = read_text_shared(path, encoding="utf-8-sig", errors="replace")
         except OSError:
             continue
         parsed = {

@@ -8,6 +8,7 @@ import stat
 from pathlib import Path
 from typing import Any, Callable
 
+from ..adapters.windows.shared_files import read_text_shared
 from ..domain.mission_configuration import (
     MissionValidationError, validate_current_state, validate_mission_updates,
     validate_proposed_state,
@@ -180,7 +181,7 @@ def resolve_profile_mission(root: Path, profile: Any) -> tuple[str, Path]:
     if relative is None:
         # Fall back to the mission template named in the server config
         config = _contained(root, root / profile.values.server_config, directory=False)
-        match = MISSION_TEMPLATE.search(config.read_text(encoding="utf-8", errors="replace"))
+        match = MISSION_TEMPLATE.search(read_text_shared(config, encoding="utf-8", errors="replace"))
         template = match.group(1).strip() if match else ""
         # Only plain template names may become part of the mission path
         if SAFE_MISSION_TEMPLATE.fullmatch(template) is None:

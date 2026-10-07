@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import json
-import os
-import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from ..adapters.windows.shared_files import read_text_shared, replace_file, write_bytes_atomically
 from ..domain.mod_publication import (
     GroupState,
     PublicationGroup,
@@ -92,34 +91,22 @@ class PublicationJournalRepository:
             raise PublicationJournalError(str(error)) from error
         # The stored authority must match the journal before any write
         self.verify_authority(journal)
-        self.root.mkdir(parents=True, exist_ok=True)
         path = self.path_for(journal.publication_id)
-        temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
         payload = json.dumps(
             journal.to_dict(), ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False,
         ) + "\n"
-        try:
-            # Write, flush, and fsync the staging file before the swap
-            with temporary.open("x", encoding="utf-8", newline="\n") as stream:
-                stream.write(payload)
-                stream.flush()
-                os.fsync(stream.fileno())
-            # The atomic replacement keeps readers on either complete file
-            os.replace(temporary, path)
-            # Re-read the published file so silent corruption is caught here
-            if self.load(path).to_dict() != journal.to_dict():
-                raise PublicationJournalError("published journal failed verification")
-            return path
-        finally:
-            # Remove the staging file when any step above failed
-            if temporary.exists():
-                temporary.unlink()
+        # Stage, fsync and swap the UTF-8 bytes; the helper creates the folder and removes its staging file
+        write_bytes_atomically(path, payload.encode("utf-8"))
+        # Re-read the published file so silent corruption is caught here
+        if self.load(path).to_dict() != journal.to_dict():
+            raise PublicationJournalError("published journal failed verification")
+        return path
 
     def load(self, path: Path) -> PublicationJournal:
         """Load and fully validate one journal record from disk."""
         self._validate_record_path(path)
         try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
+            raw = json.loads(read_text_shared(path, "utf-8"))
             journal = _parse(raw)
             # The filename must agree with the embedded identifier
             if path.stem != journal.publication_id:
@@ -158,7 +145,7 @@ class PublicationJournalRepository:
         target = self.retired_root / active.name
         if target.exists():
             raise PublicationJournalError("retired journal already exists")
-        os.replace(active, target)
+        replace_file(active, target)
         # Re-read the retired file so a failed move is detected
         if self.load(target).to_dict() != journal.to_dict():
             raise PublicationJournalError("retired journal failed verification")

@@ -20,6 +20,7 @@ from .application.profiles import ProfileService
 from .application.server_readiness import ReadinessLifecycleService
 from .application.settings import SettingsService
 from .application.lifecycle import ServerLifecycleService
+from .application.lifecycle_ownership import LaunchOwnership
 from .repositories.json_store import VersionedJsonRepository
 from .repositories.lifecycle_state import LifecycleStateRepository
 
@@ -35,8 +36,13 @@ def build_lifecycle(
     operations: OperationManager,
     logs_root: Path,
     preferences: PreferenceCoordinator | None = None,
+    *,
+    ownership: LaunchOwnership | None = None,
 ) -> tuple[ReadinessLifecycleService, WindowsInstallationMutex]:
-    """Build authoritative process control and its readiness decorator."""
+    """Build authoritative process control and its readiness decorator.
+
+    `ownership` holds the ownership record of A6; both services share it.
+    """
     # Share one inventory between reconciliation and graceful shutdown
     launcher = WindowsProcessLauncher()
     inventory = WindowsProcessInventory()
@@ -50,6 +56,7 @@ def build_lifecycle(
         mutex,
         LifecycleStateRepository(state_repository, operations.session_id),
         logs_root,
+        ownership,
     )
     # Keep network readiness separate from process ownership and control
     lifecycle = ReadinessLifecycleService(
@@ -63,6 +70,7 @@ def build_lifecycle(
         external=ExternalServerMatch(
             profiles, settings, SteamQueryProbe(EXTERNAL_PROBE_TIMEOUT_SECONDS), _selected_profile(preferences),
         ),
+        ownership=ownership,
     )
     return lifecycle, mutex
 

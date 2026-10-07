@@ -15,12 +15,16 @@ def _storage(paths) -> ProfileRestoreStorage:
     return ProfileRestoreStorage(ProfileRestoreJournal(paths.operations / "profile-restore-journals"), paths.profiles, paths.backup_recovery)
 
 
-def build_profile_restore(paths, profiles, settings, backups, lifecycle, mutex, operations):
-    """Recover joint journals before exposing handlers or allowing queued mutations."""
+def build_profile_restore(paths, profiles, settings, backups, lifecycle, mutex, operations, *,
+                          folder_writer=None, recover=True):
+    """Recover joint journals before exposing handlers or allowing queued mutations; observers skip it."""
     storage = _storage(paths)
-    # Recovery writes into the DayZ root, so it runs under the mutex with a proven stopped server
-    recover_interrupted_profile_restores(storage, settings, operations, InstallationGuard(lifecycle, mutex))
-    service = ProfileRestoreService(profiles, settings, backups, storage, lifecycle, mutex, bound_udp_ports)
+    # Recovery writes into the DayZ root, so it runs under the mutex with a proven stopped server and
+    # holds the A13 writer side (3.3)
+    if recover:
+        recover_interrupted_profile_restores(storage, settings, operations, InstallationGuard(lifecycle, mutex, folder_writer))
+    service = ProfileRestoreService(profiles, settings, backups, storage, lifecycle, mutex, bound_udp_ports,
+                                    folder_writer=folder_writer)
     return ProfileRestoreCoordinator(service, operations)
 
 

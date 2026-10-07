@@ -9,6 +9,8 @@ import uuid
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
+from ..adapters.windows.shared_files import read_text_shared, replace_file
+
 
 # Digests are 64-character lowercase hex values
 SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -61,7 +63,7 @@ class MigrationJournalRepository:
         """Load and validate a journal document from disk."""
         # Read strict UTF-8 JSON so a corrupt journal fails loudly
         try:
-            value = json.loads(path.read_text(encoding="utf-8"))
+            value = json.loads(read_text_shared(path, encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as error:
             raise MigrationJournalError("migration journal is unreadable") from error
         self._validate(value)
@@ -84,7 +86,7 @@ class MigrationJournalRepository:
         source = self.path(str(document["migration_id"]))
         retired = self.retired_path(str(document["migration_id"]))
         # Rename so a crash leaves either the active or the retired name
-        os.replace(source, retired)
+        replace_file(source, retired)
         return retired
 
     def finish_retired(self, migration_id: str) -> None:
@@ -116,7 +118,7 @@ class MigrationJournalRepository:
             if create and path.exists():
                 raise MigrationJournalError("migration journal already exists")
             # Swap the complete file into place
-            os.replace(temporary, path)
+            replace_file(temporary, path)
         finally:
             temporary.unlink(missing_ok=True)
 

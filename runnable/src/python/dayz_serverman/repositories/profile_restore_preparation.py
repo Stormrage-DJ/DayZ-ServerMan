@@ -5,6 +5,7 @@ import os
 import shutil
 from pathlib import Path, PureWindowsPath
 from typing import Any
+from ..adapters.windows.shared_files import open_shared
 from ..domain.backups import BackupManifest
 
 from ..domain.profile_restore_mapping import MISSION_OWNER_MARKER
@@ -81,7 +82,7 @@ def stage_groups(record: dict[str, Any], directory: Path, manifest: BackupManife
         else:
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
-        with (directory / entry.path).open("rb") as source, target.open("xb") as output:
+        with open_shared(directory / entry.path) as source, target.open("xb") as output:
             shutil.copyfileobj(source, output, 1024 * 1024)
             output.flush()
             os.fsync(output.fileno())

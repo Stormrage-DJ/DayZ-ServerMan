@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from ..adapters.windows.shared_files import read_text_shared
 from ..domain.workshop import WorkshopObservation
 from .steam_vdf import VdfError, field, parse_vdf
 
@@ -23,7 +24,7 @@ class CacheVerificationError(RuntimeError):
 def manifest_app(path: Path, *, require_complete: bool) -> dict[str, Any]:
     """Parse the manifest and return its AppWorkshop object."""
     try:
-        parsed = parse_vdf(path.read_text(encoding="utf-8-sig"))
+        parsed = parse_vdf(read_text_shared(path, encoding="utf-8-sig"))
         app = field(parsed, "AppWorkshop")
         # The manifest must belong to the DayZ application
         if not isinstance(app, dict) or field(app, "appid") != APP_ID:

@@ -18,6 +18,7 @@ from ...domain.mod_publication import PublicationIntent, PublicationJournal
 from ...repositories.backup_verification import is_reparse, path_has_reparse
 from ...repositories.backup_verification import sha256_file
 from ...repositories.workshop_cache import _has_alternate_stream
+from .shared_files import open_shared, read_bytes_shared, read_text_shared
 
 
 # Names of manager-owned stage and recovery artifacts that publication may touch
@@ -142,7 +143,7 @@ def copy_tree(
 def copy_file(source: Path, target: Path, digest: str) -> None:
     """Copy one file with a durable flush and verify the published digest."""
     # Stream through a bounded buffer into an exclusively created target
-    with source.open("rb") as reader, target.open("xb") as writer:
+    with open_shared(source) as reader, target.open("xb") as writer:
         shutil.copyfileobj(reader, writer, 1024 * 1024)
         writer.flush()
         # Force the bytes to disk so a crash cannot leave torn content
@@ -209,7 +210,7 @@ def verify_authority(root: Path, journal: PublicationJournal) -> None:
     """Verify the stored authority record against the journal."""
     path = root / "authority" / f"{journal.publication_id}.json"
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        raw = json.loads(read_text_shared(path, encoding="utf-8"))
         # Only the exact record shape is accepted; anything else is invalid
         if not isinstance(raw, dict) or set(raw) != {"schema_version", "body", "signature"}:
             raise PublicationPathError("publication authority schema is invalid")
@@ -262,7 +263,7 @@ def _key(root: Path, create: bool) -> bytes:
         except FileExistsError:
             # Another writer created the key first; read theirs below
             pass
-    key = path.read_bytes()
+    key = read_bytes_shared(path)
     # The key must be exactly 32 bytes from a plain, non-reparse file
     if len(key) != 32 or not path.is_file() or is_reparse(path):
         raise PublicationPathError("publication authority key is invalid")

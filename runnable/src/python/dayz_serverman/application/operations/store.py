@@ -9,6 +9,7 @@ import threading
 import uuid
 from pathlib import Path
 
+from ...adapters.windows.shared_files import replace_file
 from .models import OperationEvent, OperationRecord
 
 
@@ -18,10 +19,11 @@ IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 
 class OperationStore:
     """Persist operation records and append-only events under a root directory."""
-    def __init__(self, root: Path) -> None:
-        """Resolve the root directory and create it when missing."""
+    def __init__(self, root: Path, *, create_root: bool = True) -> None:
+        """Resolve the root directory and create it when missing; an observer session creates nothing."""
         self.root = root.resolve(strict=False)
-        self.root.mkdir(parents=True, exist_ok=True)
+        if create_root:
+            self.root.mkdir(parents=True, exist_ok=True)
         self.events_path = self.root / "events.jsonl"
         # One lock serializes record writes and event appends
         self._lock = threading.Lock()
@@ -48,7 +50,7 @@ class OperationStore:
                 # Flush to disk before the atomic rename
                 os.fsync(stream.fileno())
             # Swap the staged file in so readers never observe a partial record
-            os.replace(temporary, path)
+            replace_file(temporary, path)
 
     def append_event(self, event: OperationEvent) -> None:
         """Append one event as a single compact JSON line."""

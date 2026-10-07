@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
+from ..adapters.windows.shared_files import open_shared
 from ..bridge.contracts import ErrorCode
 from ..bridge.facade import ApplicationCallError
 from .log_activity import manager_activity
@@ -48,7 +49,7 @@ class LogQueryService:
         path = self._paths[source]
         # Treat an unreadable file as a retryable storage failure
         try:
-            content, truncated = _tail_text(path)
+            content, truncated = _tail_text(path, whole_records=source != "server")
         except OSError as error:
             raise ApplicationCallError(
                 ErrorCode.STORAGE_FAILURE,
@@ -67,7 +68,7 @@ class LogQueryService:
         }
 
 
-def _tail_text(path: Path) -> tuple[str, bool]:
+def _tail_text(path: Path, whole_records: bool = False) -> tuple[str, bool]:
     """Read at most the last bounded chunk of a text log."""
     # A missing or non-file target reads as empty and untruncated
     if not path.is_file():
@@ -75,13 +76,20 @@ def _tail_text(path: Path) -> tuple[str, bool]:
     # Clamp the read window to the configured tail size
     size = path.stat().st_size
     offset = max(0, size - TAIL_BYTES)
-    with path.open("rb") as stream:
-        stream.seek(offset)
-        data = stream.read(TAIL_BYTES)
+    # A rotation between the size check and the open also reads as empty and untruncated
+    try:
+        with open_shared(path) as stream:
+            stream.seek(offset)
+            data = stream.read(TAIL_BYTES)
+    except FileNotFoundError:
+        return "", False
     # Drop the partial first line unless the window starts at byte zero
     if offset:
         separator = data.find(b"\n")
         data = data[separator + 1 :] if separator >= 0 else b""
+    # An append-only record log drops a last line that a writer has not finished yet
+    if whole_records and not data.endswith(b"\n"):
+        data = data[: data.rfind(b"\n") + 1]
     return data.decode("utf-8", errors="replace"), offset > 0
 
 

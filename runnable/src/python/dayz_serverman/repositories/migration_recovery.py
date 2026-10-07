@@ -8,6 +8,7 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Mapping
 
+from ..adapters.windows.shared_files import read_bytes_shared, read_text_shared
 from .migration_destination_plan import (
     MigrationDestinationPlanError, validate_destination_plan,
 )
@@ -40,7 +41,7 @@ def classify_target(target: Path, evidence: Mapping[str, object]) -> str:
     if not target.is_file():
         return "THIRD_STATE"
     try:
-        digest = _digest(target.read_bytes())
+        digest = _digest(read_bytes_shared(target))
     except OSError:
         return "THIRD_STATE"
     # Matching prior bytes prove the prior state
@@ -72,7 +73,7 @@ def orphan_stage_is_proven_prepublication(
     if not marker_path.is_file():
         return False
     try:
-        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        marker = json.loads(read_text_shared(marker_path, encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
         return False
     if not isinstance(marker, dict):
@@ -154,7 +155,7 @@ def _publication_marker_safe(
         if staged.is_symlink() or not staged.is_file():
             return False
         # Staged payloads must match their digest and role identity
-        payload = staged.read_bytes()
+        payload = read_bytes_shared(staged)
         if _digest(payload) != raw["staged_sha256"]:
             return False
         try:
@@ -176,7 +177,7 @@ def _publication_marker_safe(
         if raw["prior_exists"] is False:
             continue
         try:
-            target_payload = _target(manager_root, raw).read_bytes()
+            target_payload = read_bytes_shared(_target(manager_root, raw))
             target_identity = validate_role_payload(
                 str(raw["role"]), str(raw["label"]), str(marker["migration_id"]),
                 target_payload,

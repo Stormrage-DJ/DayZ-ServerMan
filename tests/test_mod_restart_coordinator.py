@@ -92,7 +92,7 @@ class _Services:
         """Report the profile that the server runs with."""
         return SimpleNamespace(profile_id=self.running_profile)
 
-    def stop(self, settings_revision: int) -> None:
+    def stop(self, settings_revision: int, *, before_change=None) -> None:
         """Log the stop."""
         self._step("stop")
 

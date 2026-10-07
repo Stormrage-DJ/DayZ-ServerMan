@@ -13,6 +13,7 @@ from ..adapters.windows.publication_paths import (
     safe_dayz_root,
     safe_target,
 )
+from ..adapters.windows.shared_files import rename_directory
 from ..domain.mod_publication import (
     GroupState,
     PublicationGroup,
@@ -155,12 +156,12 @@ class ModPublicationStorage:
                 self._fault("BEFORE_PRIOR_MOVE", index)
                 # Move the prior target aside so rollback can restore it
                 if group.prior_existed:
-                    target.replace(recovery)
+                    rename_directory(target, recovery)
                     group.state = GroupState.PRIOR_MOVED
                     repository.save(journal)
                     self._fault("AFTER_PRIOR_MOVED_SAVE", index)
                 self._fault("BEFORE_OUTPUT_MOVE", index)
-                stage.replace(target)
+                rename_directory(stage, target)
                 group.state = GroupState.OUTPUT_PUBLISHED
                 repository.save(journal)
                 self._fault("AFTER_OUTPUT_PUBLISHED_SAVE", index)

@@ -3,6 +3,7 @@
 import hashlib
 from pathlib import PureWindowsPath
 
+from ..adapters.windows.shared_files import read_bytes_shared
 from ..domain.backups import manifest_digest
 from ..domain.profile_restore_destinations import select_restore_destination, suggest_profile_id, suggest_restore_ports, reserve_profile_ports
 from ..domain.profile_restore_mapping import map_mission_inventory, STORAGE_NAME, MISSION_OWNER_MARKER
@@ -25,7 +26,7 @@ def build_preview(directory, manifest, root, settings_revision, records, profile
     destination = select_restore_destination(metadata["resolved_mission_root"], metadata["instance_id"], identifier, occupancy,
                                              storage_policy=request["storage_policy"], affected_profile_ids=affected,
                                              common_mission_matches=matches)
-    config_bytes = (directory / metadata["config_entry"]).read_bytes()
+    config_bytes = read_bytes_shared(directory / metadata["config_entry"])
     config = read_restore_configuration(config_bytes)
     game, query = suggest_restore_ports(original.game_port, config.steam_query_port or 27016, occupancy.reserved_ports)
     game = request["game_port"] if request["game_port"] is not None else game
@@ -67,7 +68,7 @@ def build_preview(directory, manifest, root, settings_revision, records, profile
     facts = {"preview": preview, "root": str(root), "profiles": [record.to_dict() for record in records],
              "profile_inventory": inventory(profile_root), "generated": inventory(generated),
              "target": target_inventory, "common_mission": common_inventory(disk),
-             "archive_sha256": hashlib.sha256((directory / "manifest.json").read_bytes()).hexdigest(),
+             "archive_sha256": hashlib.sha256(read_bytes_shared(directory / "manifest.json")).hexdigest(),
              "transformed_config_sha256": hashlib.sha256(transformed).hexdigest()}
     if facts["generated"] is not None or inventory(record_path) is not None:
         raise ProfileValidationError("Restore profile ID or generated directory is occupied.")
@@ -79,7 +80,7 @@ def consumers(root, records, mission, instance):
     """Derive the exact registered consumer set from every validated config."""
     result = []
     for record in records:
-        config = read_restore_configuration(_contained(root, record.values.server_config).read_bytes())
+        config = read_restore_configuration(read_bytes_shared(_contained(root, record.values.server_config)))
         resolved = record.values.mission_root or str(PureWindowsPath("mpmissions", config.mission_template))
         if resolved.casefold() == mission.casefold() and config.instance_id == instance:
             result.append(record.values.profile_id)

@@ -16,7 +16,8 @@ from ..repositories.backups import BackupStorageError, BackupStorage
 from ..repositories.profile_restore_storage import ProfileRestoreStorage
 from .profiles import ProfileService
 from .settings import SettingsService
-from .lifecycle_ports import InstallationMutexPort
+from .folder_writer_scope import WriterScope
+from .lifecycle_ports import InstallationMutexPort, ServerFolderWriterPort
 from .profile_restore_preview import build_preview
 from ..repositories.selected_backup import SelectedBackups
 
@@ -28,11 +29,13 @@ class ProfileRestoreService:
 
     def __init__(self, profiles: ProfileService, settings: SettingsService, backups: BackupStorage,
                  storage: ProfileRestoreStorage, lifecycle: Any, mutex: InstallationMutexPort,
-                 udp_inventory: Callable[[], frozenset[int]]) -> None:
-        """Bind shared service boundaries and a fail-closed UDP endpoint probe."""
+                 udp_inventory: Callable[[], frozenset[int]], *,
+                 folder_writer: ServerFolderWriterPort | None = None) -> None:
+        """Bind shared service boundaries, a fail-closed UDP endpoint probe and the A13 writer side."""
         self.profiles, self.settings, self.backups = profiles, settings, backups
         self.storage, self.lifecycle, self.mutex = storage, lifecycle, mutex
         self.udp_inventory = udp_inventory
+        self.folder_writer = folder_writer
         self.selected = SelectedBackups()
 
     def preview(self, request: Mapping[str, Any]) -> dict[str, Any]:
@@ -82,8 +85,10 @@ class ProfileRestoreService:
                     raise ValueError("Storage overwrite confirmation is missing or differs from the preview.")
                 if self.settings.load() != settings:
                     raise RevisionConflict("Restore settings changed before publication.")
-                checkpoint("VERIFYING_BACKUP", 10)
-                result = self.storage.restore(root, operation_id, directory, verified, preview, config, mapping, before, checkpoint)
+                # A13 (R-5): the writer side is held from before staging, which may create serverman, to the end
+                with WriterScope(self.folder_writer).held_for():
+                    checkpoint("VERIFYING_BACKUP", 10)
+                    result = self.storage.restore(root, operation_id, directory, verified, preview, config, mapping, before, checkpoint)
                 self.profiles.read(profile.profile_id)
                 return result
 

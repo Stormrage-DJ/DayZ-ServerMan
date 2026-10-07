@@ -104,7 +104,7 @@ class BackupIntegrityTests(unittest.TestCase):
                 with zipfile.ZipFile(Path(target), "a") as archive:
                     archive.writestr("manifest.json", '{"schema_version":2}')
 
-        with patch("dayz_serverman.repositories.backups.os.replace", side_effect=tamper_after_replace):
+        with patch("dayz_serverman.repositories.backups.replace_file", side_effect=tamper_after_replace):
             with self.assertRaisesRegex(BackupStorageError, "published backup ZIP") as raised:
                 self.service.create("main", 3, 4, lambda _phase, _percent: None)
         self.assertEqual(raised.exception.code, "RECOVERY_REQUIRED")

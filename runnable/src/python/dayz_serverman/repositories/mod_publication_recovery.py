@@ -12,6 +12,7 @@ from ..adapters.windows.publication_paths import (
     resolve_artifacts,
     safe_dayz_root,
 )
+from ..adapters.windows.shared_files import rename_directory
 from ..domain.mod_publication import (
     GroupState,
     PublicationJournal,
@@ -156,11 +157,11 @@ class PublicationRecovery:
                     return _recovery_failure(journal, self.repository)
                 # Move the published target aside, then restore the prior copy
                 if target.exists():
-                    target.replace(stage)
+                    rename_directory(target, stage)
                 if group.prior_existed:
                     if not recovery.is_dir() or inventory_tree(recovery) != group.prior_digest:
                         return _recovery_failure(journal, self.repository)
-                    recovery.replace(target)
+                    rename_directory(recovery, target)
                 group.state = GroupState.PRIOR_RESTORED
                 self.repository.save(journal)
                 self._fault("AFTER_COMPENSATION_TARGET_SAVE", index)

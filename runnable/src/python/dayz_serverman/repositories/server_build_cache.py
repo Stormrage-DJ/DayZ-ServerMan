@@ -11,6 +11,7 @@ import re
 from datetime import timedelta
 from typing import Any
 
+from ..adapters.windows.shared_files import open_shared
 from ..domain.server_build import BRANCH_PATTERN, MAX_BRANCHES, MAX_BUILD_ID, BranchFact, BuildCheckRecord
 from .update_check_cache import (
     MAX_FUTURE_SECONDS,
@@ -34,7 +35,7 @@ class ServerBuildCacheRepository(UpdateCheckCacheRepository):
     def load(self) -> BuildCheckRecord | None:  # type: ignore[override]
         """Return the stored record, or None ("never checked") for any unusable file."""
         try:
-            with self._path.open("rb") as stream:
+            with open_shared(self._path) as stream:
                 raw = stream.read(MAX_FILE_BYTES + 1)
             if len(raw) > MAX_FILE_BYTES:
                 return None

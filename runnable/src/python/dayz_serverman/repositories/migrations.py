@@ -9,6 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Mapping
 
+from ..adapters.windows.shared_files import replace_file
 from .json_store import VersionedJsonRepository
 
 
@@ -92,7 +93,7 @@ class MigrationStorage:
                 # Write through a temp file so a failure cannot corrupt the target
                 temporary = path.with_name(f".{path.name}.migration-recovery.tmp")
                 temporary.write_bytes(prior)
-                os.replace(temporary, path)
+                replace_file(temporary, path)
             return True
         except OSError:
             return False
@@ -111,7 +112,7 @@ class MigrationStorage:
                 stream.flush()
                 # Fsync before the swap so a crash cannot leave a partial file
                 os.fsync(stream.fileno())
-            os.replace(temporary, path)
+            replace_file(temporary, path)
         except OSError:
             # Never leave a partial temporary file behind
             temporary.unlink(missing_ok=True)

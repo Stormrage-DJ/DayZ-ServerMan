@@ -10,6 +10,7 @@ from collections.abc import Collection, Mapping
 from pathlib import Path
 from typing import Any
 
+from ..adapters.windows.shared_files import open_shared, replace_file
 from ..domain.content_proofs import (
     MAX_SOURCE_RECORDS,
     MAX_TARGET_RECORDS,
@@ -59,7 +60,7 @@ class ContentProofStore:
 
     def _read(self) -> bytes:
         """Return the file bytes, at most one byte above the cap so an oversized file is detected."""
-        with self._path.open("rb") as stream:
+        with open_shared(self._path) as stream:
             return stream.read(MAX_FILE_BYTES + 1)
 
     def target_records(self) -> Collection[tuple[str, str, str, str]]:
@@ -142,7 +143,7 @@ class ContentProofStore:
         """Swap the staged file into place; a replace refused by an open reader is retried."""
         for attempt in range(SHARING_RETRIES + 1):
             try:
-                os.replace(temporary, self._path)
+                replace_file(temporary, self._path)
                 return
             except PermissionError:
                 # The last refusal goes to the caller, which logs it and goes on

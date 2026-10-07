@@ -5,6 +5,7 @@ from __future__ import annotations
 import stat
 from pathlib import Path, PureWindowsPath
 
+from ..adapters.windows.shared_files import read_bytes_shared
 from ..domain.profile_restore_destinations import RestoreOccupancy, reserve_profile_ports
 from ..domain.profile_restore_mapping import STORAGE_NAME
 from ..domain.profiles import ProfileRecord, ProfileValidationError, validate_relative_path
@@ -29,7 +30,7 @@ def inspect_restore_occupancy(dayz_root: Path, records: tuple[ProfileRecord, ...
         # Every config must be readable: one unknown consumer invalidates allocation.
         for record in records:
             config = _contained(root, record.values.server_config)
-            context = read_restore_configuration(config.read_bytes())
+            context = read_restore_configuration(read_bytes_shared(config))
             mission = record.values.mission_root or str(
                 PureWindowsPath("mpmissions", context.mission_template),
             )

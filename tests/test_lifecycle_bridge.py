@@ -39,17 +39,17 @@ class FakeLifecycle:
         """Report a stopped server, or the scripted snapshot of a running one."""
         return self.snapshot if self.snapshot is not None else LifecycleSnapshot(ServerState.STOPPED)
 
-    def start(self, profile_id: str, profile_revision: int, settings_revision: int):
+    def start(self, profile_id: str, profile_revision: int, settings_revision: int, *, before_change=None):
         """Record a start call and return the running result or inject a failure."""
         self.calls.append(("start", profile_id, profile_revision, settings_revision))
         return self._result(ServerState.RUNNING_MANAGED)
 
-    def stop(self, settings_revision: int):
+    def stop(self, settings_revision: int, *, before_change=None):
         """Record a stop call and return the stopped result or inject a failure."""
         self.calls.append(("stop", settings_revision))
         return self._result(ServerState.STOPPED)
 
-    def restart(self, profile_id: str, profile_revision: int, settings_revision: int):
+    def restart(self, profile_id: str, profile_revision: int, settings_revision: int, *, before_change=None):
         """Record a restart call and return the running result or inject a failure."""
         self.calls.append(("restart", profile_id, profile_revision, settings_revision))
         return self._result(ServerState.RUNNING_MANAGED)

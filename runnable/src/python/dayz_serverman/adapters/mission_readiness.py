@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .windows.shared_files import open_shared
+
 
 MISSION_READY_MARKER = b"Player connect enabled"
 
@@ -24,7 +26,7 @@ class RptMissionReadinessProbe:
             if not candidates:
                 return False
             latest = max(candidates, key=lambda path: path.stat().st_mtime_ns)
-            with latest.open("rb") as source:
+            with open_shared(latest) as source:
                 overlap = b""
                 while chunk := source.read(64 * 1024):
                     combined = overlap + chunk

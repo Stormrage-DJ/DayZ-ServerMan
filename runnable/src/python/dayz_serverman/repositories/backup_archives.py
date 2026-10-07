@@ -9,6 +9,7 @@ import stat
 import zipfile
 from pathlib import Path
 
+from ..adapters.windows.shared_files import open_shared
 from ..domain.backups import (
     BACKUP_SCHEMA_VERSION,
     BackupManifest,
@@ -46,7 +47,7 @@ def read_archive_manifest(path: Path, expected_backup_id: str | None = None, *, 
     """Read and validate the manifest of a backup archive."""
     try:
         # Reject unsafe or duplicate members before parsing the manifest
-        with zipfile.ZipFile(path, "r") as archive:
+        with open_shared(path) as stream, zipfile.ZipFile(stream, "r") as archive:
             infos = _validated_infos(archive)
             # Parse the manifest JSON from the validated member
             raw = json.loads(archive.read(infos["manifest.json"]).decode("utf-8"))
@@ -71,7 +72,7 @@ def verify_archive(path: Path, manifest: BackupManifest) -> None:
     """Verify every archive member against the manifest before use."""
     try:
         # Reject unsafe or duplicate members before checking payloads
-        with zipfile.ZipFile(path, "r") as archive:
+        with open_shared(path) as stream, zipfile.ZipFile(stream, "r") as archive:
             infos = _validated_infos(archive)
             _require_members(infos, manifest)
             # Compare each member size and digest with the manifest
@@ -97,7 +98,7 @@ def materialize_archive(path: Path, target: Path, manifest: BackupManifest) -> N
     """Extract a verified archive into a target directory."""
     try:
         # Reject unsafe or duplicate members before extraction
-        with zipfile.ZipFile(path, "r") as archive:
+        with open_shared(path) as stream, zipfile.ZipFile(stream, "r") as archive:
             infos = _validated_infos(archive)
             _require_members(infos, manifest)
             # Extract the manifest and payload members with exclusive creation

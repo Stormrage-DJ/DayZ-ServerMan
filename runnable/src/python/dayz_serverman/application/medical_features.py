@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import Any, Callable
 
+from ..adapters.windows.shared_files import read_bytes_shared
 from ..domain.models import RevisionConflict
 from ..repositories.atomic_file import AtomicFilePublisher, ContentChangedError
 from ..repositories.configuration_common import digest_bytes
@@ -70,7 +71,7 @@ class MedicalFeatureService:
         # Snapshot the original bytes once so the toggle stays reversible
         owned_baseline = self._baseline(profile_key, feature)
         if not owned_baseline.exists():
-            self._write_baseline(owned_baseline, baseline.read_bytes() if baseline.exists() else path.read_bytes())
+            self._write_baseline(owned_baseline, read_bytes_shared(baseline) if baseline.exists() else read_bytes_shared(path))
         # Project the managed bytes and publish them atomically
         proposed = self._proposed(profile_key, feature, path, digest, owned_baseline, bool(enabled))
         checkpoint("validated", 60)
@@ -118,12 +119,12 @@ class MedicalFeatureService:
     def _state(self, profile_id: str, feature: str, path: Path) -> tuple[bool, str]:
         """Classify the file as original or managed against the stored baseline."""
         # Read the current bytes and locate the baseline file
-        current = path.read_bytes(); current_digest = digest_bytes(current)
+        current = read_bytes_shared(path); current_digest = digest_bytes(current)
         baseline = self._baseline_source(profile_id, feature, path)
         # Without a baseline the file is assumed original
         if not baseline.exists():
             return False, current_digest
-        original = baseline.read_bytes()
+        original = read_bytes_shared(baseline)
         # Matching the original bytes means the feature is off
         if current_digest == digest_bytes(original):
             return False, current_digest
@@ -137,12 +138,12 @@ class MedicalFeatureService:
     def _proposed(profile_id: str, feature: str, path: Path, digest: str,
                   baseline: Path, enabled: bool) -> bytes:
         """Return the transformed or original bytes for the requested toggle."""
-        current = path.read_bytes()
+        current = read_bytes_shared(path)
         # Re-check the digest so a concurrent edit cannot be overwritten
         if digest_bytes(current) != digest:
             raise ContentChangedError("medical feature target changed after it was loaded")
         # Prefer the stored baseline; fall back to current bytes when none exists
-        original = baseline.read_bytes() if baseline.exists() else current
+        original = read_bytes_shared(baseline) if baseline.exists() else current
         return transform_medical_feature(feature, original) if enabled else original
 
     def _baseline(self, profile_id: str, feature: str) -> Path:
@@ -169,5 +170,5 @@ class MedicalFeatureService:
                 stream.write(content); stream.flush(); os.fsync(stream.fileno())
         except FileExistsError:
             # Refuse a conflicting pre-existing baseline
-            if path.read_bytes() != content:
+            if read_bytes_shared(path) != content:
                 raise ContentChangedError("medical feature baseline already exists with different content")

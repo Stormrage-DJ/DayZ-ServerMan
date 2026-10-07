@@ -10,6 +10,7 @@ from .application.backups import BackupService
 from .application.content_proof_records import ContentProofRecorder
 from .application.content_proofs import ContentProofResolver
 from .application.installation_guard import InstallationGuard
+from .application.lifecycle_ports import ServerFolderWriterPort
 from .application.mod_inventory import CheckSource, ModInventoryService
 from .application.mod_inventory_coordinator import ModInventoryCoordinator
 from .application.mod_publication import ModPublicationService
@@ -67,21 +68,25 @@ def build_workshop(
     logger: StructuredLogger | None = None,
     backups: BackupService | None = None,
     *, steamcmd_guard: SteamCmdRunGuard | None = None,
+    folder_writer: ServerFolderWriterPort | None = None, recover: bool = True,
 ) -> WorkshopComposition:
     """Build SteamCMD update, inventory, and publication services.
 
     An interrupted mod publication is recovered first, before any service can queue a mutation.
+    An observer session (`recover` false) skips the recovery. `folder_writer` is the A13 writer side.
     """
-    # Every write into the DayZ root takes the installation mutex and needs a stopped server
-    guard = InstallationGuard(lifecycle, WindowsInstallationMutex())
-    recover_interrupted_publications(publication_journals, settings, operations, guard)
+    # Every write into the DayZ root takes the installation mutex and needs a stopped server; the
+    # recovery also holds the A13 writer side, which the guard carries (3.3)
+    guard = InstallationGuard(lifecycle, WindowsInstallationMutex()).with_folder_writer(folder_writer)
+    if recover:
+        recover_interrupted_publications(publication_journals, settings, operations, guard)
     steamcmd_preflight = SteamCmdPreflight()
     # The legacy applied-state file is only read; the proof store replaces its writes
     applied_mod_state = AppliedModStateRepository(paths.applied_mod_state)
     content_proofs = ContentProofStore(paths.content_proofs, logger)
     # Profile deletion also cleans the evidence that belongs to the profile
     profile_deletion = ProfileDeletionService(
-        profiles, settings, lifecycle, preferences, schedules, applied_mod_state,
+        profiles, settings, lifecycle, preferences, schedules, applied_mod_state, folder_writer,
     )
     profile_coordinator = ProfileCoordinator(profiles, operations, profile_deletion)
     workshop_updates = WorkshopUpdateService(
@@ -106,7 +111,7 @@ def build_workshop(
         # A requested start accepts a stored fingerprint for an unchanged mod folder
         prestart=PrestartFingerprints(content_proofs, logger),
         # A writing publication takes the installation mutex and needs a stopped server
-        guard=guard,
+        guard=guard, folder_writer=folder_writer,
     )
     return WorkshopComposition(
         profile_coordinator=profile_coordinator,
@@ -118,7 +123,7 @@ def build_workshop(
         mod_publication_coordinator=ModPublicationCoordinator(mod_publication, operations),
         # "Update & restart" orders stop, backup and the guarded apply in one operation
         mod_restart_coordinator=ModRestartCoordinator(
-            mod_publication, lifecycle, backups, operations,
+            mod_publication, lifecycle, backups, operations, folder_writer,
         ),
         # "Verify files" hashes on the lane and replaces the stored proofs
         verification_coordinator=WorkshopVerificationCoordinator(
