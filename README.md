@@ -13,6 +13,9 @@ It uses Python and the Windows WebView2 runtime. It does not need a build step.
 - Updates the mods in one action: **Update all**, **Update & start**, or
   **Update & restart**. A review comes before any change to the server folder.
 - Creates verified backups and restores them, also into a deleted profile.
+- Runs every action also as a command for scripts and Windows Task Scheduler:
+  `py runnable\DayZ-ServerMan.py --cli help`. See the
+  [command line](./runnable/README.md#command-line).
 
 ## Use the application
 

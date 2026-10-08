@@ -10,10 +10,11 @@ from ..application.lifecycle_coordinator import OTHER_PROFILE_RUNNING
 # The product rule of exit codes (criterion 8, R1)
 SUCCESS, FAILED, USAGE, REFUSED, NOT_CONFIRMED, CANCELLED, RECOVERY = 0, 1, 2, 3, 4, 5, 6
 
-# CLI codes that are not bridge error codes (A11, design 6.4)
+# CLI codes that are not bridge error codes: the closed list of A11 (QF-62), design 6.4
 CLI_CODES: dict[str, int] = {
-    "USAGE": USAGE, "INSTANCE_ACTIVE": REFUSED, "CONFIRMATION_REQUIRED": NOT_CONFIRMED,
-    "NOT_INTERACTIVE": NOT_CONFIRMED, "CANCELLED": CANCELLED, "INSTANCE_LOCK_UNSUPPORTED": FAILED,
+    "USAGE": USAGE, "INSTANCE_ACTIVE": REFUSED, "SETUP_REQUIRED": REFUSED, "NOTHING_TO_CONVERT": REFUSED,
+    "CONFIRMATION_REQUIRED": NOT_CONFIRMED, "NOT_INTERACTIVE": NOT_CONFIRMED, "CANCELLED": CANCELLED,
+    "INSTANCE_LOCK_UNSUPPORTED": FAILED, "CHECK_NOT_FINISHED": FAILED, "NOT_READY": FAILED,
 }
 
 # Refusal codes: their class when dispatch returns them; inside a FAILED record only when pre-change (6.5)

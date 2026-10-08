@@ -9,7 +9,7 @@ from typing import Any, NoReturn
 
 from . import help_wording as texts
 from .command_table import COMMANDS
-from .registry import HELP_WORD, CommandSpec, Form, OptionSpec, children, leaf_paths, longest_prefix
+from .registry import HELP_WORD, CommandSpec, Confirm, Form, OptionSpec, children, leaf_paths, longest_prefix
 
 # The options that every command takes, in help order
 COMMON_OPTIONS = (OptionSpec("json", Form.FLAG, "--json"), OptionSpec("yes", Form.FLAG, "--yes"),
@@ -180,11 +180,15 @@ def command_list(commands: tuple[CommandSpec, ...] = COMMANDS, prefix: tuple[str
 
 
 def leaf_help(spec: CommandSpec) -> str:
-    """Return the help page of one command: usage, sentence and options with their sentences."""
-    entries = [(_option_usage(option), texts.OPTION_TEXTS[option.dest]) for option in (*spec.options, *COMMON_OPTIONS)]
+    """Return the help page of one command: usage, sentence and options with their sentences.
+
+    `--yes` is accepted everywhere (6.2) but listed only where a question exists (QF-44).
+    """
+    common = [option for option in COMMON_OPTIONS if option.dest != "yes" or spec.confirm is not Confirm.NONE]
+    entries = [(_option_usage(option), texts.OPTION_TEXTS[option.dest]) for option in (*spec.options, *common)]
     width = max(len(usage) for usage, _text in entries)
     # Positional arguments first, then the options in table order
-    ordered = sorted((*spec.options, *COMMON_OPTIONS[:2]),
+    ordered = sorted((*spec.options, *(option for option in common if option.dest != "help")),
                      key=lambda option: option.form not in (Form.POSITIONAL, Form.TIME))
     usage = " ".join(_option_usage(option, bracket=True) for option in ordered)
     lines = [f"Usage: DayZ-ServerMan.py --cli {spec.name} {usage}".rstrip(), "", texts.COMMAND_TEXTS[spec.name],

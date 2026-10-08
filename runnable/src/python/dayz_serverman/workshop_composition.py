@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .adapters.windows.mutex import WindowsInstallationMutex
-from .adapters.windows.steamcmd import SteamCmdPreflight, WindowsSteamCmdAdapter
+from .adapters.windows.steamcmd import SteamCmdConsole, SteamCmdPreflight, WindowsSteamCmdAdapter
 from .application.backups import BackupService
 from .application.content_proof_records import ContentProofRecorder
 from .application.content_proofs import ContentProofResolver
@@ -69,11 +69,13 @@ def build_workshop(
     backups: BackupService | None = None,
     *, steamcmd_guard: SteamCmdRunGuard | None = None,
     folder_writer: ServerFolderWriterPort | None = None, recover: bool = True,
+    sign_in: SteamCmdConsole = SteamCmdConsole.NEW_CONSOLE,
 ) -> WorkshopComposition:
     """Build SteamCMD update, inventory, and publication services.
 
     An interrupted mod publication is recovered first, before any service can queue a mutation.
     An observer session (`recover` false) skips the recovery. `folder_writer` is the A13 writer side.
+    `sign_in` is the console of the interactive Steam sign-in: the window's own, or the command's (10.5).
     """
     # Every write into the DayZ root takes the installation mutex and needs a stopped server; the
     # recovery also holds the A13 writer side, which the guard carries (3.3)
@@ -90,7 +92,7 @@ def build_workshop(
     )
     profile_coordinator = ProfileCoordinator(profiles, operations, profile_deletion)
     workshop_updates = WorkshopUpdateService(
-        profiles, settings, steamcmd_preflight, WindowsSteamCmdAdapter(steamcmd_preflight),
+        profiles, settings, steamcmd_preflight, WindowsSteamCmdAdapter(steamcmd_preflight, console=sign_in),
         content_proofs=ContentProofResolver(content_proofs, applied_mod_state),
         # The update asks for a fresh check and sends only changed items to SteamCMD
         check_source=check_source,

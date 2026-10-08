@@ -16,6 +16,7 @@ from typing import Any, TextIO
 from .. import session as owner_sessions
 from .. import session_observer as observer_sessions
 from ..adapters.windows.instance_lock import InstanceActive, InstanceLockUnsupported
+from ..adapters.windows.steamcmd import SteamCmdConsole
 from .bridge_client import BridgeClient, CliBridgeError, ObserverClient
 from .exit_codes import FAILED, REFUSED, USAGE
 from .flow import stop_if_interrupted
@@ -132,7 +133,9 @@ def _run_write(spec: CommandSpec, options: argparse.Namespace, handler: Handler,
         stop_if_interrupted(interrupts)
     # (2) D2: the instance lock of an owner session
     try:
-        session = owner_sessions.open_owner_session(root, HOLDER, spec.name, require_byte_range_lock=True)
+        # A command's Steam sign-in shares this console (10.5)
+        session = owner_sessions.open_owner_session(root, HOLDER, spec.name, require_byte_range_lock=True,
+                                                    sign_in=SteamCmdConsole.SHARED_CONSOLE)
     except InstanceActive as refusal:
         holder = refusal.holder
         details = holder.to_details() if holder is not None else None

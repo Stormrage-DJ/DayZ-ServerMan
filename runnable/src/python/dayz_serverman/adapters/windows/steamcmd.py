@@ -7,6 +7,7 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Callable
 
@@ -28,6 +29,15 @@ OUTPUT_LIMIT = 1_048_576
 LINE_LIMIT = 8192
 # After a successful escalation the output reader gets this long to see the end of the stream
 READER_GRACE_SECONDS = 5.0
+
+
+class SteamCmdConsole(str, Enum):
+    """Where the interactive sign-in asks its questions (design 10.5)."""
+
+    # The window: SteamCMD opens its own console window
+    NEW_CONSOLE = "NEW_CONSOLE"
+    # A CLI command: SteamCMD shares the caller's console, in its own process group
+    SHARED_CONSOLE = "SHARED_CONSOLE"
 
 
 @dataclass(frozen=True)
@@ -160,9 +170,11 @@ def _escalate(tree: OwnedProcessTree) -> bool:
 class WindowsSteamCmdAdapter:
     """Launch and supervise SteamCMD runs with owned process evidence."""
 
-    def __init__(self, preflight: SteamCmdPreflight | None = None) -> None:
-        """Use the given preflight validator or a fresh default."""
+    def __init__(self, preflight: SteamCmdPreflight | None = None, *,
+                 console: SteamCmdConsole = SteamCmdConsole.NEW_CONSOLE) -> None:
+        """Use the given preflight validator or a fresh default, and the console of the sign-in."""
         self._preflight = preflight or SteamCmdPreflight()
+        self._console = console
 
     # The run methods and existing tests reach the shared supervisor through this name
     _wait_owned = staticmethod(supervise_owned)
@@ -179,9 +191,9 @@ class WindowsSteamCmdAdapter:
         before_launch()
         # Revalidate paths immediately before the process starts
         self._preflight.revalidate(paths)
-        # A separate console lets the user answer Steam's prompts
-        flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0) | getattr(
-            subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        # A separate console lets the user answer Steam's prompts; a CLI command shares its own
+        # console instead, and the new process group keeps the console's Ctrl+C away from SteamCMD
+        flags = sign_in_flags(self._console)
         process = subprocess.Popen(
             [str(paths.executable), "+login", account_name, "+quit"],
             cwd=str(paths.root), shell=False, close_fds=True,
@@ -209,3 +221,11 @@ class WindowsSteamCmdAdapter:
             creationflags=flags, env=safe_child_environment(),
         )
         return self._wait_owned(process, cancellation_requested, on_launched, [])
+
+
+def sign_in_flags(console: SteamCmdConsole) -> int:
+    """Return the creation flags of the interactive sign-in for its console (design 10.5)."""
+    group = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    if console is SteamCmdConsole.SHARED_CONSOLE:
+        return group
+    return getattr(subprocess, "CREATE_NEW_CONSOLE", 0) | group

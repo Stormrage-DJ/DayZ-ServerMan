@@ -174,7 +174,14 @@ def usage(message: str, command: str | None) -> Line:
 
 
 def confirmation_needed(nothing_changed: str = NOTHING_CHANGED) -> Line:
-    """Word a confirmation that could not be asked: no terminal, or JSON without --yes (8.1)."""
+    """Word a confirmation that could not be asked: no terminal, or JSON without --yes (8.1).
+
+    Another closing sentence than "Nothing was changed." comes last, so the text output ends
+    with it ("The mods are downloaded; nothing was applied.", criterion 24).
+    """
+    if nothing_changed != NOTHING_CHANGED:
+        return sentence("Confirmation is needed. Run the command again with ", TypeText("--yes"),
+                        f". {nothing_changed}")
     return sentence(f"Confirmation is needed. {nothing_changed} Run the command again with ", TypeText("--yes"), ".")
 
 
@@ -224,3 +231,37 @@ def other_profile_running(running_name: str) -> Line:
     return sentence("The running server was started with another profile. Name that profile with ",
                     TypeText("--profile"), " to stop or restart the server. The server runs with ",
                     Value(running_name), ".")
+
+
+def no_runtime_profile() -> Line:
+    """Word `backup create` for a profile without a runtime profile directory (criterion 30; the window's notice)."""
+    return sentence("Set a runtime profile directory with ", TypeText("profile edit"), " before creating a backup.")
+
+
+def recovery_clear() -> Line:
+    """Word `backup recover` when no unfinished restore blocks changes."""
+    return sentence("No unfinished restore blocks changes.")
+
+
+def revision_pinned(subject: str, current: object, pinned: int) -> Line:
+    """Word an `--expect-…` pin that differs from the stored revision, with the read to repeat (QF-45)."""
+    show = "profile show --json" if subject == "profile" else "settings show --json"
+    return sentence(f"The {subject} revision is now {current}, not {pinned}. Read it again with ", TypeText(show),
+                    ", then pin the new number.")
+
+
+def mission_occupied() -> Line:
+    """Word `--storage preserve` when another profile uses the original mission folder (QF-42)."""
+    return sentence("The original mission folder is in use by another profile. Use ", TypeText("--storage new"),
+                    ", or ", TypeText("--storage replace"), " with ", TypeText("--overwrite"), ".")
+
+
+def no_archive_file(path: str) -> Line:
+    """Word an `--archive` path where no file exists (QF-43)."""
+    return sentence("No file at ", Echo(path), ".")
+
+
+def overwrite_needed() -> Line:
+    """Word a profile restore that replaces a world without `--overwrite` (design 8.1)."""
+    return sentence("This restore replaces an existing world. Run the command again with ", TypeText("--overwrite"),
+                    ".")

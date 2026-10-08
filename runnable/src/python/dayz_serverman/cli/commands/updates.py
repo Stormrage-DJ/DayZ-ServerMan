@@ -1,7 +1,8 @@
-"""`updates status` (10.1); `updates check` and `updates auto` come with phase 5."""
+"""`updates status` (10.1); `updates check` and `updates auto` are in `updates_write.py`."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from ..output import CommandResult, Line, sentence
@@ -13,8 +14,13 @@ from .common import automatic_checks, labelled, local_time, profile_id, profile_
 def updates_status(context: Any) -> CommandResult:
     """Show the mod update state and the server build state of the last checks."""
     status = context.call("get_update_status", profile_id=profile_id(context.profile))
-    automatic = automatic_checks(context)
-    lines: list[Line] = [profile_line(context.profile), way_out(f"Mods: {mods_summary(status, automatic)}")]
+    lines = status_lines(status, context.profile, automatic_checks(context))
+    return CommandResult(with_profile(status, context.profile), lines)
+
+
+def status_lines(status: Mapping[str, Any], profile: Mapping[str, Any] | None, automatic: bool) -> list[Line]:
+    """Return the lines of an update status: the profile, the mods, the server build and the switch."""
+    lines: list[Line] = [profile_line(profile), way_out(f"Mods: {mods_summary(status, automatic)}")]
     mods = status.get("mods") or {}
     if mods.get("last_success_at"):
         lines.append(labelled("Mods last checked", local_time(mods["last_success_at"])))
@@ -28,4 +34,4 @@ def updates_status(context: Any) -> CommandResult:
         if build.get("last_success_at"):
             lines.append(labelled("Server build last checked", local_time(build["last_success_at"])))
     lines.append(sentence(f"Automatic update checks: {'on' if automatic else 'off'}."))
-    return CommandResult(with_profile(status, context.profile), lines)
+    return lines

@@ -59,17 +59,20 @@ from .update_check_composition import (
     build_server_build, build_update_check, build_update_check_scheduler, build_update_status,
 )
 from .workshop_composition import build_workshop
+from .adapters.windows.steamcmd import SteamCmdConsole
 
 
 def build_composition(
     packaged_root: Path | None = None, *, mode: SessionMode = SessionMode.OWNER,
     folder_writer: ServerFolderWriterPort | None = None,
+    sign_in: SteamCmdConsole = SteamCmdConsole.NEW_CONSOLE,
 ) -> ApplicationComposition:
     """Create production services without consulting the working directory.
 
     The defaults are the GUI's owner session. An observer session (A4) creates no
     folder, writes no log line, runs no recovery, refuses every submit and holds
-    only the read handlers. `folder_writer` is the A13 writer side of an owner.
+    only the read handlers. `folder_writer` is the A13 writer side of an owner;
+    `sign_in` is the console of the Steam sign-in (a command shares its own, 10.5).
     """
     observer = mode is SessionMode.OBSERVER
     staging = StagingPolicy.OBSERVER if observer else StagingPolicy.OWNER
@@ -181,7 +184,7 @@ def build_composition(
     workshop = build_workshop(
         paths, profiles, settings, operations, lifecycle, preferences, schedules,
         publication_journals, update_check, logger, backups, steamcmd_guard=server_build.guard,
-        folder_writer=folder_writer, recover=not observer,
+        folder_writer=folder_writer, recover=not observer, sign_in=sign_in,
     )
     update_check_coordinator = build_update_status(
         update_check, workshop.mod_inventory, server_build.service,

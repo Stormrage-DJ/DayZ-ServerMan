@@ -120,10 +120,15 @@ class ProfileRestoreService:
         return self.selected.open_verified(reference) if reference.startswith("selected-") else self.backups.open_verified(backup_root, manifest.backup_id, manifest.profile_id)
 
     def require_stopped(self) -> None:
-        """Require positive stopped evidence, including absence of external servers."""
+        """Require positive stopped evidence, including absence of external servers.
+
+        The message names the state, as backup restore's does, so the window and the CLI show the
+        state sentence of their catalogues (criterion 31, QF-40); the code stays CONTROL_CONFLICT.
+        """
         status = self.lifecycle.status()
         if status.state != ServerState.STOPPED:
-            raise LifecycleFailure("CONTROL_CONFLICT", "Stop all DayZ servers before restoring a profile.")
+            raise LifecycleFailure(
+                "CONTROL_CONFLICT", f"Profile restore requires STOPPED; current state is {status.state.value}.")
 
     @staticmethod
     def validate_request(request: Mapping[str, Any]) -> None:

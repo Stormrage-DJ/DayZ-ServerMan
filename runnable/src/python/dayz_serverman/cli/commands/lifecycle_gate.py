@@ -11,11 +11,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from ...application.activity_wording import conflict_text
-from ..exit_codes import RECOVERY, REFUSED
+from ..exit_codes import REFUSED
 from ..output import CliFailure, Line, TypeText, sentence
-from ..wording import other_profile_running, way_out
+from ..wording import other_profile_running
 from .common import profile_id, profile_name
+from .write_common import check_recovery_block
 
 # Why a control is off, per server state (copies of `overviewStateReasons`)
 STATE_REASONS: dict[str, str] = {
@@ -36,10 +36,7 @@ NEEDED_STATES = {"start": "STOPPED", "stop": "RUNNING_MANAGED", "restart": "RUNN
 
 def check_state(context: Any, action: str, snapshot: Mapping[str, Any], status: Mapping[str, Any]) -> None:
     """Refuse before the question when the read state does not allow the action; else return."""
-    block = snapshot.get("mutation_block")
-    if block:
-        text = conflict_text(block, "RECOVERY_BLOCK", snapshot.get("mutation_block_owner"))
-        raise CliFailure("RECOVERY_REQUIRED", way_out(text), RECOVERY)
+    check_recovery_block(snapshot)
     settings = snapshot.get("settings") if isinstance(snapshot.get("settings"), Mapping) else {}
     if action == "start" and not (settings.get("dayz_root") and settings.get("dayz_executable")):
         raise CliFailure("SETUP_REQUIRED", setup_needed(), REFUSED)

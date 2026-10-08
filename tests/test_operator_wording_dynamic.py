@@ -49,6 +49,8 @@ same(messages.error({code: "EXTERNAL_PROCESS", message: "Cannot start while serv
   "This cannot be done while the server is running outside DayZ-ServerMan.", "state name");
 same(messages.error({code: "CONTROL_CONFLICT", message: "Restore requires STOPPED; current state is RUNNING_MANAGED"}),
   "This cannot be done while the server is running.", "last state name wins");
+same(messages.error({code: "CONTROL_CONFLICT", message: "Profile restore requires STOPPED; current state is RUNNING_MANAGED."}),
+  "This cannot be done while the server is running.", "profile restore while running (criterion 31)");
 same(messages.error({code: "NEW_CODE", message: "A plain sentence from the host."}),
   "A plain sentence from the host.", "plain message of an unknown code");
 same(messages.error({code: "NEW_CODE", message: "phase verify_items failed with WORKSHOP_STATE_BAD"}),

@@ -107,6 +107,33 @@ class FeatureNameTests(PopulatedRoot):
                    "No medical loot setting has the feature name noSuchFeature.")
 
 
+class UnclassifiableFeatureTests(PopulatedRoot):
+    """Criterion 27 of 2026-10-08 (QF-60 b): the typed name is checked before the medical data is loaded."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        """Give the mission a loot zone file that differs from both its original (a legacy baseline) and its
+        managed form, so the medical data of the profile cannot be classified."""
+        super().setUpClass()
+        mission = cls.dayz / "mpmissions" / "dayzOffline.enoch"
+        (mission / "db" / "types.xml").write_text('<?xml version="1.0"?><types/>', encoding="utf-8")
+        (mission / "mapgroupproto.xml").write_text("<groups/>", encoding="utf-8")
+        (mission / ".dayz_manager_backups").mkdir()
+        (mission / ".dayz_manager_backups" / "mapgroupproto.xml").write_text(
+            '<groups><group name="Hand edited"/></groups>', encoding="utf-8")
+
+    def test_unknown_feature_exits_2_although_the_data_cannot_be_classified(self) -> None:
+        """An unknown name exits 2 in text and JSON; nothing changed."""
+        self.check(["tweaks", "medical", "set", "--profile", "livonia-main", "noSuchFeature", "on"], 2, "USAGE",
+                   "No medical loot setting has the feature name noSuchFeature.")
+
+    def test_a_known_feature_still_meets_the_unclassified_data(self) -> None:
+        """Control: the fixture really cannot be classified; a known name keeps today's refusal (exit 3, QF-22)."""
+        code, stdout, _stderr = self.run_cli(["tweaks", "medical", "set", "--profile", "livonia-main",
+                                              "medical_loot_zones", "on", "--json"])
+        self.assertEqual(code, 3, stdout)
+
+
 class FeaturePrestepTests(unittest.TestCase):
     """The `tweaks medical set` pre-step on a feature list that exists (criterion 27, unknown typed name)."""
 
@@ -119,14 +146,14 @@ class FeaturePrestepTests(unittest.TestCase):
         def call(method: str, **_parameters: object) -> dict:
             """Answer the feature list of a profile with a mission."""
             self.assertEqual(method, "load_medical_features")
-            return {"features": {"epinephrine": {"enabled": True}}}
+            return {"features": {"medical_loot_zones": {"enabled": True}}}
 
         with self.assertRaises(CliFailure) as raised:
             medical_feature(call, SimpleNamespace(feature="noSuchFeature"), "livonia-main")
         self.assertEqual((raised.exception.exit_code, raised.exception.code), (2, "USAGE"))
         self.assertIn("noSuchFeature", line_text(raised.exception.message))
-        self.assertEqual(medical_feature(call, SimpleNamespace(feature="epinephrine"), "livonia-main"),
-                         {"feature": "epinephrine"})
+        self.assertEqual(medical_feature(call, SimpleNamespace(feature="medical_loot_zones"), "livonia-main"),
+                         {"feature": "medical_loot_zones"})
 
     def test_not_found_maps_by_whether_the_names_were_confirmed(self) -> None:
         """At dispatch, NOT_FOUND is 2 for a name the CLI has not confirmed and 1 after it confirmed every name."""

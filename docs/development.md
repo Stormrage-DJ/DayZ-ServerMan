@@ -104,6 +104,11 @@ retains that directory can cause a Windows lock-file cleanup error. Treat this
 as an environment failure unless the test also reports a functional assertion
 failure.
 
+Close Edge completely before you run the Edge modules. An Edge that keeps
+running in the background, for example one started with
+`--no-startup-window`, makes the headless tests fail. Check the Task Manager
+for `msedge.exe`.
+
 ### Continuous integration
 
 `.github/workflows/tests.yml` runs on every push and pull request, on
@@ -154,6 +159,9 @@ The Python package follows these broad responsibilities:
 - `adapters/` contains Windows, network, and external-process integration.
 - `bridge/` validates calls between JavaScript and Python.
 - `host/` exposes the named WebView2 API and composes frontend assets.
+- `cli/` runs the same bridge calls from a terminal or a script.
+- `session.py` and `session_observer.py` open the owner and observer
+  sessions of the window and the commands.
 
 The frontend uses small page-specific JavaScript files and shared context
 modules. Python remains authoritative for filesystem access, process control,
@@ -161,7 +169,108 @@ network access, validation, and persistent mutations.
 
 Bridge changes are additive: new methods and new response fields only.
 `CONTRACT_VERSION` stays 1, and every handler requires the exact request field
-set.
+set. The command line did not change this rule. It added no bridge method, and
+the 60-method pins in `tests/test_readonly_host_api.py` and
+`tests/test_bridge_contracts.py` stay unchanged. The JSON output of the
+command line has its own `cli_version`, which also grows only by new fields.
+
+### Command line and sessions
+
+The command line is the package `cli/`. The starter routes a first argument
+`--cli` to `cli.main` after the runtime setup; every other command line opens
+the window as before. `python -m dayz_serverman --cli ...` does the same.
+
+Dependency direction: starter → `cli` → `session.py` and `session_observer.py`
+→ `composition.py` → application, repositories, adapters.
+
+- `cli` never imports `host` or pywebview, and it needs no WebView2.
+- `host` and `application` never import `cli`. Application code does not
+  know whether a call came from the window or a command.
+- `cli/`, the session modules, and the new Windows adapters import no network
+  module. `tests/test_cli_network_imports.py` checks this.
+
+Each run opens one session (`composition_model.SessionMode`):
+
+- **Owner** (`session.open_owner_session`): the window and every writing
+  command. It creates `data/` and takes the instance lock
+  (`adapters/windows/instance_lock.py`). This lock is a byte lock on
+  `data/instance.lock` and a named mutex for the root. Then the session writes
+  `data/instance-holder.json`, creates `data/server-folders.lock`, and builds
+  the composition with its recoveries.
+  The window passes `require_byte_range_lock=False`; a command passes `True`.
+- **Observer** (`session_observer.open_observer_session`): every read command.
+  It takes no lock, creates no folder or file, skips the startup recoveries,
+  and uses a null logger. Its facade holds only `OBSERVER_READ_METHODS`
+  (`bridge_composition.py`), and its lane refuses every submit. Repositories
+  ignore a staging file beside a record and read only the published record.
+  Each call runs under the reader side of the server-folder lock, except the
+  calls in `READER_EXEMPT_METHODS`.
+
+Lock order inside a session: instance lock, operation lane, installation
+mutex, server-folder writer side, SteamCMD guard. One exception: an apply and
+restart takes the writer side before the installation mutex. Owner steps take
+the writer side through `application/folder_writer_scope.py`.
+
+The ownership record is `repositories/server_ownership.py` with
+`application/lifecycle_ownership.py` (adoption). Only owner sessions write it.
+
+Main modules of `cli/`:
+
+- `parser.py`, `command_table.py`, and `registry.py`: the parser, the command
+  table, and its types;
+- `runner.py`: one command from the parse to the exit code;
+- `exit_codes.py`: the exit code of each error code;
+- `output.py`, `waiter.py`, `confirm.py`: the output, the progress, and the
+  question;
+- `cli/commands/`: one module or more for each noun.
+
+The CLI calls every action through `BridgeFacade.dispatch`,
+as the window does. So every check of a handler table reaches it unchanged.
+
+### Shared file access
+
+Every file read and every file replace or rename in the package goes through
+`adapters/windows/shared_files.py`. Its opener lets other processes replace a
+file while it is open. Its `replace_file` uses a POSIX-semantics rename, with a
+short retry where the volume refuses it. Folder renames use
+`rename_directory`, which retries for about one second. The module imports
+nothing from the package.
+
+Do not call `os.replace`, `os.rename`, `Path.replace`, `Path.rename`,
+`shutil.move`, a `shutil` copy, a read-mode `open`, `read_bytes`, or
+`read_text` elsewhere. `tests/test_shared_file_scan.py` scans the package and
+compares the result with a reviewed allowlist. Each allowlist entry names a
+line text and one of five reason classes. A new entry needs the Architect.
+
+A test that patched `os.replace` or a read call moves its patch target to the
+name that the module imports from `shared_files`. Its assertions do not
+change.
+
+### Add a command
+
+1. Add the command to `cli/command_table.py` with `read(...)` or
+   `write(...)`. Give its path, plan phase, bridge methods, options, question
+   (`Confirm`), profile rule, and handler as `"module:function"`. A writing
+   command whose arguments need data also names a `prestep`.
+2. Add its help sentences to `cli/help_wording.py`.
+3. Write the handler in `cli/commands/`. Use the flow helpers for the
+   revision reads, the recovery gate, the question, and the waiter. Put every
+   state refusal that the command can decide before the question.
+4. Take operator text from the wording modules. A copy of a window text needs
+   a test against its frontend literal. Text output shows no internal
+   identifier; `tests/test_cli_input_names.py` checks the input names.
+5. Update `tests/test_cli_parity_matrix.py`. Every bridge method must be in a
+   command, or in `INTERNAL_METHODS` or `EXCLUDED_METHODS`
+   (`cli/registry.py`). The "Confirm" set must match the window.
+6. A read command may call only `OBSERVER_READ_METHODS`. A new read method
+   needs a reader class. Exempt it from the reader side only with a test that
+   proves it opens nothing inside a folder that an owner step renames or
+   removes.
+7. Map new error codes to the existing exit codes in `cli/exit_codes.py`. A
+   new CLI error code name needs the Architect. A new exit code number, or a
+   moved case, needs the Product Owner.
+8. Add tests for the parser, each exit code, text and `--json`, `--yes`, and
+   no terminal. No test uses the network, runs SteamCMD, or starts DayZ.
 
 ### Update checks and content records
 
@@ -339,16 +448,22 @@ missing, when the two sides differ, or when a text holds a raw identifier.
 ### File size
 
 Keep each first-party source file at 300 lines or fewer. Split a file before it
-grows past that limit. Tests enforce this for every frontend file. Some older
-Python modules are still above 300 lines; split one before you add to it.
+grows past that limit. Tests enforce this for every frontend file, and
+`tests/test_cli_sizes.py` for every file in `cli/` and the Python wording
+modules. Some older Python modules are still above 300 lines. Such a file must
+not grow: split it before you add to it. A change that keeps its line count
+needs a real simplification, never removed comments or joined statements.
 
 ## Change checklist
 
 1. Preserve the movable `runnable/` boundary.
 2. Keep generated state outside tracked source files.
 3. Validate every JavaScript-to-Python call through a named bridge method.
-4. Keep bridge changes additive.
+4. Keep bridge changes additive. Keep the command line on the same bridge
+   calls, and keep the parity test complete.
 5. Add catalogue entries on both sides for new operator-facing values.
-6. Add focused tests for changed behavior.
+6. Add focused tests for changed behavior. Route every file read, replace,
+   and rename through `shared_files`.
 7. Run the complete test suite before release-oriented work.
-8. Update the operator guide and its pictures when visible behavior changes.
+8. Update the operator guide and its pictures when visible behavior changes,
+   also the command line section and its exit codes.

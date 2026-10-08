@@ -208,3 +208,8 @@ def size_text(size: object) -> str:
     while value >= 1024 and unit < len(units) - 1:
         value, unit = value / 1024, unit + 1
     return f"{value:.0f} {units[unit]}" if unit == 0 or value >= 10 else f"{value:.1f} {units[unit]}"
+
+# frontend/restore.js: a restore recovery that still blocks without a named reason, and one that waits for an operation
+RESTORE_RECOVERY_TEXT = ("Recovery required. Changes are blocked until an unfinished restore is resolved. "
+                         "Details are in Logs, Manager diagnostics.")
+RESTORE_DEFERRED_TEXT = "Restore recovery is checked again when the running operation finishes."

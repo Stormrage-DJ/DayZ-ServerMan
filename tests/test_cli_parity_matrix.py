@@ -11,7 +11,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runnable" / "src" 
 
 from dayz_serverman.bridge_composition import OBSERVER_READ_METHODS  # noqa: E402
 from dayz_serverman.cli.command_table import COMMANDS  # noqa: E402
-from dayz_serverman.cli.registry import EXCLUDED_METHODS, INTERNAL_METHODS, Kind, ProfileRule  # noqa: E402
+from dayz_serverman.cli.registry import (  # noqa: E402
+    EXCLUDED_METHODS, INTERNAL_METHODS, Confirm, Kind, ProfileRule,
+)
 from dayz_serverman.composition import build_composition  # noqa: E402
 
 # The command grammar of 01.04 with the phase of the plan that builds each command (`run` of phase 8 is deferred)
@@ -35,9 +37,30 @@ BUILT = {
     "tweaks show", "tweaks medical show", "logs", "settings show",
     # Task 3.3: the lifecycle commands of phase 3
     "server start", "server stop", "server restart", "schedule set", "schedule clear", "profile backup-after-stop",
+    # Task 4.1: backup create and recover; task 4.2: backup restore; task 4.3: profile restore
+    "backup create", "backup recover", "backup restore", "profile restore",
+    # Task 5.1: updates and Steam settings
+    "updates check", "updates auto", "steam set", "steam login",
+    # Task 5.2: mods verify; task 5.3: mods update
+    "mods verify", "mods update",
+    # Task 6.1: configuration and tweaks edits
+    "config set", "tweaks set", "tweaks convert-loadout", "tweaks medical set",
+    # Task 6.2: profile create, edit and delete
+    "profile create", "profile edit", "profile delete",
+    # Task 7.1: the folder check and the folder save
+    "settings check-path", "settings set",
+    # Task 7.2: the legacy import
+    "migrate preview", "migrate apply",
 }
 # Commands that a later task still builds; each task removes its commands, and the table is empty at phase 9
 PENDING = set(MATRIX) - BUILT
+# Commands that confirm before they change something: the "Confirm" column of 01.04 as corrected by the
+# Product Owner's sweep of 2026-10-07 22:02:06 (criterion 30), with the lifecycle commands of phase 3
+CONFIRMING = {
+    "server start", "server stop", "server restart", "backup create", "backup restore", "profile restore",
+    "mods update", "profile delete", "config set", "tweaks set", "tweaks medical set", "tweaks convert-loadout",
+    "migrate apply",
+}
 
 
 class ParityMatrixTests(unittest.TestCase):
@@ -77,6 +100,10 @@ class ParityMatrixTests(unittest.TestCase):
     def test_pending_table_matches_the_registry(self) -> None:
         """A command without a handler is listed as PENDING, and a listed one has no handler yet."""
         self.assertEqual({command.name for command in COMMANDS if command.pending}, PENDING)
+
+    def test_confirm_column_matches_the_sweep(self) -> None:
+        """Criterion 30: exactly the commands whose window action confirms ask before they change something."""
+        self.assertEqual({command.name for command in COMMANDS if command.confirm is not Confirm.NONE}, CONFIRMING)
 
     def test_read_commands_use_only_observer_methods(self) -> None:
         """A read runs in an observer session, which holds only the read handlers (4.3)."""

@@ -18,6 +18,7 @@ from ..application.activity_wording import KIND_FALLBACK, KIND_TEXTS, error_text
 from ..application.phase_wording import cancelling_text, phase_text
 from .bridge_client import CliBridgeError
 from .interrupts import Interrupts
+from .mods_wording import ran_no_download, success_line
 from .output import Line, Output, sentence
 from .wording import ALREADY_CANCELLING, CANCEL_REQUESTED, NOT_CANCELLABLE, SIGN_IN_PROMPT, way_out
 
@@ -72,8 +73,9 @@ class Waiter:
             record = self._call("get_operation", operation_id=operation_id)
             if record.get("state") in TERMINAL_STATES:
                 self._output.clear_progress()
-                # A success ends with its sentence here; any other end is the command's failure text (flow.py)
-                if record.get("state") == "SUCCEEDED":
+                # A success ends with its sentence here; any other end is the command's failure text (flow.py).
+                # An update that downloaded nothing has no true end line: the command words it (QF-52)
+                if record.get("state") == "SUCCEEDED" and not ran_no_download(record, kind):
                     self._output.note((end_line(record, kind),))
                 return record
             if kind != SIGN_IN_KIND:
@@ -144,6 +146,10 @@ def end_line(record: Mapping[str, Any], kind: str) -> Line:
     special = (restart_apply_text(state, record.get("last_working_phase"), code, message)
                if kind == RESTART_APPLY_KIND and state != "SUCCEEDED" else None)
     if state == "SUCCEEDED":
+        # A mod operation words its success by its result, as the Mods page does
+        line = success_line(record, kind, texts[1])
+        if line is not None:
+            return line
         text = texts[1]
     elif special is not None:
         text = special

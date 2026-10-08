@@ -90,12 +90,13 @@ class OwnerSession:
 def open_owner_session(
     manager_root: Path | None, holder: str, command: str | None = None, *,
     require_byte_range_lock: bool, build: CompositionBuilder = build_composition,
-    lock_factory: Callable[..., InstanceLock] = InstanceLock,
+    lock_factory: Callable[..., InstanceLock] = InstanceLock, sign_in: object | None = None,
 ) -> OwnerSession:
     """Take the instance lock before the composition is built; raise InstanceActive or InstanceLockUnsupported.
 
     The window passes `require_byte_range_lock` false and runs on the root mutex
-    alone where the byte-range lock is unsupported; a command passes true.
+    alone where the byte-range lock is unsupported; a command passes true. A command
+    also passes `sign_in`, the console of its Steam sign-in (10.5); the window passes none.
     """
     paths = resolve_paths(manager_root)
     # (1) The data folder holds the lock files; only an owner creates it
@@ -115,7 +116,8 @@ def open_owner_session(
         lock_file, writer = _folder_writer(paths, lock.byte_range_supported, require_byte_range_lock)
         try:
             # (6) The composition with its recoveries, which already take the writer side
-            built = build(paths.root, mode=SessionMode.OWNER, folder_writer=writer)
+            console = {} if sign_in is None else {"sign_in": sign_in}
+            built = build(paths.root, mode=SessionMode.OWNER, folder_writer=writer, **console)
         except BaseException:
             if lock_file is not None:
                 lock_file.close()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -31,6 +32,8 @@ from .session import FOLDER_LOCK_FILE, CompositionBuilder, resolve_paths
 
 # Wait of one observer call for an owner's swap step, then CONTROL_CONFLICT (A13)
 READER_WAIT_SECONDS = 30.0
+# Exempt reads of the backup root: exempt only while that root lies outside the DayZ root (A13, 2.3 residual)
+BACKUP_ROOT_METHODS = frozenset(("list_backups", "list_backup_catalog"))
 
 
 class BridgeCallFailed(RuntimeError):
@@ -78,7 +81,8 @@ class ObserverSession:
             "contract_version": CONTRACT_VERSION, "request_id": f"observer-{self._sequence}",
             "method": method, "parameters": dict(parameters or {}),
         }
-        if method in READER_EXEMPT_METHODS:
+        if method in READER_EXEMPT_METHODS and not (method in BACKUP_ROOT_METHODS
+                                                    and backup_root_in_dayz_root(self.composition.settings)):
             result = self.composition.bridge.dispatch(envelope)
         else:
             try:
@@ -94,6 +98,30 @@ class ObserverSession:
     def close(self) -> None:
         """Close the reader handle; the composition started no thread and holds no lock."""
         self.reader.close()
+
+
+def backup_root_in_dayz_root(settings: Any) -> bool:
+    """Report whether the effective backup root is the DayZ root or below it, from the settings of this call.
+
+    The comparison is lexical (absolute, normalized, case-folded): settings normalization stored
+    both roots resolved, and a resolve here would open a handle on the backup root before the
+    reader side is held (S6). Settings that cannot be read count as inside, so the call takes the
+    reader side (fail closed) and reports its own error.
+    """
+    try:
+        current = settings.load()
+        backup_root = settings.backup_root(current)
+    except Exception:
+        return True
+    if current.dayz_root is None:
+        return False
+    child, parent = _comparable(backup_root), _comparable(current.dayz_root)
+    return child == parent or child.startswith(parent.rstrip(os.sep) + os.sep)
+
+
+def _comparable(path: Any) -> str:
+    """Return the lexical comparison form of a Windows path, without touching the file system."""
+    return os.path.normcase(os.path.normpath(os.path.abspath(os.fspath(path))))
 
 
 def open_observer_session(

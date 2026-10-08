@@ -169,8 +169,11 @@ The Overview page can schedule one daily lifecycle action for each profile.
 The available actions are **Save & Stop** and **Save & Restart**. The schedule
 uses the computer's local time.
 
-The scheduler runs inside DayZ-ServerMan. Keep the manager open for the action
-to run. The manager does not create a Windows service or Task Scheduler entry.
+The scheduler runs inside the DayZ-ServerMan window. Keep the window open for
+the action to run. A command starts no scheduler. The manager does not create
+a Windows service or Task Scheduler entry. For an unattended restart without
+the window, a Task Scheduler entry can run
+`DayZ-ServerMan.py --cli server restart --profile <id> --yes`.
 
 The scheduler follows these rules:
 
@@ -747,10 +750,158 @@ correct folder by hand:
 If the file is not valid JSON after the edit, DayZ-ServerMan cannot read its
 settings.
 
+## Instances and the command line
+
+DayZ-ServerMan runs as the window or as a command
+(`DayZ-ServerMan.py --cli ...`, see the
+[operator guide](../runnable/README.md#command-line)). Both use the same
+application code and the same files in the manager folder.
+
+### Owner and observer sessions
+
+Each run opens one session:
+
+- **Owner session**: the window, and each command that changes something. It
+  takes the instance lock first. Then it builds the application and runs the
+  startup recoveries, as the window always did. Only an owner session writes
+  files.
+- **Observer session**: each command that only reads. It takes no instance
+  lock and runs no recovery. It writes nothing in the manager folder, also no
+  log line, and it does not create missing folders. It reports an unfinished
+  operation as a fact (`status` lists it).
+
+An observer ignores a staging file beside a record. It reads only the
+published record, because it cannot tell a live write from a crash leftover.
+The next owner session handles leftovers, as before.
+
+### Instance lock
+
+The instance lock lets one owner session work in a manager folder at a time:
+
+- `data/instance.lock` holds a lock on one byte. Windows releases it at once
+  when the process ends or crashes. No process reads the file.
+- Each owner session also holds a named Windows mutex for the manager folder.
+- `data/instance-holder.json` names the holder: the window or the command, its
+  process ID, and its start time. A refusal names the holder only while that
+  process still runs. The next holder replaces the file.
+
+While an owner session holds the lock:
+
+- a command that changes something refuses before any change: exit code 3,
+  `INSTANCE_ACTIVE`;
+- a second window shows a message and closes. The message names the holder
+  and the way out: close the other window, or wait for the command.
+
+Commands that only read run at any time.
+
+Some folders cannot hold the byte lock, for example some network and synced
+folders. There the window still starts on the mutex alone. That mutex reaches
+only the current Windows sign-in session. A command that changes something
+refuses there with exit code 1 (`INSTANCE_LOCK_UNSUPPORTED`). Reason: a
+Windows Task Scheduler task often runs in another sign-in session.
+
+On an SMB share, the file server holds the byte lock for all computers. After
+a client crash, the lock stays until the server drops the session of that
+client. No lock protects a folder that a sync service shares between two
+computers.
+
+### Server ownership record
+
+`data/server-ownership.json` lets every owner session control a server that
+another session started. `data/state.json` keeps its format for older builds.
+
+- The owner session that starts the server writes the record before it reports
+  success. It holds the process ID, the program path, the process creation
+  time, the profile, the readiness values, and the manager folder.
+- The session that stops the server clears the record after a proven stop.
+- A session without its own launch reads the record. It treats the server as
+  managed only in one case. Exactly one DayZ process runs with the same
+  process ID, program path, and creation time, from the same manager folder.
+- In every other case, the state is computed as before: stopped, running
+  outside the manager, or not known. An unreadable record never means
+  "stopped".
+
+So `server start` can end while the server keeps running. A later command or
+the window adopts the server and can stop or restart it. The running profile
+is known in every session, so the lock for another profile (see
+[Lifecycle safety](#lifecycle-safety)) applies everywhere.
+
+The window blocks its close only for a server that it launched itself. For an
+adopted server, the window closes, and the server stays adoptable.
+
+### Server-folder lock
+
+A command that reads can hold files open inside the DayZ server folder. An
+open file makes a folder rename or removal fail. So `data/server-folders.lock`
+holds a reader-writer lock between owner steps and command reads. Only owner
+sessions create this file.
+
+These owner steps take the writer side before they replace or remove server
+folders:
+
+- a mod apply, and **Update & restart** from before the stop to the end of the
+  apply;
+- a backup restore;
+- a profile restore, from before it stages files;
+- a profile deletion;
+- the startup recoveries of these operations.
+
+| Who waits | Wait | After the wait |
+|---|---|---|
+| A window or command step | Up to about 5 seconds for reads in progress | It refuses before any change. The window shows **Another DayZ-ServerMan is using this DayZ installation. Close it and try again.** **Update & restart** refuses before the stop, so the server keeps running. |
+| A startup recovery | Up to about 30 seconds | It changes nothing and sets the recovery block, as when the server is not proven stopped. The next start tries again. |
+| A command that reads | Up to about 30 seconds | Exit code 3, `CONTROL_CONFLICT`: **The server files are being changed by another DayZ-ServerMan. Try again in a minute.** |
+
+Some reads open nothing inside these folders, so they do not take the lock:
+
+- the logs, the settings, the schedules, the preferences, and the profile
+  records;
+- the backup lists, while the backup folder is outside the DayZ server folder.
+
+Each folder rename in an owner step also retries for about one second. This
+helps against other programs that hold a file open, for example a virus
+scanner.
+
+The lock belongs to one manager folder. Two manager folders on one DayZ
+installation still exclude each other only through the installation lock, as
+before.
+
+### Shared file access
+
+Every read of a manager or DayZ file opens the file so that other processes
+can still replace it. Every replace of a whole file uses a Windows rename
+that does not fail because of such a reader. A reader sees the old or the new
+content, never a mix.
+
+This needs NTFS. On FAT, exFAT, and some network shares, a fallback retries
+the replace for a short time. There, a command that reads can still make a
+save of the window fail. The window then reports its usual error, and nothing
+is partly written.
+
+### Recovery with the command line
+
+Each command that changes something runs the startup recoveries first, as a
+new window does. So "restart DayZ-ServerMan" in the
+[recovery blocks](#recovery-blocks) table also means: run a command that
+changes something. `backup recover` is the command form of opening
+**Backups** again.
+
+- A command refuses with exit code 6 while a recovery block is set. It
+  refuses before its question.
+- The repair save of
+  [No DayZ server folder is set](#no-dayz-server-folder-is-set) is
+  `settings set --dayz-root PATH` with no other option.
+- A command that is closed or stopped during a guarded write acts like a
+  crash. Its journal is finished or undone at the next start.
+
+Ctrl+C never stops a guarded write. The command waits until the write is
+finished or undone, then exits.
+
 ## Logs and operation records
 
 - `data/logs/manager.jsonl` contains structured manager events. Routine bridge
-  polling and successful read-only requests are not stored.
+  polling and successful read-only requests are not stored. Commands that only
+  read write no line.
 - `data/logs/manager.jsonl.1` is the single retained previous manager-log
   segment. The active manager log rotates at 5 MiB.
 - `data/logs/dayz-server.log` contains captured DayZ output.
@@ -783,12 +934,17 @@ Other files under `data/`:
 - `data/applied-mod-state.json`: the older applied-mod record, read only.
 - `data/ui-preferences.json`: the selected profile, **Backup after stop**, and
   the automatic update-check switch.
+- `data/server-ownership.json`: the server that a session of this copy started
+  (see [Server ownership record](#server-ownership-record)).
+- `data/instance.lock`, `data/instance-holder.json`, `data/server-folders.lock`:
+  the locks of [Instances and the command line](#instances-and-the-command-line).
 
 ## Controlled adoption
 
 Use a non-critical server copy for the first validation. Test paths, profile
 launch arguments, graceful stop, restart, SteamCMD authentication, mod updates,
-**Update & restart**, backup, and restore.
+**Update & restart**, backup, and restore. Test the commands that your scripts
+use, with the window closed and with the window open.
 
 Keep the previous manager and its data unchanged until the new manager passes
 all checks needed for that server.

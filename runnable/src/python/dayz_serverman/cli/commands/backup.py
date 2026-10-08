@@ -1,4 +1,4 @@
-"""`backup list [--all]` (10.1); `backup create`, `restore` and `recover` come with phase 4."""
+"""`backup list [--all]` (10.1); the writes `backup create`, `restore` and `recover` are in `backup_write.py`."""
 
 from __future__ import annotations
 
@@ -19,13 +19,14 @@ def backup_list(context: Any) -> CommandResult:
     """List the backups of the profile, or with `--all` every backup in the backup folder."""
     if context.options.all:
         catalog = context.call("list_backup_catalog")
-        rows = tuple((str(entry.get("display_name") or entry.get("profile_id") or ""), *_cells(entry))
+        rows = tuple((str(entry.get("display_name") or entry.get("profile_id") or ""), *backup_cells(entry))
                      for entry in _entries(catalog))
         table = Table(("Profile", "Created", "Files", "Size", "Restore", "ID"), rows,
                       input_columns=frozenset({5}), value_columns=frozenset({0, 1, 2}))
         return CommandResult(catalog, _listing(catalog, table, None))
     history = context.call("list_backups", profile_id=profile_id(context.profile))
-    table = Table(("Created", "Files", "Size", "Restore", "ID"), tuple(_cells(entry) for entry in _entries(history)),
+    table = Table(("Created", "Files", "Size", "Restore", "ID"),
+                  tuple(backup_cells(entry) for entry in _entries(history)),
                   input_columns=frozenset({4}), value_columns=frozenset({0, 1}))
     return CommandResult(history, _listing(history, table, profile_line(context.profile)))
 
@@ -35,7 +36,7 @@ def _entries(listing: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     return [entry for entry in listing.get("backups", []) if isinstance(entry, Mapping)]
 
 
-def _cells(entry: Mapping[str, Any]) -> tuple[str, str, str, str, str]:
+def backup_cells(entry: Mapping[str, Any]) -> tuple[str, str, str, str, str]:
     """Return created, files, size, restore and ID of one backup."""
     return (local_time(entry.get("created_at")) or "Unknown date", str(entry.get("entry_count", "")),
             size_text(entry.get("total_size")), _restore_text(entry), str(entry.get("backup_id")))

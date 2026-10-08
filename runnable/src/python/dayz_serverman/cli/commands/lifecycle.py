@@ -17,9 +17,10 @@ from ..flow import run_operation, stop_if_interrupted
 from ..waiter import Waiter, WaitState
 from ..output import Block, CliFailure, CommandResult, sentence
 from ..review import lifecycle_review
-from ..wording import bridge_error_line, not_ready, other_profile_running, ready_wait_stopped, server_left_running
+from ..wording import not_ready, other_profile_running, ready_wait_stopped, server_left_running
 from .common import labelled, profile_id, profile_name
 from .lifecycle_gate import check_state
+from .write_common import read_revisions
 
 # Readiness wait of `--wait-ready` (fixed values, section 7)
 READY_POLL_SECONDS = 2.0
@@ -89,16 +90,9 @@ def revisions(context: Any, action: str) -> tuple[int, int]:
 
     Every refusal here comes before the question, so it exits 3 (or 6) with and without `--yes`.
     """
-    stop_if_interrupted(context.interrupts)
-    profile_revision = context.call("read_profile", profile_id=profile_id(context.profile)).get("revision")
-    snapshot = context.call("get_application_snapshot")
-    settings_revision = snapshot.get("settings", {}).get("revision")
-    expected = ((context.options.expect_profile_revision, profile_revision),
-                (context.options.expect_settings_revision, settings_revision))
-    if any(pinned is not None and pinned != read for pinned, read in expected):
-        raise CliFailure("REVISION_CONFLICT", bridge_error_line({"code": "REVISION_CONFLICT"}), REFUSED, True)
-    check_state(context, action, snapshot, context.call("get_server_status"))
-    return profile_revision, settings_revision
+    state = read_revisions(context)
+    check_state(context, action, state.snapshot, context.call("get_server_status"))
+    return state.profile_revision, state.settings_revision
 
 
 def wait_ready(context: Any, record: Mapping[str, Any], review: Any, limit: int) -> tuple[Mapping[str, Any], bool]:

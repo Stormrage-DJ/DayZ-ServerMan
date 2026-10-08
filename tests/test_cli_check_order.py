@@ -9,6 +9,7 @@ import os
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -160,11 +161,20 @@ class PendingCommandTests(unittest.TestCase):
 
     def test_pending_command_opens_no_session(self) -> None:
         """No observer and no owner session is opened for a PENDING command."""
+        real_parse = runner.parse
+
+        def pending_parse(arguments: list[str]):
+            """Parse the line, then drop the handler: the state of a command before its phase builds it."""
+            parsed = real_parse(arguments)
+            return replace(parsed, spec=replace(parsed.spec, handler=None))
+
         with patch.object(runner.observer_sessions, "open_observer_session") as observer, \
-                patch.object(runner.owner_sessions, "open_owner_session") as owner:
+                patch.object(runner.owner_sessions, "open_owner_session") as owner, \
+                patch.object(runner, "parse", pending_parse):
             stdout, stderr = io.StringIO(), io.StringIO()
-            # A command that a later phase builds (server start is built since task 3.3)
-            code = runner.run(["backup", "create", "--json"], None, stdout=stdout, stderr=stderr,
+            # Every command is built since phase 7, so the test drops the handler of one, a write with a
+            # pre-step (earlier it ran server start, backup create, mods verify, profile delete, settings set)
+            code = runner.run(["settings", "set", "--json"], None, stdout=stdout, stderr=stderr,
                               interrupts=Interrupts())
         self.assertEqual(code, 2)
         self.assertEqual(json.loads(stdout.getvalue())["error"]["code"], "USAGE")

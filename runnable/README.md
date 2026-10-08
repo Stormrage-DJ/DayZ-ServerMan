@@ -25,6 +25,10 @@ Later launches reuse this environment.
 Do not copy `.venv` between computers. You can delete it if dependency setup
 becomes damaged. The next launch creates it again.
 
+One window can be open for each copy of DayZ-ServerMan. A second window, or a
+window while a command changes something, shows a message and closes. To run
+commands from a terminal, see [Command line](#command-line).
+
 <!-- shot:readme-01 -->
 ![Overview with a stopped server, Start server, and the status list for mods, DayZ server, last backup, and schedule](img/readme-01.png)
 
@@ -262,8 +266,9 @@ editor and keeps the saved schedule.
 <!-- shot:readme-06 -->
 ![Schedule row with Save & Restart daily at 04:00 and the open editor with Hour, Minute, the two actions, and Save schedule](img/readme-06.png)
 
-Schedules are stored separately for each profile. They run only while
-DayZ-ServerMan is open. If the manager starts after today's scheduled time, it
+Schedules are stored separately for each profile. They run only while the
+DayZ-ServerMan window is open. Commands do not run schedules (see
+[Restart without the window](#restart-without-the-window)). If the manager starts after today's scheduled time, it
 waits until the next day. If the selected server is not running under this
 manager at the scheduled time, the manager records a skipped run.
 
@@ -429,7 +434,9 @@ locked button to see why.
 ## Backups and restores
 
 The default destination is the `backups` directory beside this README. A
-custom destination can be selected in Settings.
+custom destination can be selected in Settings. Keep a custom destination
+outside the DayZ server folder. A mod apply, a profile restore, or a profile
+deletion can replace or remove folders there, with the backups inside them.
 
 Backup names use the profile ID and local creation time:
 
@@ -523,6 +530,403 @@ guide describes.
 Keep verified recovery copies until they are no longer needed. Restore
 journals remain in `data/operations/`.
 
+## Command line
+
+Every action of the window is also a command for a terminal or a script. The
+commands use the same checks, reviews, and wording as the window. They never
+open a window.
+
+### Run a command
+
+```text
+py DayZ-ServerMan.py --cli <noun> <verb> [options]
+```
+
+`--cli` must be the first argument. The first run can create `.venv`, as the
+first window start does. Its setup messages go to the error output (stderr).
+
+- `--cli help` lists the commands and the exit codes.
+- `--cli help <command>` or `--cli <command> --help` shows the options of one
+  command. Help changes nothing.
+
+When a message names a command, type it after `DayZ-ServerMan.py --cli`. For
+example, the message **Run help updates check for the commands and options.**
+means:
+
+```text
+py DayZ-ServerMan.py --cli help updates check
+```
+
+Options that many commands share:
+
+| Option | Meaning |
+|---|---|
+| `--profile ID-OR-NAME` | The profile, by its ID or its display name. |
+| `--json` | Print one JSON document instead of text. |
+| `--yes` | Answer yes to the question. The review and the checks still run. |
+| `--expect-profile-revision N`, `--expect-settings-revision N` | Refuse when the revision is not this number. A script can pin a state that it read before. |
+
+### Commands
+
+The commands follow the groups of the window. A command that reads runs at
+any time, also while the window is open. A command that changes something
+needs that no other DayZ-ServerMan is active (see
+[One manager that changes things](#one-manager-that-changes-things)).
+
+| Window page | Command | Changes something | Asks first |
+|---|---|---|---|
+| Overview | `status` | no | no |
+| | `server status`, `server players [--names]` | no | no |
+| | `server start [--wait-ready] [--ready-timeout SECONDS]` | yes | yes |
+| | `server stop`, `server restart` with `[--backup-after-stop \| --no-backup-after-stop]` | yes | yes |
+| | `profile backup-after-stop on\|off` | yes | no |
+| | `schedule show` | no | no |
+| | `schedule set HH:MM stop\|restart`, `schedule clear` | yes | no |
+| | `updates status` | no | no |
+| | `updates check [--scope mods\|server-build\|all] [--force]` | yes (the check results) | no |
+| Mods | `mods list` | no | no |
+| | `mods verify` | yes (the content records) | no |
+| | `mods update [--start \| --restart] [--backup-after-stop \| --no-backup-after-stop]` | yes | yes, after the review |
+| | `steam show` | no | no |
+| | `steam set --mode account\|anonymous [--account NAME]` | yes | no |
+| | `steam login` | yes | needs a terminal |
+| Backups | `backup list [--all]` | no | no |
+| | `backup create` | yes | yes |
+| | `backup restore BACKUP-ID` | yes | yes, after the review |
+| | `backup recover` | yes | no |
+| | `profile restore --archive ZIP [--profile-id ID] [--name NAME] [--game-port PORT] [--query-port PORT] [--storage preserve\|new\|replace] [--overwrite]` | yes | yes, after the review |
+| Logs | `logs [--source manager\|diagnostics\|server] [--lines N]` | no | no |
+| Profiles | `profile list`, `profile show`, `profile command`, `profile missions` | no | no |
+| | `profile create`, `profile edit` with `--set KEY=VALUE` or `--from-file FILE` | yes | no |
+| | `profile delete` | yes | yes |
+| Configuration | `config show --target server\|gameplay` | no | no |
+| | `config set --target server\|gameplay` with `--set` or `--from-file` | yes | yes, after the review |
+| Tweaks | `tweaks show --target economy\|weather\|spawnable-damage\|starter-loadout\|events` | no | no |
+| | `tweaks set --target ...` with `--set` or `--from-file` | yes | yes, after the review |
+| | `tweaks convert-loadout` | yes | yes |
+| | `tweaks medical show` | no | no |
+| | `tweaks medical set FEATURE on\|off` | yes | yes, after the review |
+| Settings | `settings show` | no | no |
+| | `settings check-path PATH --role dayz-root\|steamcmd-root\|backup-root` | no | no |
+| | `settings set [--dayz-root PATH] [--steamcmd-root PATH] [--backup-root PATH \| --default-backup-root]` | yes | no |
+| | `updates auto on\|off` | yes | no |
+| | `migrate preview ROOT` | no | no |
+| | `migrate apply ROOT [--item ID ... \| --all-items]` | yes | yes, after the review |
+
+`--set KEY=VALUE` changes one value; repeat it for more values. The keys are
+the names that the matching `show` command prints in its **Key** column.
+`--from-file` reads a UTF-8 JSON file with the changes. With both, the file
+comes first, and each `--set` replaces its key.
+
+### Which profile a command uses
+
+- `--profile` takes the profile ID or the display name. The display name
+  ignores upper and lower case.
+- A command that reads uses the profile that is selected in the window, or
+  the only profile. Its output names the profile first.
+- A command that changes something needs `--profile` when more than one
+  profile exists.
+- A command never changes the profile that is selected in the window.
+
+### Questions, reviews, and --yes
+
+A command asks before it acts where the window asks. The table above shows
+these commands. The command prints the review first, then asks
+`Continue? [y/N]`. Only `y` or `yes` continues. Any other answer, an empty line,
+or Ctrl+C changes nothing and ends with exit code 4.
+
+`--yes` answers the question. The command still computes and prints the
+review, and every check still runs.
+
+When the current state does not allow the action, the command refuses before
+the question. For example, `server start` while the server runs ends with exit
+code 3, and a recovery block ends with exit code 6. Some checks can only run
+inside the operation, for example whether another DayZ-ServerMan uses the DayZ
+installation. Such a check can refuse after the question.
+
+Notes on single commands:
+
+- `backup restore` lists every file that the restore replaces or creates, as
+  the window does. This list can have several hundred lines. The warning and
+  the question come last. A script reads the review from `--json`.
+- `backup restore` and `profile restore` need a stopped server. While the
+  server runs, they refuse with exit code 3 and change nothing. Stop the
+  server first.
+- `profile restore` that replaces an existing world also needs `--overwrite`.
+  Without it, the command prints the review and ends with exit code 4, also
+  with `--yes`.
+- `mods update` downloads first, then shows the review. If you decline, or
+  the state does not allow the apply, the output ends with **The mods are
+  downloaded; nothing was applied.** A later `mods update` or the window
+  applies them after a new review.
+- `migrate apply` imports exactly the items that you name with `--item`, or
+  nothing. Without `--item`, it imports every item that can be imported.
+  `migrate preview` shows each item and why it cannot be imported.
+
+### Scripts, terminals, and --json
+
+- A command never waits for an answer when its input is not a terminal, for
+  example in Windows Task Scheduler. Without `--yes`, it prints the review
+  and ends with exit code 4. Nothing changes.
+- With `--json`, a command never asks, also in a terminal. Without `--yes`,
+  it ends with exit code 4 and the error code `CONFIRMATION_REQUIRED`. The
+  review is in `error.details.review`.
+- `mods update --json` without `--yes` downloads the mods and returns the
+  review, then ends with exit code 4. A script can use this to read the plan
+  without an apply.
+- `steam login` needs a terminal and text output. SteamCMD asks for the
+  password and the Steam Guard code in this terminal. DayZ-ServerMan does not
+  read or store them. Without a terminal, or with `--json`, it ends with exit
+  code 4 (`NOT_INTERACTIVE`); `--yes` does not change this.
+- `server players` shows player names only when the output is a terminal.
+  For redirected output and for `--json`, add `--names`. Player names are
+  never logged or saved.
+
+### Output
+
+Text output: the result goes to the standard output (stdout). Progress,
+notes, and errors go to the error output (stderr).
+
+A long operation ends with one line on stderr. The result on stdout can repeat
+it. For example, **All 6 mods verified; server copies match** shows on both.
+This is intended: the stderr line is progress, and stdout holds the result. A
+script reads stdout only.
+
+With `--json`, stdout holds exactly one JSON document, also when the command
+fails:
+
+```text
+{"cli_version": 1, "command": "server start", "success": true, "value": {...}}
+{"cli_version": 1, "command": "server stop", "success": false,
+ "error": {"code": "INSTANCE_ACTIVE", "message": "...", "retryable": true, "details": {...}}}
+```
+
+- A read gives the value of the window's request. A value that names no
+  profile gets `profile_id`.
+- `status` gives `snapshot`, `server`, `updates`, `pending_recoveries`, and
+  `profile_id`.
+- A change gives `{"operations": [...], "review": ..., "result": ...}`. Each
+  operation is the record of a finished step.
+- After `server start`, the server state is in `value.result.state`, for
+  example `RUNNING_MANAGED`. With `--wait-ready`, `value.result` holds the
+  last status read.
+- In an error, `details.operation` holds the record of a failed, cancelled,
+  or recovery-required operation.
+- New fields can appear. `cli_version` changes only when fields are added.
+
+> **Warning:** `--json` prints stored values as they are stored. The JSON of
+> `config show` and `config set` holds the server password and the admin
+> password in clear text. Text output hides them. Do not send JSON output to
+> shared logs, tickets, or chats.
+
+### Exit codes
+
+Text output and `--json` use the same exit code.
+
+| Code | Meaning | What a script does |
+|---|---|---|
+| 0 | Done. Also when Ctrl+C was pressed but the operation still finished. | Nothing. |
+| 1 | Failed. The work started and did not succeed, or a read could not read its data. Something can have changed and been undone. | Read the message and **Logs**. |
+| 2 | The command line is not valid. Nothing was changed. | Fix the command line. |
+| 3 | Refused in the current state. Nothing was changed. | Fix the state or try again later. |
+| 4 | Not confirmed. Nothing was changed. | Add `--yes`, or run it in a terminal. |
+| 5 | Cancelled at a safe point after Ctrl+C. | Run it again when needed. |
+| 6 | Recovery is needed before changes are possible. | A person acts; see [When changes are blocked](#when-changes-are-blocked). |
+
+**Nothing was changed** (codes 2, 3, and 4) means that the command left no
+change in these places:
+
+1. the DayZ server installation: server files, mod folders, keys, missions,
+   configuration, and profile folders;
+2. the saved data of DayZ-ServerMan: profiles, settings, schedules, and
+   preferences;
+3. the backups and the backup list;
+4. the server process: no server was started, stopped, or restarted;
+5. the recovery state: no new interrupted work and no new block.
+
+These side effects can still occur with codes 2, 3, and 4. Each one is safe
+to repeat:
+
+- Workshop downloads into the SteamCMD folder, and other SteamCMD files there;
+- the stored update check results, and a mod state that follows from them;
+- operation records and log lines;
+- the instance lock file and its holder file;
+- stored reviews and selections that only a later apply reads;
+- a temporary copy that the command removed again.
+
+When more than one case applies, the first check that stops the command sets
+the code. The checks run in this order:
+
+1. the command line (2);
+2. another active DayZ-ServerMan (3);
+3. the state checks (3 or 6);
+4. the question (4);
+5. the operation (0, 1, 5, or 6).
+
+Some cases in detail:
+
+- Code 1: a refusal after the operation changed something, for example a
+  restart that stopped the server and then could not start it. The server
+  stays stopped. `--json` holds the operation record.
+- Code 1: a profile name is valid, but a data file of the profile is missing.
+- Code 2: a name that you typed does not exist, for example a profile, a
+  backup ID, a key, or a medical feature. A folder for `settings set` must
+  exist.
+- Code 3: `server stop` or `server restart` names a profile other than the
+  running one. The message names the running profile.
+- Code 3: the data that a review showed changed before the apply. Run the
+  command again for a new review.
+
+### JSON error codes
+
+`error.code` tells the reasons of one exit code apart. It is the code of the
+window's request, for example `EXTERNAL_PROCESS`, `CONTROL_CONFLICT`,
+`REVISION_CONFLICT`, or `RECOVERY_REQUIRED`. It can also be one of the ten
+codes of the command line:
+
+| Code | Exit code | Meaning |
+|---|---|---|
+| `USAGE` | 2 | The command line is not valid. |
+| `INSTANCE_ACTIVE` | 3 | Another DayZ-ServerMan is active for this manager folder. |
+| `SETUP_REQUIRED` | 3 | `server start` needs the folders; run `settings set` first. |
+| `NOTHING_TO_CONVERT` | 3 | `tweaks convert-loadout` found no older starter loadout. |
+| `CONFIRMATION_REQUIRED` | 4 | A question needs `--yes` (no terminal, `--json`, or a missing `--overwrite`). |
+| `NOT_INTERACTIVE` | 4 | `steam login` needs a terminal and text output. |
+| `CANCELLED` | 5 | Ctrl+C cancelled the command at a safe point. |
+| `INSTANCE_LOCK_UNSUPPORTED` | 1 | The manager folder cannot hold the lock; move it to a local drive. |
+| `CHECK_NOT_FINISHED` | 1 | `updates check` did not finish in 5 minutes. |
+| `NOT_READY` | 1 | The server was started but was not ready in time, or it stopped running. |
+
+For `migrate apply`, `NOT_FOUND` (exit code 1) means that the legacy folder,
+or a named item, has nothing to import. `MIGRATION_CONFLICT` (exit code 3)
+means that the data is there, but it conflicts with the current profiles.
+`migrate preview` shows the reason for each item.
+
+### One manager that changes things
+
+Only one DayZ-ServerMan changes things in a manager folder at a time. This is
+the window or one command.
+
+- A command that reads runs at any time, also while the window is open. It
+  writes no file and no log line.
+- A command that changes something refuses while the window or another such
+  command is active: exit code 3, `INSTANCE_ACTIVE`. Close the window, or
+  wait for the other command, then run it again.
+- The window does not open while another window or a command that changes
+  something is active. Its message names the other one.
+- A command that changes something starts like the window. It first finishes
+  or undoes interrupted work, as the window does at start.
+
+A read can meet a change of the server folders. While the window applies mods,
+restores, or deletes a profile, a command that reads waits up to about 30
+seconds. Then it ends with exit code 3 and **The server files are being
+changed by another DayZ-ServerMan. Try again in a minute.**
+
+The other direction is rare. A window step that replaces server folders waits
+up to about 5 seconds for a command that reads. Then it refuses, and nothing
+changes. Try the step again.
+
+### Who controls the server
+
+- A server that `server start` started keeps running when the command ends or
+  the terminal closes.
+- A later command or the window can stop or restart that server. The same is
+  true for a server that the window started.
+- After a crash of the window, the next DayZ-ServerMan finds the running server
+  and can control it.
+- The window can close while a server runs that it did not start itself.
+- A server that you started by hand stays **Running outside the manager**.
+  `server stop` and `server restart` refuse it with exit code 3.
+
+### Progress and Ctrl+C
+
+A long operation shows its name, its step, and its progress on stderr. On a
+terminal, this is one line that updates. Otherwise, it is one line with the
+time for each step. The command returns only when the operation ends.
+
+- Ctrl+C asks the operation to stop at the next safe point. The command
+  says **Cancelling at the next safe point.** and keeps waiting. A cancelled
+  operation ends with exit code 5. If the operation still finished, the code
+  is 0.
+- Some steps cannot stop. Then the command says **This step cannot be
+  cancelled. DayZ-ServerMan waits until it is finished or undone.** Press
+  Ctrl+C again later to ask again.
+- Ctrl+C at the question changes nothing: exit code 4.
+- Ctrl+C during a read ends it with exit code 5.
+- `updates check` cannot be cancelled after it starts. It waits up to 5
+  minutes for the result, then ends with exit code 1.
+- `server start --wait-ready` waits until the server answers Steam queries,
+  by default up to 300 seconds. `--ready-timeout` sets 10 to 3600 seconds.
+  When the time ends, the exit code is 1 and the server keeps running.
+- Ctrl+C during that wait ends the wait with exit code 0. The server keeps
+  running. With `--json`, `value.ready_wait_stopped` is `true`.
+
+A closed terminal or a stopped process acts like a crash. The next start of
+DayZ-ServerMan finishes or undoes the interrupted work.
+
+### Restart without the window
+
+Daily schedules run only while the window is open. The command line has no
+background mode. For a restart without the window, let Windows Task Scheduler
+run:
+
+```text
+py D:\Tools\DayZ-ServerMan\DayZ-ServerMan.py --cli server restart --profile chernarus_pve --yes
+```
+
+Use the path of your copy and your profile ID. The command refuses with exit
+code 3 while the window is open.
+
+### Folders in Settings
+
+- `settings check-path` reports the result of the check with exit code 0,
+  also for a folder that does not exist (**Not found**) or a file. A script
+  reads `value.status`. Only `READY` means that the folder can be used.
+- `settings check-path` checks the folder only. It shows the derived paths,
+  such as `steamcmd.exe`, but it does not check them. After `settings set`,
+  run `settings show` to see their checks.
+- `settings set` needs a folder that exists. A missing folder or a file ends
+  with exit code 2. Create a new backup folder first.
+
+### Examples
+
+```text
+py DayZ-ServerMan.py --cli status
+py DayZ-ServerMan.py --cli server players --names
+py DayZ-ServerMan.py --cli server stop --profile chernarus_pve --backup-after-stop
+py DayZ-ServerMan.py --cli backup list --json
+py DayZ-ServerMan.py --cli config set --profile chernarus_pve --target server --set maxPlayers=40
+py DayZ-ServerMan.py --cli mods update --profile chernarus_pve --restart --yes
+```
+
+A PowerShell script that checks the result:
+
+```powershell
+py DayZ-ServerMan.py --cli server start --profile chernarus_pve --yes --json > start.json
+if ($LASTEXITCODE -eq 0) {
+    (Get-Content start.json | ConvertFrom-Json).value.result.state
+}
+```
+
+### Known limitations
+
+- **Medical loot settings.** A profile's medical file can match neither its
+  original form nor the form that DayZ-ServerMan writes, for example after a
+  hand edit. Then `tweaks medical show` and `tweaks medical set` end with exit
+  code 3 and **The profile or the settings changed in the meantime. Run the
+  command again.** Running it again does not help, and the window shows the
+  same text. This version has no way out.
+- **A backup folder inside the DayZ server folder.** A mod apply, a profile
+  restore, or a profile deletion can remove or replace the folder that holds
+  it, and its backups with it. A backup of a mission can also include older
+  backups. The window behaves the same way. Keep a custom backup folder
+  outside the DayZ server folder.
+- **Manager folder on FAT, exFAT, or a network share.** There, a command that
+  reads can still make a save of the window fail. On a folder that cannot
+  hold the lock, a command that changes something ends with exit code 1.
+- **Synced folders.** No lock protects a manager folder that a sync service
+  shares between two computers. Use each copy on one computer only.
+
 ## Local application data
 
 - `config/manager.json` stores configured external paths and Steam settings.
@@ -537,6 +941,11 @@ journals remain in `data/operations/`.
   and their server copies.
 - `data/logs/` stores manager and DayZ output.
 - `data/operations/` stores operation records and recovery journals.
+- `data/server-ownership.json` records the DayZ server that this copy started,
+  so that the window and commands can control it.
+- `data/instance.lock`, `data/instance-holder.json`, and
+  `data/server-folders.lock` let only one DayZ-ServerMan change things at a
+  time.
 - `backups/` stores portable-default backup files.
 
 The two check files are disposable. Without them, DayZ-ServerMan checks again.

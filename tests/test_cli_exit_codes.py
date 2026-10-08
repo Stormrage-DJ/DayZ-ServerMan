@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import sys
 import unittest
 from pathlib import Path
@@ -10,7 +11,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runnable" / "src" 
 
 from dayz_serverman.application.lifecycle_coordinator import OTHER_PROFILE_RUNNING  # noqa: E402
 from dayz_serverman.bridge.contracts import ErrorCode  # noqa: E402
-from dayz_serverman.cli.exit_codes import CLI_CODES, dispatch_exit, pre_change, record_exit  # noqa: E402
+from dayz_serverman.cli import exit_codes  # noqa: E402
+from dayz_serverman.cli.exit_codes import (  # noqa: E402
+    CLI_CODES, FIXED_CODES, REFUSAL_CODES, dispatch_exit, pre_change, record_exit,
+)
+from dayz_serverman.cli.flow import STATE_CODES  # noqa: E402
+
+# The CLI package, scanned for the codes it emits
+CLI_ROOT = Path(__file__).resolve().parents[1] / "runnable" / "src" / "python" / "dayz_serverman" / "cli"
 
 # The 6.4 table: code -> (exit at dispatch, exit in a FAILED record before / after the first change)
 TABLE: dict[str, tuple[int | None, int, int]] = {
@@ -71,11 +79,34 @@ class DispatchExitTests(unittest.TestCase):
         self.assertEqual(dispatch_exit({"code": "MUTATION_CONFLICT"}), 3)
 
     def test_cli_codes(self) -> None:
-        """USAGE 2, INSTANCE_ACTIVE 3, CONFIRMATION_REQUIRED and NOT_INTERACTIVE 4, CANCELLED 5, unsupported lock 1."""
-        self.assertEqual(CLI_CODES, {"USAGE": 2, "INSTANCE_ACTIVE": 3, "CONFIRMATION_REQUIRED": 4,
-                                     "NOT_INTERACTIVE": 4, "CANCELLED": 5, "INSTANCE_LOCK_UNSUPPORTED": 1})
+        """The closed list of A11 (QF-62): USAGE 2; INSTANCE_ACTIVE, SETUP_REQUIRED, NOTHING_TO_CONVERT 3;
+        CONFIRMATION_REQUIRED, NOT_INTERACTIVE 4; CANCELLED 5; INSTANCE_LOCK_UNSUPPORTED, CHECK_NOT_FINISHED,
+        NOT_READY 1."""
+        self.assertEqual(CLI_CODES, {"USAGE": 2, "INSTANCE_ACTIVE": 3, "SETUP_REQUIRED": 3, "NOTHING_TO_CONVERT": 3,
+                                     "CONFIRMATION_REQUIRED": 4, "NOT_INTERACTIVE": 4, "CANCELLED": 5,
+                                     "INSTANCE_LOCK_UNSUPPORTED": 1, "CHECK_NOT_FINISHED": 1, "NOT_READY": 1})
         for code, expected in CLI_CODES.items():
             self.assertEqual(dispatch_exit({"code": code}), expected)
+
+    def test_the_cli_emits_exactly_the_a11_codes(self) -> None:
+        """Every `CliFailure` with a literal code outside the bridge and operation codes uses an A11 code with
+        its A11 exit, and every A11 code is emitted somewhere."""
+        known = {member.value for member in ErrorCode} | set(REFUSAL_CODES) | set(FIXED_CODES)
+        emitted: dict[str, set[int]] = {}
+        for path in CLI_ROOT.rglob("*.py"):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if not (isinstance(node, ast.Call) and getattr(node.func, "id", None) == "CliFailure"
+                        and node.args and isinstance(node.args[0], ast.Constant)):
+                    continue
+                code = str(node.args[0].value)
+                if code in known:
+                    continue
+                exit_node = node.args[2] if len(node.args) > 2 else None
+                self.assertIsInstance(exit_node, ast.Name, (path.name, code))
+                emitted.setdefault(code, set()).add(getattr(exit_codes, exit_node.id))
+        self.assertEqual({code: {number} for code, number in CLI_CODES.items()}, emitted)
+        # Codes passed on by name: the end states of a record are A11 or bridge codes
+        self.assertLessEqual(set(STATE_CODES.values()), set(CLI_CODES) | known)
 
 
 class RecordExitTests(unittest.TestCase):
