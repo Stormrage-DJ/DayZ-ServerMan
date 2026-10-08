@@ -3,6 +3,51 @@
 This directory is the complete movable application. Copy the whole directory.
 Do not copy only the starter or `src` directory.
 
+## Contents
+
+- [Requirements](#requirements)
+- [Start the application](#start-the-application)
+- [First setup](#first-setup)
+  - [Update checks](#update-checks)
+- [Create a server profile](#create-a-server-profile)
+- [The sidebar and the workspaces](#the-sidebar-and-the-workspaces)
+- [Overview](#overview)
+  - [Players online](#players-online)
+- [Stop, restart, and automatic backup](#stop-restart-and-automatic-backup)
+- [Daily schedule](#daily-schedule)
+- [Mods and updates](#mods-and-updates)
+  - [Steam sign-in](#steam-sign-in)
+  - [Mod states](#mod-states)
+  - [Update all](#update-all)
+  - [Update & start and Update & restart](#update--start-and-update--restart)
+  - [Verify files](#verify-files)
+- [DayZ server build](#dayz-server-build)
+- [The operation bar](#the-operation-bar)
+- [Backups and restores](#backups-and-restores)
+  - [Restore an existing profile](#restore-an-existing-profile)
+  - [Restore a deleted profile from a ZIP](#restore-a-deleted-profile-from-a-zip)
+- [When changes are blocked](#when-changes-are-blocked)
+- [Command line](#command-line)
+  - [Run a command](#run-a-command)
+  - [Commands](#commands)
+  - [Which profile a command uses](#which-profile-a-command-uses)
+  - [Questions, reviews, and --yes](#questions-reviews-and---yes)
+  - [Scripts, terminals, and --json](#scripts-terminals-and---json)
+  - [Output](#output)
+  - [Exit codes](#exit-codes)
+  - [JSON error codes](#json-error-codes)
+  - [One manager that changes things](#one-manager-that-changes-things)
+  - [Who controls the server](#who-controls-the-server)
+  - [Progress and Ctrl+C](#progress-and-ctrlc)
+  - [Restart without the window](#restart-without-the-window)
+  - [Folders in Settings](#folders-in-settings)
+  - [Examples](#examples)
+  - [Known limitations](#known-limitations)
+- [Local application data](#local-application-data)
+- [Troubleshooting](#troubleshooting)
+- [Before using a production server](#before-using-a-production-server)
+- [License](#license)
+
 ## Requirements
 
 - Windows 11 x64
