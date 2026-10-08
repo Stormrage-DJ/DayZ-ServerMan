@@ -10,6 +10,7 @@ import io
 import json
 import subprocess
 import sys
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -92,6 +93,7 @@ class UpdatesCheckTests(SteamRoot):
         release = self.catalog.block()
         self.addCleanup(release.set)
         ticks = iter((0.0, *([10_000.0] * 50)))
+        before = set(threading.enumerate())
         with patch.object(updates_write, "CLOCK", lambda: next(ticks)), patch.object(updates_write, "SLEEP",
                                                                                      lambda _seconds: None):
             code, stdout, _stderr = self.cli("updates", "check", "--scope", "mods", "--force", "--json")
@@ -99,6 +101,9 @@ class UpdatesCheckTests(SteamRoot):
         self.assertEqual((code, error["code"], error["message"]), (1, "CHECK_NOT_FINISHED", mods_wording.CHECK_TIMEOUT))
         self.assertTrue(error["details"]["status"]["checking"])
         release.set()
+        # The check worker writes its cache after the release; let it finish before the root is removed
+        for worker in set(threading.enumerate()) - before:
+            worker.join(10)
 
     def test_another_instance_refuses_with_nothing_changed(self) -> None:
         """D2: a held instance lock exits 3 before any request; reads still run (criterion 13)."""

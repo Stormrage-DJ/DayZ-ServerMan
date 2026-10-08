@@ -76,7 +76,8 @@ class AppInfoAdapterTests(unittest.TestCase):
             with self.subTest(values=values):
                 with self.assertRaises(SteamCmdPreflightError):
                     preflight.inspect_executable(self.settings(**values))
-        self.executable.write_bytes(b"changed")
+        # A different size changes the identity even when the write lands in the same clock tick
+        self.executable.write_bytes(b"changed after the preflight")
         with self.assertRaises(SteamCmdPreflightError):
             preflight.revalidate_executable(paths)
 
@@ -105,7 +106,8 @@ class AppInfoAdapterTests(unittest.TestCase):
         """The path identities are compared directly before the process starts."""
         preflight = SteamCmdPreflight()
         paths = preflight.inspect_executable(self.settings())
-        self.executable.write_bytes(b"changed")
+        # A different size changes the identity even when the write lands in the same clock tick
+        self.executable.write_bytes(b"changed after the preflight")
         with patch.object(steamcmd_app.subprocess, "Popen") as popen:
             with self.assertRaises(SteamCmdPreflightError):
                 WindowsSteamCmdAppInfo(preflight).run_app_info(paths, lambda: False)
