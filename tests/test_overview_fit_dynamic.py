@@ -136,15 +136,31 @@ check(window.innerWidth === 1150 && window.innerHeight === 720,
   `viewport ${window.innerWidth} x ${window.innerHeight}: the window frame of the harness changed`);
 check(document.getElementById("overview-schedule").querySelector(".schedule-summary").textContent !== "Checking…",
   "the schedule row did not load");
+// Hosted runners are slower and report reduced motion: finish the running transitions, then wait until two
+// frames in a row report the same page height, so the measure reads the settled layout and not a late draw.
+document.getAnimations().filter((animation) => animation instanceof CSSTransition)
+  .forEach((animation) => animation.finish());
+const frame = () => new Promise((resolve) => { requestAnimationFrame(resolve); setTimeout(resolve, 50); });
+let settled = 0; let height = document.documentElement.scrollHeight;
+for (let turn = 0; turn < 60 && settled < 2; turn += 1) {
+  await frame();
+  const next = document.documentElement.scrollHeight;
+  settled = next === height ? settled + 1 : 0; height = next;
+}
 // Every part of the worst case is on the page, so the measure covers it.
 const text = document.body.textContent;
 for (const part of parts) check(text.includes(part), `missing: ${part}`);
+// A failure lists the height of every block, so the block that grew on another font or a late draw is named.
+const px = (node) => Math.round(node.getBoundingClientRect().height);
+const heights = [bar(), document.querySelector(".page-heading"), document.querySelector(".overview-notice"),
+  document.getElementById("overview-server"), ...document.querySelectorAll(".overview-row")].filter(Boolean)
+  .map((node) => `${node.id || node.className.split(" ").pop()} ${px(node)}`).join(", ");
 const over = [...document.querySelectorAll("#content-region *")].filter((node) => node.getBoundingClientRect().bottom > 720.5);
 same(document.documentElement.scrollHeight <= window.innerHeight, true,
-  `scrollHeight ${document.documentElement.scrollHeight}; below the fold: ${over.slice(0, 4).map((node) => node.className || node.tagName)}`);
+  `scrollHeight ${document.documentElement.scrollHeight}; below the fold: ${over.slice(0, 4).map((node) => node.className || node.tagName)}; heights: ${heights}`);
 const bottom = Math.round(document.getElementById("content-region").getBoundingClientRect().bottom
   + parseFloat(getComputedStyle(document.querySelector("main")).paddingBottom));
-check(bottom <= limit, `content bottom ${bottom}: less than 40 px free under the content`);
+check(bottom <= limit, `content bottom ${bottom}: less than 40 px free under the content; heights: ${heights}`);
 // D18: the player count shares the state row, so the strip is as high without it; the closed panel takes no space.
 const strip = document.getElementById("overview-server");
 const count = [document.getElementById("overview-players-toggle"), document.getElementById("overview-players-full"),
