@@ -99,8 +99,6 @@ const operationRestartApplyTexts = Object.freeze({
   startCheck: "Mods applied, but the server folder changed before the start. The server was not started.",
   start: "Mods applied, but the server start did not succeed or could not be confirmed. Check the server state on Overview.",
 });
-// Error codes of a write guard that refused the apply because the server was not stopped.
-const operationGuardCodes = Object.freeze(["CONTROL_CONFLICT", "EXTERNAL_PROCESS", "PROCESS_STATE_UNKNOWN"]);
 
 // Item states of a verification that mean no problem; a mod in any other state needs the operator.
 const operationVerifyGood = Object.freeze({ source: "VERIFIED", target: "MATCHES_SOURCE" });
@@ -171,40 +169,6 @@ function bridgeErrorText(result, fallback) {
   return operationErrorText(result?.error, fallback);
 }
 
-// Choose the failure sentence of a stop or restart from the phase that worked last.
-function lifecycleFailureSentence(kind, phase, generic) {
-  const backup = String(phase || "").startsWith("BACKUP_");
-  if (kind === "STOP_SERVER" && backup) return "Server stopped, but the backup failed.";
-  if (kind === "RESTART_SERVER" && backup) {
-    return "Server stopped, but the backup failed. The server was not started again.";
-  }
-  if (kind === "RESTART_SERVER" && phase === "START_SERVER") {
-    return "Server stopped, but it could not be started again.";
-  }
-  return generic;
-}
-
-// Choose the sentence of a failed or cancelled "apply mods and restart"; null means the generic sentence.
-function restartApplySentence(state, phase, error = null) {
-  const name = typeof phase === "string" ? phase : "";
-  const texts = operationRestartApplyTexts;
-  // Before the stop the server still runs; every later safe point leaves it stopped.
-  if (state === "CANCELLED") return ["", "preflight"].includes(name) ? texts.cancelledRunning : texts.cancelledStopped;
-  if (!name) return null;
-  // The server state that the host names in its refusal, when it names one.
-  const named = namedServerStateName(typeof error?.message === "string" ? error.message : "");
-  if (name === "preflight") return texts.preflight;
-  // A stop that was refused because the server was already stopped did not fail to stop it.
-  if (name === "STOP_SERVER") return named === "STOPPED" ? texts.stopNotRunning : texts.stop;
-  if (name.startsWith("BACKUP_")) return texts.backup;
-  if (name === "VERIFY_BEFORE_START") return texts.check;
-  // A failure of the start handoff proves neither a changed folder nor a stopped server.
-  if (name === "START_SERVER") return texts.start;
-  if (state === "RECOVERY_REQUIRED") return texts.applyBlocked;
-  // A write guard that found the server no longer stopped applied nothing.
-  return named && named !== "STOPPED" && operationGuardCodes.includes(error?.code) ? texts.applyRefused : texts.apply;
-}
-
 // Build the success sentence and look of a finished "apply mods and restart" from its start outcome.
 function restartApplySuccess(result, labels) {
   if (result.start_state === "NOT_NEEDED") {
@@ -254,35 +218,13 @@ function operationResult(operation, seenPhase = null) {
   const labels = window.ServerManOperationLabels.kind(operation?.kind);
   const phase = operation?.last_working_phase || seenPhase;
   let look = "failed"; let sentence = labels.failure; let message = "";
+  // A failed or cancelled operation is worded in operation_failures.js.
   if (operation?.state === "SUCCEEDED") {
     ({ sentence, look } = successPresentation(operation, labels));
   } else if (operation?.state === "CANCELLED") {
-    // A stop or restart that never reached its backup did not stop the server.
-    const untouched = ["STOP_SERVER", "RESTART_SERVER"].includes(operation.kind)
-      && !String(phase || "").startsWith("BACKUP_");
-    look = "cancelled";
-    sentence = untouched ? window.ServerManOperationLabels.kind(null).cancelled : labels.cancelled;
-    if (operation.kind === "APPLY_MODS_AND_RESTART") sentence = restartApplySentence("CANCELLED", phase);
+    ({ sentence, look } = cancelPresentation(operation, phase, labels));
   } else {
-    const failure = operation?.terminal_error || operation?.error;
-    const texts = operationRestartApplyTexts;
-    sentence = lifecycleFailureSentence(operation?.kind, phase, labels.failure);
-    if (operation?.kind === "APPLY_MODS_AND_RESTART") sentence = restartApplySentence(operation.state, phase, failure) || sentence;
-    // An apply with a start that failed in the check before the start, or in the start, did apply the mods.
-    if (operation?.kind === "PUBLISH_MODS_AND_KEYS" && phase === "VERIFY_BEFORE_START") sentence = texts.startCheck;
-    if (operation?.kind === "PUBLISH_MODS_AND_KEYS" && phase === "START_SERVER") sentence = texts.start;
-    message = operationErrorText(failure, "", operation?.kind);
-    // These sentences already say what the text of their error code or of the named state says.
-    const code = operation?.terminal_error?.code;
-    if ((sentence === texts.preflight && code === "PUBLICATION_PREVIEW_STALE") || sentence === texts.stopNotRunning
-        || ([texts.check, texts.startCheck].includes(sentence) && code === "PUBLICATION_FAILED")) message = "";
-    // A launch failure of a start or restart is already said by the sentence.
-    if (operation?.terminal_error?.code === "LAUNCH_FAILED"
-        && ["START_SERVER", "RESTART_SERVER"].includes(operation.kind)) message = "";
-    // The result sentence states the block once, so the message does not state it again.
-    if (operation?.state === "RECOVERY_REQUIRED") {
-      look = "recovery"; sentence = `${sentence} Changes are blocked.`; message = message.replace(OPERATION_BLOCK_SENTENCE, "").trim();
-    }
+    ({ sentence, look, message } = failurePresentation(operation, phase, labels));
   }
   return Object.freeze({ look, sentence, message, text: message ? `${sentence} ${message}` : sentence });
 }

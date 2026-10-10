@@ -45,6 +45,7 @@ from .observability.structured_log import StructuredLogger
 from .repositories.json_store import VersionedJsonRepository
 from .repositories.paths import PortablePaths
 from .repositories.profiles import ProfileRepository
+from .mission_map_composition import MissionMapParts
 from .update_check_composition import ServerBuildParts
 
 
@@ -100,6 +101,7 @@ class ApplicationComposition:
     update_check_scheduler: UpdateCheckScheduler
     update_check_coordinator: UpdateCheckCoordinator
     server_build: ServerBuildParts
+    mission_map: MissionMapParts
     coordinator: ApplicationCoordinator
     bridge: BridgeFacade
     host_bridge: BridgeFacade

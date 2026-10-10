@@ -49,6 +49,7 @@ class PortablePaths:
     publication_journals: Path
     migrations: Path
     tweak_baselines: Path
+    mission_map: Path
     webview2: Path
     backups: Path
     backup_recovery: Path
@@ -79,6 +80,7 @@ class PortablePaths:
             publication_journals=canonical / "data" / "publication" / "journals",
             migrations=canonical / "data" / "migrations",
             tweak_baselines=canonical / "data" / "tweak-baselines",
+            mission_map=canonical / "data" / "mission-map",
             webview2=canonical / "data" / "webview2",
             backups=canonical / "backups",
             backup_recovery=canonical / "backups" / "recovery",

@@ -1,4 +1,4 @@
-"""Criterion 3: every GUI bridge method is in a CLI command, internal or excluded, as 01.04 says (task 2.5)."""
+"""Criterion 3: every GUI bridge method is in a CLI command, internal, excluded or pending, as 01.04 says (task 2.5)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runnable" / "src" 
 from dayz_serverman.bridge_composition import OBSERVER_READ_METHODS  # noqa: E402
 from dayz_serverman.cli.command_table import COMMANDS  # noqa: E402
 from dayz_serverman.cli.registry import (  # noqa: E402
-    EXCLUDED_METHODS, INTERNAL_METHODS, Confirm, Kind, ProfileRule,
+    EXCLUDED_METHODS, EXCLUSION_REASONS, INTERNAL_METHODS, PENDING_PREFIX, PENDING_TASK_10, Confirm, Kind,
+    ProfileRule,
 )
 from dayz_serverman.composition import build_composition  # noqa: E402
 
@@ -61,6 +62,9 @@ CONFIRMING = {
     "mods update", "profile delete", "config set", "tweaks set", "tweaks medical set", "tweaks convert-loadout",
     "migrate apply",
 }
+# Bridge methods that wait for a command of task 10 of the mission map plan. Each leaf that adds an editor
+# method adds its entry here (3.7, 4.2, 5.3, 8.9), and task 10 removes them all.
+EXPECTED_PENDING_TASK_10: dict[str, str] = {}
 
 
 class ParityMatrixTests(unittest.TestCase):
@@ -77,16 +81,37 @@ class ParityMatrixTests(unittest.TestCase):
                 composition.shutdown.request_shutdown()
                 composition.shutdown.wait_for_close(5)
 
-    def test_every_owner_method_is_used_internal_or_excluded(self) -> None:
-        """Each of the 60 methods is in a command's bridge methods, or internal, or excluded (53 + 4 + 3)."""
+    def test_every_owner_method_is_used_internal_excluded_or_pending(self) -> None:
+        """Each of the 60 methods is in a command, or internal, excluded or pending (53 + 4 + 3 + pending)."""
         self.assertEqual(len(self.allowlist), 60)
         used = set().union(*(command.bridge_methods for command in COMMANDS))
-        self.assertEqual(self.allowlist - used - INTERNAL_METHODS - EXCLUDED_METHODS, set())
-        self.assertEqual(len(self.allowlist - INTERNAL_METHODS - EXCLUDED_METHODS), 53)
-        # Internal and excluded methods are never named by a command, and every named method exists
-        self.assertEqual(used & (INTERNAL_METHODS | EXCLUDED_METHODS), set())
+        pending = set(PENDING_TASK_10)
+        self.assertEqual(self.allowlist - used - INTERNAL_METHODS - EXCLUDED_METHODS - pending, set())
+        self.assertEqual(len(self.allowlist - INTERNAL_METHODS - EXCLUDED_METHODS - pending), 53)
+        # A pending method never counts as an exclusion
+        self.assertEqual((len(INTERNAL_METHODS), len(EXCLUDED_METHODS)), (4, 3))
+        # Internal, excluded and pending methods are never named by a command, and every named method exists
+        self.assertEqual(used & (INTERNAL_METHODS | EXCLUDED_METHODS | pending), set())
         self.assertEqual(used - self.allowlist, set())
-        self.assertTrue(INTERNAL_METHODS | EXCLUDED_METHODS <= self.allowlist)
+        self.assertTrue(INTERNAL_METHODS | EXCLUDED_METHODS | pending <= self.allowlist)
+
+    def test_dispositions_are_disjoint_with_reasons(self) -> None:
+        """Each method has one disposition; an exclusion has a reason and a pending entry names its command."""
+        self.assertEqual(EXCLUDED_METHODS, frozenset(EXCLUSION_REASONS))
+        self.assertEqual(INTERNAL_METHODS & EXCLUDED_METHODS, set())
+        self.assertEqual(set(PENDING_TASK_10) & (INTERNAL_METHODS | EXCLUDED_METHODS), set())
+        for method, reason in EXCLUSION_REASONS.items():
+            with self.subTest(excluded=method):
+                self.assertTrue(reason.strip())
+        for method, planned in PENDING_TASK_10.items():
+            with self.subTest(pending=method):
+                self.assertTrue(planned.startswith(PENDING_PREFIX))
+                self.assertTrue(planned[len(PENDING_PREFIX):].strip())
+
+    def test_pending_methods_are_pinned(self) -> None:
+        """The pending methods and their planned commands are exactly the expected ones."""
+        self.assertEqual(PENDING_PREFIX, "pending task 10: ")
+        self.assertEqual(dict(PENDING_TASK_10), EXPECTED_PENDING_TASK_10)
 
     def test_registry_names_the_commands_of_the_matrix(self) -> None:
         """The registry holds exactly the commands of 01.04, each once."""

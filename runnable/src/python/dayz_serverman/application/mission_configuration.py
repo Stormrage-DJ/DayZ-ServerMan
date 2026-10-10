@@ -15,7 +15,7 @@ from ..domain.mission_configuration import (
 )
 from ..domain.models import RevisionConflict
 from ..repositories.atomic_file import AtomicFilePublisher, ContentChangedError
-from ..repositories.configuration_common import digest_bytes
+from ..repositories.configuration_common import ConfigurationFileError, digest_bytes
 from ..repositories.mission_files import (
     TARGET_PATHS, convert_starter_file, load_mission_file, transform_mission_file,
 )

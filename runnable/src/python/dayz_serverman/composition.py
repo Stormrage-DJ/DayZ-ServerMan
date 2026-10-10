@@ -20,10 +20,6 @@ from .application.mission_configuration import MissionConfigurationService
 from .application.mission_configuration_coordinator import MissionConfigurationCoordinator
 from .application.medical_features import MedicalFeatureService
 from .application.medical_feature_coordinator import MedicalFeatureCoordinator
-from .application.migration_coordinator import MigrationCoordinator
-from .application.migrations import MigrationService
-from .application.legacy_backup_coordinator import LegacyBackupCoordinator
-from .application.legacy_backups import LegacyBackupService
 from .application.operations.manager import OperationManager
 from .application.operations.store import OperationStore
 from .application.preferences import PreferenceCoordinator
@@ -37,10 +33,6 @@ from .application.startup_recoveries import recover_interrupted_restores
 from .bridge.facade import BridgeFacade
 from .observability.structured_log import NullStructuredLogger, StructuredLogger
 from .repositories.json_store import StagingPolicy, VersionedJsonRepository
-from .repositories.migrations import MigrationStorage
-from .repositories.legacy_backup_index import LegacyBackupIndexRepository
-from .repositories.migration_journal import MigrationJournalRepository
-from .repositories.migration_publication import MigrationPublication
 from .repositories.mod_publication_journal import PublicationJournalRepository
 from .repositories.backups import BackupStorage
 from .repositories.restore_journal import RestoreJournalRepository
@@ -54,6 +46,8 @@ from .bridge_composition import build_handler_table, observer_handlers
 from .composition_model import ApplicationComposition, SessionMode
 from .profile_provisioning_composition import build_profile_provisioning
 from .lifecycle_composition import build_lifecycle
+from .migration_composition import build_migration
+from .mission_map_composition import build_mission_map
 from .profile_restore_composition import build_profile_restore, build_settings_repair
 from .update_check_composition import (
     build_server_build, build_update_check, build_update_check_scheduler, build_update_status,
@@ -118,26 +112,13 @@ def build_composition(
     mission_configuration_coordinator = MissionConfigurationCoordinator(mission_configuration, operations)
     medical_features = MedicalFeatureService(profiles, settings, paths.tweak_baselines)
     medical_feature_coordinator = MedicalFeatureCoordinator(medical_features, operations)
-    # Build migration services with legacy backup indexing
-    migration_storage = MigrationStorage(paths.migrations)
-    legacy_backup_repository = LegacyBackupIndexRepository(
-        paths.migrations / "legacy-backup-index.json", staging=staging,
+    # Mission map plans: one association lock set for plan saves and the later commit step (T2.3-F9)
+    mission_map = build_mission_map(paths, profiles, settings, staging=staging)
+    # Build migration services with legacy backup indexing; only an owner inspects an interrupted publication
+    migration = build_migration(
+        paths, settings, settings_repository, profiles, profile_repository, operations,
+        staging=staging, recover=not observer,
     )
-    migration_publication = MigrationPublication(
-        paths.root, migration_storage,
-        MigrationJournalRepository(paths.migrations / "publication-journals"),
-        block_recovery=operations.block_for_recovery,
-    )
-    migrations = MigrationService(
-        paths, settings, settings_repository, profiles, profile_repository,
-        migration_storage, publisher=migration_publication,
-        backup_index_repository=legacy_backup_repository,
-    )
-    if not observer:
-        migrations.inspect_recovery()
-    migration_coordinator = MigrationCoordinator(migrations, operations)
-    legacy_backups = LegacyBackupService(legacy_backup_repository)
-    legacy_backup_coordinator = LegacyBackupCoordinator(legacy_backups, operations)
     # A6: the ownership record lets a session adopt a server that another session of this root started;
     # only an owner writes it
     ownership = LaunchOwnership(
@@ -206,8 +187,8 @@ def build_composition(
         configuration_coordinator=configuration_coordinator,
         mission_configuration_coordinator=mission_configuration_coordinator,
         medical_feature_coordinator=medical_feature_coordinator,
-        migration_coordinator=migration_coordinator,
-        legacy_backup_coordinator=legacy_backup_coordinator,
+        migration_coordinator=migration.migration_coordinator,
+        legacy_backup_coordinator=migration.legacy_backup_coordinator,
         lifecycle_coordinator=lifecycle_coordinator,
         lifecycle=lifecycle,
         schedules=schedules,
@@ -245,10 +226,10 @@ def build_composition(
         mission_configuration_coordinator=mission_configuration_coordinator,
         medical_features=medical_features,
         medical_feature_coordinator=medical_feature_coordinator,
-        migrations=migrations,
-        migration_coordinator=migration_coordinator,
-        legacy_backups=legacy_backups,
-        legacy_backup_coordinator=legacy_backup_coordinator,
+        migrations=migration.migrations,
+        migration_coordinator=migration.migration_coordinator,
+        legacy_backups=migration.legacy_backups,
+        legacy_backup_coordinator=migration.legacy_backup_coordinator,
         lifecycle=lifecycle,
         lifecycle_coordinator=lifecycle_coordinator,
         schedules=schedules,
@@ -263,6 +244,7 @@ def build_composition(
         update_check_scheduler=update_check_scheduler,
         update_check_coordinator=update_check_coordinator,
         server_build=server_build,
+        mission_map=mission_map,
         coordinator=coordinator,
         bridge=bridge,
         host_bridge=bridge,

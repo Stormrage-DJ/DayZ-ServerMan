@@ -1,7 +1,6 @@
 """Explicit named application methods exposed to the browser runtime."""
 from __future__ import annotations
 import threading
-from collections.abc import Callable
 from typing import Any
 from ..bridge.facade import BridgeFacade
 from .mod_publication_api import ModPublicationHostMethods
@@ -13,12 +12,13 @@ from .profile_provisioning_api import ProfileProvisioningHostMethods
 from .schedule_api import ScheduleHostMethods
 from .settings_api import SettingsHostMethods
 from .backup_api import BackupHostMethods
+from .legacy_import_api import LegacyImportHostMethods
 from .update_status_api import UpdateStatusHostMethods
 
-class HostApi(MedicalFeatureHostMethods, SettingsHostMethods, ModInventoryHostMethods,
-              ModPublicationHostMethods, OperationalHostMethods, PreferenceHostMethods,
-              ProfileProvisioningHostMethods, ScheduleHostMethods, BackupHostMethods,
-              UpdateStatusHostMethods):
+class HostApi(MedicalFeatureHostMethods, SettingsHostMethods, LegacyImportHostMethods,
+              ModInventoryHostMethods, ModPublicationHostMethods, OperationalHostMethods,
+              PreferenceHostMethods, ProfileProvisioningHostMethods, ScheduleHostMethods,
+              BackupHostMethods, UpdateStatusHostMethods):
     """Translate approved browser calls into strict bridge requests."""
     def __init__(self, bridge: BridgeFacade) -> None:
         """Store the bridge and prepare request tracking and selection hooks."""
@@ -27,57 +27,9 @@ class HostApi(MedicalFeatureHostMethods, SettingsHostMethods, ModInventoryHostMe
         # Serialize request identifier allocation across browser callbacks
         self._lock = threading.Lock()
         # Native selection hooks stay unbound until the runtime wires them
-        self._legacy_folder_selector: Callable[[], str | None] | None = None
+        self._initialize_legacy_import_host()
         self._initialize_settings_host()
         self._backup_archive_selector = None
-
-    def _set_legacy_folder_selector(self, selector: Callable[[], str | None]) -> None:
-        """Register the native folder picker used by the legacy import flow."""
-        self._legacy_folder_selector = selector
-
-    def select_legacy_root(self) -> dict[str, Any]:
-        """Select a legacy root through the native folder picker."""
-        # Fail safely when the runtime registered no picker
-        if self._legacy_folder_selector is None:
-            return self._native_selection_failure("Folder selection is unavailable.")
-        try:
-            root = self._legacy_folder_selector()
-        except Exception:
-            return self._native_selection_failure("Folder selection failed safely.")
-        # Treat a cancelled selection as an unconfirmed choice
-        if root is None:
-            return {
-                "contract_version": 1, "request_id": "native-selection",
-                "success": True, "value": {"cancelled": True},
-            }
-        return self._invoke("select_legacy_root", {"root": root})
-
-    def preview_legacy_import(self, selection_id: object) -> dict[str, Any]:
-        """Preview a legacy import for the selected root."""
-        return self._invoke("preview_legacy_import", {"selection_id": selection_id})
-
-    def apply_legacy_import(
-        self, preview_id: object, preview_fingerprint: object, selected_items: object,
-    ) -> dict[str, Any]:
-        """Apply a confirmed legacy import preview."""
-        return self._invoke("apply_legacy_import", {
-            "preview_id": preview_id,
-            "preview_fingerprint": preview_fingerprint,
-            "selected_items": selected_items,
-        })
-
-    def list_legacy_backup_references(self) -> dict[str, Any]:
-        """List discovered legacy backup references."""
-        return self._invoke("list_legacy_backup_references", {})
-
-    def revalidate_legacy_backup_references(
-        self, expected_revision: object,
-    ) -> dict[str, Any]:
-        """Revalidate legacy backup references against an expected revision."""
-        return self._invoke(
-            "revalidate_legacy_backup_references",
-            {"expected_revision": expected_revision},
-        )
 
     def get_application_snapshot(self) -> dict[str, Any]:
         """Return the composed application snapshot for the shell."""
@@ -276,11 +228,3 @@ class HostApi(MedicalFeatureHostMethods, SettingsHostMethods, ModInventoryHostMe
                 "parameters": parameters,
             }
         )
-
-    @staticmethod
-    def _native_selection_failure(message: str) -> dict[str, Any]:
-        """Return a safe failure envelope for native selection problems."""
-        return {
-            "contract_version": 1, "request_id": "native-selection", "success": False,
-            "error": {"code": "PATH_INVALID", "message": message, "retryable": False},
-        }

@@ -6,8 +6,11 @@
 DayZ-ServerMan/
 |-- README.md
 |-- .github/workflows/tests.yml
+|-- requirements-dev.txt
 |-- docs/
 |-- img/
+|-- legal/
+|-- tools/
 |-- runnable/
 |   |-- DayZ-ServerMan.py
 |   |-- requirements.txt
@@ -26,6 +29,12 @@ DayZ-ServerMan/
 - `runnable/src/python/dayz_serverman/` contains the Python application code.
 - `tests/` contains repository-level automated tests.
 - `img/` and `runnable/img/` hold the README pictures.
+- `requirements-dev.txt` pins the development tools. The application does not
+  use them.
+- `legal/THIRD-PARTY-NOTICES.md` lists third-party components with their
+  licence evidence under `legal/third-party/`.
+- `tools/` holds development scripts that are not shipped, such as the
+  generator of the Windows ordinal case table.
 
 The application loads source files directly. It does not compile or bundle the
 frontend. The Python starter composes the local frontend assets into the
@@ -42,6 +51,15 @@ py runnable\DayZ-ServerMan.py
 The starter creates `runnable/.venv` and installs
 `runnable/requirements.txt`. The repository does not vendor Python packages in
 `runnable/src/python`.
+
+Install the development tools into the same environment once:
+
+```powershell
+.\runnable\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+```
+
+A new development tool needs a licence intake first. Add its licence file and
+an entry to `legal/THIRD-PARTY-NOTICES.md` in the same change.
 
 Generated runtime files are ignored by Git. This includes the local virtual
 environment, application configuration, profiles, logs, operation records,
@@ -74,6 +92,13 @@ Compile-check the Python source:
 ```powershell
 .\runnable\.venv\Scripts\python.exe -m compileall -q runnable\src\python
 ```
+
+`tests/test_undefined_names.py` runs pyflakes over the application source,
+the starter scripts, and the tests. It reports only names that a module uses
+but never defines or imports, for example a missing import. Such a name fails
+only when its line runs, so ordinary tests can miss it. A star import also
+fails the check, because it hides such names. Without pyflakes the
+test is skipped on a local machine and fails in CI.
 
 No test opens a network connection, runs SteamCMD, or starts or stops a DayZ
 server. The Steam transport, SteamCMD, the A2S socket, the clock, and the
@@ -115,9 +140,10 @@ for `msedge.exe`.
 `windows-latest` with Python 3.12. It uses `actions/checkout@v5` and
 `actions/setup-python@v6`. It has two jobs:
 
-- **Unit and static tests** (time limit 20 minutes) compile-checks the Python
-  source and runs every test module that does not start Edge. A failing test
-  fails the run.
+- **Unit and static tests** (time limit 20 minutes) installs
+  `requirements-dev.txt` and compile-checks the Python source. Then it runs
+  every test module that does not start Edge, including the undefined-name
+  check. A failing test fails the run.
 - **Edge-driven interface tests** (time limit 30 minutes) first records the
   Edge version as a notice, then runs the modules that start Edge. It is marked
   `continue-on-error`, because hosted runners can keep the temporary Edge
@@ -260,8 +286,10 @@ change.
    a test against its frontend literal. Text output shows no internal
    identifier; `tests/test_cli_input_names.py` checks the input names.
 5. Update `tests/test_cli_parity_matrix.py`. Every bridge method must be in a
-   command, or in `INTERNAL_METHODS` or `EXCLUDED_METHODS`
-   (`cli/registry.py`). The "Confirm" set must match the window.
+   command, in `INTERNAL_METHODS`, in `EXCLUSION_REASONS` with its reason, or
+   in `PENDING_TASK_10` as "pending task 10: <planned command>"
+   (`cli/registry.py`). A pending method is not an exclusion, and the test pins
+   each pending entry. The "Confirm" set must match the window.
 6. A read command may call only `OBSERVER_READ_METHODS`. A new read method
    needs a reader class. Exempt it from the reader side only with a test that
    proves it opens nothing inside a folder that an owner step renames or
@@ -428,19 +456,23 @@ add one `registerSection` call for its page module.
 Operator-facing text never shows an internal identifier, enum name, raw phase,
 or error code. Raw detail stays in **Logs → Manager diagnostics**.
 
-The frontend catalogue is frozen data in four modules:
+The frontend catalogue is frozen data in five modules:
 
 - `frontend/operation_labels.js`: operation names, phases, and result
   sentences;
 - `frontend/operation_messages.js`: error and conflict messages;
+- `frontend/operation_failures.js`: failed and cancelled operation results,
+  guard codes, and lifecycle and restart failure sentences;
 - `frontend/diagnostic_labels.js`: state labels, path and process diagnostics,
   and per-mod outcomes;
 - `frontend/host_sentences.js`: translation of identifiers inside host
   sentences, and the reasons of recovery blocks.
 
 The backend composes **Manager activity** with
-`application/activity_wording.py` and `application/log_activity.py`. Add every
-new operation kind, phase, error code, and block reason to both sides.
+`application/activity_wording.py` and `application/log_activity.py`.
+`application/host_sentence_wording.py` holds the role labels, the identifier
+check, and the block reasons and their texts. Add every new operation kind,
+phase, error code, and block reason to both sides.
 `tests/test_operator_wording.py`, `tests/test_activity_wording.py`, and
 `tests/test_block_reason_wording.py` (block reasons) fail when an entry is
 missing, when the two sides differ, or when a text holds a raw identifier.
@@ -449,8 +481,11 @@ missing, when the two sides differ, or when a text holds a raw identifier.
 
 Keep each first-party source file at 300 lines or fewer. Split a file before it
 grows past that limit. Tests enforce this for every frontend file, and
-`tests/test_cli_sizes.py` for every file in `cli/` and the Python wording
-modules. Some older Python modules are still above 300 lines. Such a file must
+`tests/test_cli_sizes.py` for every file in `cli/` and for
+`phase_wording.py` and `field_wording.py`. Other Python modules follow the
+rule by review.
+
+Some older Python modules are still above 300 lines. Such a file must
 not grow: split it before you add to it. A change that keeps its line count
 needs a real simplification, never removed comments or joined statements.
 
@@ -464,6 +499,8 @@ needs a real simplification, never removed comments or joined statements.
 5. Add catalogue entries on both sides for new operator-facing values.
 6. Add focused tests for changed behavior. Route every file read, replace,
    and rename through `shared_files`.
-7. Run the complete test suite before release-oriented work.
+7. Run the complete test suite before release-oriented work. Keep the
+   undefined-name check green. Add the missing import; do not add an exemption
+   or a star import.
 8. Update the operator guide and its pictures when visible behavior changes,
    also the command line section and its exit codes.

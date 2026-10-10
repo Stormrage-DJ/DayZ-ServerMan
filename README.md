@@ -53,6 +53,7 @@ mods also runs the mod check. See
 - [`docs/`](./docs/) — operations and development documentation
 - [`tests/`](./tests/) — automated tests
 - [`.github/workflows/`](./.github/workflows/) — the test run on GitHub Actions
+- [`legal/`](./legal/) — licence notices of third-party development tools
 
 See the [documentation index](./docs/README.md) for deeper guidance.
 
