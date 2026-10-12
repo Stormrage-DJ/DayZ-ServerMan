@@ -137,13 +137,17 @@ def validate_state(journal: MapJournal) -> None:
         # Records publish one by one after the commit point
         valid = flags == (True, False, None) and published and _in_order(records, ("PUBLISHED", "READY"))
     elif phase == "COMPENSATING":
-        split = next((index for index, state in enumerate(groups) if state == "COMPENSATED"), len(groups))
+        # READY groups stay untouched; reverse compensation ends the published prefix
+        touched = [state for state in groups if state != "READY"]
+        split = next((index for index, state in enumerate(touched) if state == "COMPENSATED"), len(touched))
         valid = (flags == (True, False, None) and unpublished
-                 and _in_order(groups[:split], PUBLICATION_ORDER)
-                 and all(state == "COMPENSATED" for state in groups[split:]))
+                 and _in_order(touched[:split], PUBLICATION_ORDER)
+                 and all(state == "COMPENSATED" for state in touched[split:])
+                 and _in_order(groups, ("PUBLISHED", "PUBLISHING", "COMPENSATED", "READY")))
     elif phase == "ROLLED_BACK":
-        expected = "COMPENSATED" if journal.publication_started else "READY"
-        valid = flags[1:] == (True, "ROLLED_BACK") and all(state == expected for state in groups) and unpublished
+        # A suffix of READY groups proves that the editor never touched those targets
+        expected = ("COMPENSATED", "READY") if journal.publication_started else ("READY",)
+        valid = flags[1:] == (True, "ROLLED_BACK") and _in_order(groups, expected) and unpublished
     else:
         valid = flags == (True, True, "COMMITTED") and published and all(state == "PUBLISHED" for state in records)
     if not valid:

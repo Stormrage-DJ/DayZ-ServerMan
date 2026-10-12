@@ -28,6 +28,8 @@ HIDDEN_EVENTS = frozenset((
 DETAIL_HINT = "Details are in Manager diagnostics."
 # Fixed sentence per event that needs no field
 EVENT_TEXTS: dict[str, str] = {
+    "map_editor.settle_failed": f"The map editor could not complete its close request. {DETAIL_HINT}",
+    "map_editor.destroy_timeout": f"The map editor did not close within the allowed time. {DETAIL_HINT}",
     "schedule.skipped": "The scheduled action was skipped because its server was not running under the manager.",
     "schedule.queue_failed": f"The scheduled action could not be started. {DETAIL_HINT}",
     "schedule.storage_unavailable": f"The daily schedule could not be read. {DETAIL_HINT}",
@@ -75,6 +77,7 @@ METHOD_TEXTS: dict[str, str] = {
     "get_lifecycle_schedule": "Reading the daily schedule", "save_lifecycle_schedule": "Saving the daily schedule",
     "start_server": "Starting the server", "stop_server": "Stopping the server", "restart_server": "Restarting the server",
     "get_server_status": "Reading the server state", "get_online_players": "Reading the players online",
+    "open_map_editor": "Opening the map editor",
     "get_application_snapshot": "Loading the workspace",
     "get_operation": "Reading an operation", "read_operation_events": "Reading operation events",
     "request_operation_cancellation": "Cancelling an operation", "request_shutdown": "Closing DayZ-ServerMan",

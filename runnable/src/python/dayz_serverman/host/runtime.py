@@ -12,6 +12,7 @@ from ..composition import ApplicationComposition
 from .api import HostApi
 from .assets import compose_shell_html, resolve_frontend_root
 from .shutdown import SafeCloseController
+from .editor_windows import EditorWindowRegistry
 from .webview2 import find_webview2_version, show_native_error
 
 
@@ -107,6 +108,11 @@ def launch_application(
     )
     if window is None:
         raise RuntimeError("pywebview did not create a window")
+    # Bind the owner guard before native callbacks can open or delete a profile
+    editors = EditorWindowRegistry(webview, window, composition.profiles,
+                                   composition.host_bridge, assets, composition.logger, hidden=hidden)
+    composition.editor_guard.bind(editors)
+    host_api._set_map_editor_opener(editors.open)
     # Resolve dialog constants for both pywebview API generations
     dialog_types = getattr(webview, "FileDialog", None)
     folder_dialog = (
@@ -153,14 +159,16 @@ def launch_application(
         return str(selected[0]) if isinstance(selected, (tuple, list)) else str(selected)
     host_api._set_backup_archive_selector(select_backup_archive)
     # Guard native closes so backend work can drain first
-    close_controller = SafeCloseController(window, composition.shutdown)
+    close_controller = SafeCloseController(window, composition.shutdown, editors=editors)
     closing_event = getattr(getattr(window, "events", None), "closing", None)
     if closing_event is not None:
         closing_event += close_controller.on_closing
     # Run the smoke probe instead of the user shell when requested
-    callback = (
-        lambda: _smoke_probe(window, close_controller, version, hold_seconds)
-    ) if smoke else None
+    def callback() -> None:
+        """Permit editor creation after start and run the optional owned smoke probe."""
+        editors.mark_started()
+        if smoke:
+            _smoke_probe(window, close_controller, version, hold_seconds)
     # Keep scheduled lifecycle actions running while the window lives
     composition.schedules.start()
     # Check Steam for mod updates and for the server build at start and on their intervals

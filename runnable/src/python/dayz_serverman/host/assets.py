@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..adapters.windows.shared_files import read_text_shared
+
 
 # Marker in the shell document replaced with the concatenated stylesheets
 STYLE_MARKER = "<!-- INLINE_STYLES -->"
@@ -64,6 +66,7 @@ def compose_shell_html(frontend_root: Path) -> str:
     configuration_catalog_script = (root / "configuration_catalog.js").read_text(encoding="utf-8")
     tweaks_catalog_script = (root / "tweaks_catalog.js").read_text(encoding="utf-8")
     tweaks_render_script = (root / "tweaks_render.js").read_text(encoding="utf-8")
+    tweaks_render_script += "\n" + read_text_shared(root / "map_editor_entry.js", encoding="utf-8")
     tweaks_script = (root / "tweaks.js").read_text(encoding="utf-8")
     tweaks_script += "\n" + (root / "tweaks_dialog.js").read_text(encoding="utf-8")
     configuration_edit_script = (root / "configuration_edit.js").read_text(encoding="utf-8")

@@ -56,6 +56,7 @@ class HostApiTests(unittest.TestCase):
                 "request_update_check",
                 "verify_mod_files",
                 "read_profile",
+                "open_map_editor",
                 "preview_profile_command",
                 "list_profile_missions",
                 "provision_profile",

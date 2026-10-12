@@ -12,6 +12,7 @@ from typing import Callable
 
 from .process_tree import safe_child_environment
 from .steamcmd import SteamCmdRunResult, supervise_owned
+from .steamcmd_custody import retaining_call
 from .steamcmd_paths import SteamCmdExecutable, SteamCmdPreflight
 
 # Steam application id of the DayZ dedicated server
@@ -35,6 +36,7 @@ class WindowsSteamCmdAppInfo:
     def __init__(self, preflight: SteamCmdPreflight | None = None) -> None:
         """Use the given preflight validator or a fresh default."""
         self._preflight = preflight or SteamCmdPreflight()
+        self.custody_holds = []
 
     def run_app_info(
         self, paths: SteamCmdExecutable, cancellation_requested: Callable[[], bool],
@@ -54,4 +56,4 @@ class WindowsSteamCmdAppInfo:
             shell=False, text=True, encoding="utf-8", errors="replace", close_fds=True,
             creationflags=flags, env=safe_child_environment(),
         )
-        return supervise_owned(process, cancellation_requested, lambda _evidence: None, [])
+        return retaining_call(self, supervise_owned, process, cancellation_requested, lambda _evidence: None, [])

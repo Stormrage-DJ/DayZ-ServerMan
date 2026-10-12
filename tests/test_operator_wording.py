@@ -11,11 +11,17 @@ except ModuleNotFoundError:
 
 
 from dayz_serverman.application.log_activity import METHOD_TEXTS, format_manager_record
+from dayz_serverman.application.mission_map_recovery import EDITOR_KIND
+from dayz_serverman.domain.mission_map_records import APPLIED_KINDS
 from dayz_serverman.bridge.contracts import ErrorCode
 
 PACKAGE = ROOT / "runnable" / "src" / "python" / "dayz_serverman"
 # Modules that hold the wording catalogue; raw identifiers are keys there
 CATALOGUE = ("operation_labels.js", "operation_messages.js", "diagnostic_labels.js", "host_sentences.js")
+# Accepted journal kinds precede their operation submit registrations in task 8.9
+JOURNAL_OPERATION_KINDS = {"apply": EDITOR_KIND,
+                           "restore_original": "RESTORE_MISSION_MAP_ORIGINAL",
+                           "restore_previous": "RESTORE_MISSION_MAP_PREVIOUS"}
 # Phases that the lane itself sets
 WAITING_PHASES = ("accepted", "queued", "running")
 TERMINAL_PHASES = ("complete", "cancelled", "failed", "shutdown")
@@ -83,16 +89,21 @@ class WordingCatalogueTests(unittest.TestCase):
         cls.labels = labels
 
     def test_every_backend_kind_has_the_four_texts(self) -> None:
-        """Each submitted kind has a name and three result sentences."""
-        kinds = backend_kinds()
-        self.assertEqual(len(kinds), 22, sorted(kinds))
+        """Each submitted or accepted journal kind has exactly four catalogue texts."""
+        submitted = backend_kinds()
+        self.assertEqual(len(submitted), 22, sorted(submitted))
+        self.assertEqual(APPLIED_KINDS, {"apply", "restore_original", "restore_previous"})
+        self.assertEqual(set(JOURNAL_OPERATION_KINDS), APPLIED_KINDS)
+        journal_kinds = set(JOURNAL_OPERATION_KINDS.values())
+        self.assertEqual(journal_kinds, {"APPLY_MISSION_MAP", "RESTORE_MISSION_MAP_ORIGINAL", "RESTORE_MISSION_MAP_PREVIOUS"})
+        kinds = submitted | journal_kinds
         for kind in sorted(kinds):
             self.assertIn(kind, self.kinds, f"operation kind without a catalogue entry: {kind}")
             texts = re.findall(r'"([^"]+)"', self.kinds[kind])
             self.assertEqual(len(texts), 4, kind)
             for text in texts:
                 self.assertIsNone(UPPER_IDENTIFIER.search(text), text)
-        self.assertEqual(sorted(self.kinds), sorted(kinds), "catalogue kinds that the backend does not submit")
+        self.assertEqual(set(self.kinds), kinds, "catalogue kinds differ from submitted and accepted journal kinds")
 
     def test_every_backend_phase_has_an_entry(self) -> None:
         """Each checkpoint phase name is the phase part of at least one catalogue row."""

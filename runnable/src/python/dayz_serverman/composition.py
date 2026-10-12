@@ -91,7 +91,10 @@ def build_composition(
     # An interrupted mod publication is recovered by the workshop composition, inside the write guard
     publication_journals = PublicationJournalRepository(paths.publication_journals)
     # Block mutations after an interrupted SteamCMD update; an observer only reports pending recoveries
-    if not observer and inspect_workshop_recovery(paths.operations, WindowsChildProbe())["blocked"]:
+    child_probe = WindowsChildProbe()
+    # Keep unavailable borrowed-handle custody at the composition reporting boundary.
+    operations.child_probe_custody = child_probe
+    if not observer and inspect_workshop_recovery(paths.operations, child_probe)["blocked"]:
         operations.block_for_recovery(
             "Mutations are blocked by an interrupted SteamCMD update with an unknown result."
         )
@@ -112,8 +115,6 @@ def build_composition(
     mission_configuration_coordinator = MissionConfigurationCoordinator(mission_configuration, operations)
     medical_features = MedicalFeatureService(profiles, settings, paths.tweak_baselines)
     medical_feature_coordinator = MedicalFeatureCoordinator(medical_features, operations)
-    # Mission map plans: one association lock set for plan saves and the later commit step (T2.3-F9)
-    mission_map = build_mission_map(paths, profiles, settings, staging=staging)
     # Build migration services with legacy backup indexing; only an owner inspects an interrupted publication
     migration = build_migration(
         paths, settings, settings_repository, profiles, profile_repository, operations,
@@ -131,6 +132,9 @@ def build_composition(
     )
     # Recoveries that write into the DayZ root take the mutex and need a proven stopped server
     installation_guard = InstallationGuard(lifecycle, mutex)
+    # Editor recovery finishes before handlers, using the plan service's shared association lock set
+    mission_map = build_mission_map(paths, profiles, settings, staging=staging, guard=installation_guard,
+                                    folder_writer=folder_writer, operations=operations)
     profile_provisioning_coordinator = build_profile_provisioning(
         profiles, settings, operations, paths.operations, installation_guard, recover=not observer,
     )
@@ -171,7 +175,8 @@ def build_composition(
         update_check, workshop.mod_inventory, server_build.service,
     )
     # Assemble every coordinator's handlers into the bridge facade
-    coordinator = ApplicationCoordinator(settings, operations, shutdown, build_settings_repair(paths, settings, restore_journals))
+    coordinator = ApplicationCoordinator(settings, operations, shutdown,
+                                         build_settings_repair(paths, settings, restore_journals, editor_recovery=mission_map.recovery))
     logs = LogQueryService(paths.logs / "manager.jsonl", paths.logs / "dayz-server.log")
     # "Update & restart" stops the running server, so it must name the running profile (D11)
     mod_restart_handlers = {name: for_running_profile(lifecycle, handler)
@@ -187,6 +192,7 @@ def build_composition(
         configuration_coordinator=configuration_coordinator,
         mission_configuration_coordinator=mission_configuration_coordinator,
         medical_feature_coordinator=medical_feature_coordinator,
+        mission_map_coordinator=mission_map.coordinator,
         migration_coordinator=migration.migration_coordinator,
         legacy_backup_coordinator=migration.legacy_backup_coordinator,
         lifecycle_coordinator=lifecycle_coordinator,
@@ -215,6 +221,7 @@ def build_composition(
         profile_repository=profile_repository,
         profiles=profiles,
         profile_coordinator=workshop.profile_coordinator,
+        editor_guard=workshop.editor_guard,
         preferences=preferences,
         backups=backups,
         backup_coordinator=backup_coordinator,

@@ -150,6 +150,9 @@ def _reader(paths: PortablePaths) -> Any:
 def pending_recoveries(paths: PortablePaths) -> tuple[str, ...]:
     """Return the kinds of interrupted work that an owner would recover, by read-only checks (4.5)."""
     pending: list[str] = []
+    # Editor recovery stays owner-only; observers report even an unreadable active journal
+    if _has_json(paths.operations / "mission-map-journals"):
+        pending.append("APPLY_MISSION_MAP")
     # Backup restore: any restore journal
     if RestoreJournalRepository(paths.operations / "restore-journals", create_root=False).records():
         pending.append("RESTORE_BACKUP")

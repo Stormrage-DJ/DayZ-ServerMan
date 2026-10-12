@@ -42,12 +42,16 @@ class JournaledPublication:
         journal.phase, journal.publication_started = "PUBLISHING", True
         repository.save(journal)
         for index, group in enumerate(journal.groups):
+            # Keep the editor group READY until its old state is proven
+            if self._policy.recheck_old_state:
+                self._fault_hook("BEFORE_PUBLISH", index)
+                if not group_old_matches(group):
+                    raise self._policy.error_type("TARGET_CHANGED", self._policy.changed_message)
             group.state = "PUBLISHING"
             repository.save(journal)
-            self._fault_hook("BEFORE_PUBLISH", index)
-            # A target that changed after staging is never replaced; the raise leads to compensation
-            if self._policy.recheck_old_state and not group_old_matches(group):
-                raise self._policy.error_type("TARGET_CHANGED", self._policy.changed_message)
+            # Preserve the restore fault boundary after its durable state change
+            if not self._policy.recheck_old_state:
+                self._fault_hook("BEFORE_PUBLISH", index)
             if new_exists(group):
                 self._move_in(group, index)
             else:
@@ -89,6 +93,9 @@ class JournaledPublication:
             repository.save(journal)
             # Walk groups in reverse so later publications are undone first
             for reverse_index, group in enumerate(reversed(journal.groups)):
+                # A READY editor group was never touched, including an external edit
+                if self._policy.ready_groups_untouched and group.state == "READY":
+                    continue
                 target = Path(group.target_path)
                 self._fault_hook("BEFORE_COMPENSATE", reverse_index)
                 # An untouched target needs no compensation
@@ -133,8 +140,8 @@ class JournaledPublication:
         """Resolve interrupted journals and report whether any still block.
 
         paths_safe re-derives every path of one journal and returns False when
-        any of them no longer maps to its expected location. Without hooks, a
-        COMMITTING journal cannot occur, and resolved journals are only retired.
+        any of them no longer maps to its expected location. A COMMITTING journal
+        without hooks blocks without a write.
         """
         diagnostics: list[dict[str, object]] = []
         blocked = False
@@ -150,8 +157,8 @@ class JournaledPublication:
                 diagnostics.append(_recovery_diagnostic(self._policy.invalid_message))
                 continue
             # Past the commit point only a roll-forward is allowed, and only from a proven new state
-            if hooks is not None and journal.phase == "COMMITTING":
-                safe = self._roll_forward(journal, repository, recovery_root, hooks)
+            if journal.phase == "COMMITTING":
+                safe = hooks is not None and self._roll_forward(journal, repository, recovery_root, hooks)
             # A committed journal only needs its targets proven and archived
             elif journal.committed and journal.phase == "COMMITTED":
                 safe = all(in_new_state(group) for group in journal.groups)
@@ -161,23 +168,26 @@ class JournaledPublication:
                     safe = self._retire(repository, journal)
             # A rolled-back journal only needs its prior state proven and archived
             elif journal.resolved and journal.phase == "ROLLED_BACK":
-                safe = old_state_matches(journal.groups)
+                safe = self._old_state_proven(journal)
                 if safe and hooks is not None:
                     safe = self._settle(journal, recovery_root, hooks.rollback)
                 if safe:
                     safe = self._retire(repository, journal)
             # An unpublished journal that still holds the prior state is closed out
-            elif not journal.publication_started and old_state_matches(journal.groups):
+            elif not journal.publication_started and (
+                old_state_matches(journal.groups)
+                or (self._policy.ready_groups_untouched and all(group.state == "READY" for group in journal.groups))
+            ):
                 journal.phase, journal.resolved, journal.result = "ROLLED_BACK", True, "ROLLED_BACK"
                 repository.save(journal)
                 self.cleanup(journal, recovery_root)
-                safe = (hooks is None or hooks.rollback(journal)) and self._retire(repository, journal)
+                safe = self._run_hook(journal, None if hooks is None else hooks.rollback) and self._retire(repository, journal)
             else:
                 # Otherwise compensate the interrupted publication in place
                 safe = self.compensate(journal, repository)
                 if safe:
                     self.cleanup(journal, recovery_root)
-                    safe = (hooks is None or hooks.rollback(journal)) and self._retire(repository, journal)
+                    safe = self._run_hook(journal, None if hooks is None else hooks.rollback) and self._retire(repository, journal)
             if not safe:
                 blocked = True
                 diagnostics.append(_recovery_diagnostic(self._policy.unresolved_message))
@@ -188,7 +198,7 @@ class JournaledPublication:
         hooks: RecoveryHooks[JournalT],
     ) -> bool:
         """Finish a COMMITTING journal when every group target is new; otherwise block without a write."""
-        if not all(in_new_state(group) for group in journal.groups) or not hooks.roll_forward(journal):
+        if not all(in_new_state(group) for group in journal.groups) or not self._run_hook(journal, hooks.roll_forward):
             return False
         # Every record is published now, so the journal reaches its terminal state
         journal.phase, journal.resolved, journal.result = "COMMITTED", True, "COMMITTED"
@@ -204,8 +214,20 @@ class JournaledPublication:
         try:
             self.cleanup(journal, recovery_root)
             return hook is None or hook(journal)
-        except (OSError, self._policy.error_type, RestorePathError):
+        except (OSError, self._policy.error_type, self._policy.journal_error_type, RestorePathError):
             return False
+
+    def _run_hook(self, journal: JournalT, hook: Callable[[JournalT], bool] | None) -> bool:
+        """Run a record hook; a storage or journal failure blocks recovery."""
+        try:
+            return hook is None or hook(journal)
+        except (OSError, self._policy.error_type, self._policy.journal_error_type):
+            return False
+
+    def _old_state_proven(self, journal: JournalT) -> bool:
+        """Prove old targets, excluding READY groups that the editor never touched."""
+        return all(group_old_matches(group) for group in journal.groups
+                   if not (self._policy.ready_groups_untouched and group.state == "READY"))
 
     def cleanup(self, journal: PublicationJournal, recovery_root: Path) -> None:
         """Remove staging, recovery, and ancestor debris left by a publication."""

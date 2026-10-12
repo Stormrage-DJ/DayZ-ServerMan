@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runnable" / "src" 
 from folder_lock_fixtures import tree_hashes  # noqa: E402
 from profile_fixtures import create_profile_paths, profile_payload  # noqa: E402
 from test_mission_configuration_workflow import economy_xml  # noqa: E402
+from test_mission_map_plan import circle, stored_plan  # noqa: E402
 from dayz_serverman.composition import build_composition  # noqa: E402
 from dayz_serverman.domain.models import SettingsInput  # noqa: E402
 
@@ -76,6 +77,11 @@ def populate(base: Path) -> tuple[Path, Path]:
             runtime_profile=rf"serverman\{PROFILE_ID}\profile"), "expected_revision": None})
         assert saved.state.value == "SUCCEEDED", saved
         assert dispatch(composition, "save_selected_profile", {"profile_id": PROFILE_ID})["success"]
+        # A real saved editor plan makes the observer read exercise populated storage.
+        plan = stored_plan([circle("observer-loot")])
+        plan["association"] = composition.mission_map.plans.active_association(PROFILE_ID)
+        plan["background"] = None
+        composition.mission_map.plans.save(PROFILE_ID, plan, None)
         backup = run_lane(composition, "create_backup", {
             "profile_id": PROFILE_ID, "expected_profile_revision": 0,
             "expected_settings_revision": composition.settings.load().revision})
@@ -97,6 +103,7 @@ def read_calls(dayz: Path, archive: Path | None, legacy: Path) -> list[tuple[str
         ("load_configuration", {**profile, "target": "server"}),
         ("load_configuration", {**profile, "target": "gameplay"}),
         ("load_mission_configuration", {**profile, "target": "economy"}), ("load_medical_features", profile),
+        ("load_mission_map", profile),
         ("read_log", {"source": "manager", "maximum_lines": 50}),
         ("read_log", {"source": "manager_diagnostics", "maximum_lines": 50}),
         ("read_log", {"source": "server", "maximum_lines": 50}),

@@ -82,6 +82,8 @@ class PublicationPolicy:
     recheck_old_state: bool = False
     # Message of error_type("TARGET_CHANGED", message) when that check finds a changed target
     changed_message: str = ""
+    # A READY editor group has not moved; compensation preserves its current bytes
+    ready_groups_untouched: bool = False
 
 
 @dataclass(frozen=True)

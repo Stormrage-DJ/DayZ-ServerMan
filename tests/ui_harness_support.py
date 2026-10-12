@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "runnable" / "src" / "python"))
 
 from dayz_serverman.host.assets import compose_shell_html  # noqa: E402
+from dayz_serverman.host.editor_assets import compose_editor_html  # noqa: E402
 
 
 FRONTEND = ROOT / "runnable" / "src" / "frontend"
@@ -158,3 +159,45 @@ def run_page_harness(harness: str, *, window_size: str, budget: int, timeout: in
     if not found:
         return f"PENDING (exit {completed.returncode}): {completed.stderr[-400:]}"
     return html.unescape(found[-1])
+
+
+def run_editor_harness(body: str, *, window_size: str = "1100,800", budget: int = 4000) -> str:
+    """Run a fake profile-bound editor API in the independent composed document."""
+    harness = (
+        '<pre id="harness-result" hidden>PENDING</pre><script>\n(async () => {\n'
+        'const result = document.getElementById("harness-result");\n'
+        'const check = (value, message) => { if (!value) throw new Error(message); };\n'
+        'const wait = () => new Promise((resolve) => setTimeout(resolve, 20));\n'
+        'const editorCalls = [];\n'
+        'const editorValue = {profile: {profile_id: "alpha", display_name: "Alpha"},\n'
+        'mission_name: "dayzOffline.pripyat", state: "MISSING", revision: null,\n'
+        'plan: {terrain: {terrain_id: "pripyat"}}, read_only: false, read_only_reason: null,\n'
+        'capabilities: {terrain_id: "pripyat"}, draft_changes: false};\n'
+        'let editorAnswer = {success: true, value: editorValue};\n'
+        'window.pywebview = {api: {\n'
+        'load_plan: async () => { editorCalls.push("load"); return editorAnswer; },\n'
+        'save_plan: async (...args) => { editorCalls.push(["save", ...args]);\n'
+        'return {success: true, value: {revision: 1}}; },\n'
+        'toggle_full_screen: async () => ({success: true, value: {}})}};\n'
+        'try {\n' + body + '\nresult.textContent = "PASS";\n'
+        '} catch (error) { result.textContent = `FAIL: ${error.stack || error.message}`; }\n'
+        '})();\n</script>'
+    )
+    # Keep browser profiles isolated from both the real application and other harnesses
+    with tempfile.TemporaryDirectory(
+            prefix="serverman_editor_harness_", ignore_cleanup_errors=True) as temporary:
+        root = Path(temporary)
+        page = root / "editor.html"
+        page.write_text(compose_editor_html(FRONTEND).replace(
+            "</body>", harness + "</body>"), encoding="utf-8")
+        completed = subprocess.run(
+            [str(EDGE), "--headless=new", "--disable-gpu", "--no-first-run",
+             f"--window-size={window_size}", f"--virtual-time-budget={budget}",
+             f"--user-data-dir={root / 'edge-data'}", "--dump-dom", page.as_uri()],
+            capture_output=True, text=True, timeout=40, check=False, encoding="utf-8",
+            errors="replace",
+        )
+    found = RESULT_PATTERN.findall(completed.stdout)
+    return html.unescape(found[-1]) if found else (
+        f"NO RESULT (exit {completed.returncode}): {completed.stderr[-400:]}"
+    )

@@ -203,6 +203,22 @@ class ActivityFormatterTests(unittest.TestCase):
         self.assertEqual(wording.error_text("AUTHENTICATION_FAILED", "", kind="AUTHENTICATE_STEAMCMD"),
                          wording.ERROR_TEXTS["AUTHENTICATION_FAILED"])
 
+    def test_editor_close_warnings_keep_private_details_in_diagnostics(self) -> None:
+        """Show both close warnings without their identifiers or native details."""
+        cases = {
+            "map_editor.settle_failed": "The map editor could not complete its close request.",
+            "map_editor.destroy_timeout": "The map editor did not close within the allowed time.",
+        }
+        fields = {"profile_id": "PRIVATE_PROFILE", "cause": "acknowledgement_timeout",
+                  "native_detail": "PRIVATE_NATIVE_DETAIL"}
+        for event, sentence in cases.items():
+            with self.subTest(event=event):
+                text = activity(event, fields, "WARNING")
+                self.assertEqual(text, sentence + " Details are in Manager diagnostics.")
+                self.assertFalse(wording.leaks_identifier(text))
+                for private in (event, *fields.values()):
+                    self.assertNotIn(private, text)
+
     def test_every_backend_event_and_frontend_method_is_known(self) -> None:
         """Each event that the backend logs is hidden or worded; each bridge method of the pages has a subject."""
         events: set[str] = set()

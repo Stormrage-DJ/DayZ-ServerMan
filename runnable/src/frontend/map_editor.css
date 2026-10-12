@@ -1,0 +1,64 @@
+/* Independent editor frame; shared tokens keep its surfaces and focus consistent. */
+html, body { height: 100%; overflow: hidden; }
+#map-editor {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--primitive-space-3);
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  margin: 0;
+  padding: var(--primitive-space-4);
+}
+
+/* Identity stays outside the collapsible controls and bounds long safe names. */
+#map-identity { display: flex; align-items: center; gap: var(--primitive-space-6); min-width: 0; }
+#map-title { flex: none; margin: 0; font-size: 20px; }
+#map-identity-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--primitive-space-4); flex: 1; margin: 0; min-width: 0; }
+#map-identity-fields dt, #map-status-area dt { color: var(--color-text-muted); font-size: 12px; margin-bottom: var(--primitive-space-1); }
+#map-identity-fields dd { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+#map-identity-fields dd, #map-status-area dd { margin: 0; }
+
+/* The map receives the remaining space; only the open panel content can scroll. */
+#map-workspace { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--primitive-space-3); min-height: 0; }
+#map-viewport { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: var(--color-canvas); border: 1px solid var(--color-border); border-radius: var(--radius-control); }
+#map-viewport { line-height: 1.5; touch-action: none; }
+.map-terrain-bounds { fill: var(--color-surface-raised); stroke: var(--color-border); stroke-width: 2px; }
+.map-grid-lines { fill: none; stroke: var(--color-border); stroke-width: 1px; }
+.map-grid-labels { fill: var(--color-text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+#map-vector { pointer-events: none; }
+#map-viewport.map-pan-ready { cursor: grab; }
+#map-viewport.map-panning { cursor: grabbing; }
+#map-raster, #map-vector { position: absolute; inset: 0; width: 100%; height: 100%; }
+#map-view-label { position: absolute; inset: auto auto var(--primitive-space-6) var(--primitive-space-6); color: var(--color-text-muted); font-size: 12px; }
+#map-viewport, #map-toolbar, #map-list { user-select: none; }
+#map-list ol { list-style: none; margin: 0; padding: 0; }
+.map-layer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.25rem; padding: 0.5rem; border: 1px solid var(--color-border); }
+.map-layer > button:first-child, .map-layer > p { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.map-layer-selected { border-color: var(--color-action); }
+#map-panel { width: 280px; min-height: 0; overflow: hidden; border: 1px solid var(--panel-border); border-radius: var(--radius-control); background: var(--panel-background); }
+#map-panel-toggle { padding: var(--primitive-space-3); cursor: pointer; background: var(--control-background); color: var(--control-text); min-height: var(--control-height); }
+#map-panel-toggle:focus-visible { outline: var(--focus-outline); outline-offset: -3px; }
+#map-panel-content { height: calc(100% - var(--control-height)); overflow: auto; padding: var(--primitive-space-4); }
+#map-panel-content section + section { margin-top: var(--primitive-space-5); padding-top: var(--primitive-space-4); border-top: 1px solid var(--color-border); }
+#map-panel-content h2 { margin: 0; font-size: 14px; }
+#map-panel-content p { margin: var(--primitive-space-2) 0 0; font-size: 13px; }
+#map-toolbar { display: grid; gap: var(--primitive-space-2); margin-top: var(--primitive-space-2); }
+#map-panel:not([open]) { width: 44px; }
+#map-panel:not([open]) summary { writing-mode: vertical-rl; height: 100%; }
+
+/* Status remains selectable, with stable numeric slots and no live coordinates. */
+#map-status-area { padding-top: var(--primitive-space-3); border-top: 1px solid var(--color-border); }
+#map-status-area dl { display: grid; grid-template-columns: 34ch 12ch minmax(0, 1fr) 12ch; gap: var(--primitive-space-3); margin: 0; }
+#map-status-area dl > div { min-width: 0; }
+#map-status-area dd { overflow-wrap: anywhere; }
+#map-coordinates { font-variant-numeric: tabular-nums; width: 34ch; max-width: 100%; white-space: pre-line; min-height: 3em; }
+#map-plan-status { max-height: 5.5rem; overflow: auto; }
+#map-announcement { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* Manual bounds and review remain usable without a working map transform. */
+#map-bounds-fields { display: grid; gap: var(--primitive-space-2); min-width: 0; margin: var(--primitive-space-3) 0 0; }
+#map-bounds-fields input { width: 100%; min-width: 0; }
+#map-bounds-detection { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+#map-bounds-error { overflow-wrap: anywhere; }
+#map-dialog-title + p { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 45vh; overflow: auto; }

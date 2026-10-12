@@ -15,7 +15,7 @@ OBSERVER_READ_METHODS = frozenset((
     "get_application_snapshot", "get_server_status", "get_online_players", "get_lifecycle_schedule",
     "get_update_status", "list_mod_inventory", "list_backups", "list_backup_catalog", "list_profiles",
     "read_profile", "preview_profile_command", "list_profile_missions", "get_ui_preferences",
-    "load_configuration", "load_mission_configuration", "load_medical_features", "read_log",
+    "load_configuration", "load_mission_configuration", "load_medical_features", "load_mission_map", "read_log",
     "validate_settings_path_selection", "select_legacy_root", "preview_legacy_import", "inspect_backup_archive",
 ))
 # Observer reads that open nothing inside a folder that an owner step renames or removes (3.4, QF-2)
@@ -35,7 +35,7 @@ OWNER_ONLY_METHODS = frozenset((
     "revalidate_legacy_backup_references", "start_server", "stop_server", "restart_server",
     "save_lifecycle_schedule", "save_steam_settings", "authenticate_steamcmd", "update_workshop_items",
     "preview_mod_publication", "publish_mods_and_keys", "apply_mods_and_restart", "verify_mod_files",
-    "request_update_check",
+    "request_update_check", "save_mission_map_plan",
 ))
 
 
@@ -64,6 +64,7 @@ def build_handler_table(
     configuration_coordinator: HandlerSource,
     mission_configuration_coordinator: HandlerSource,
     medical_feature_coordinator: HandlerSource,
+    mission_map_coordinator: HandlerSource,
     migration_coordinator: HandlerSource,
     legacy_backup_coordinator: HandlerSource,
     lifecycle_coordinator: HandlerSource,
@@ -90,6 +91,7 @@ def build_handler_table(
         **configuration_coordinator.handlers(),
         **mission_configuration_coordinator.handlers(),
         **medical_feature_coordinator.handlers(),
+        **mission_map_coordinator.handlers(),
         **migration_coordinator.handlers(),
         **legacy_backup_coordinator.handlers(),
         **lifecycle_coordinator.handlers(),

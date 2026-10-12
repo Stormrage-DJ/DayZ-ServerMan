@@ -50,8 +50,10 @@ async function loadTweaks() {
   const profileId = window.ServerManProfileContext.selectedId();
   const generation = ++tweaksState.generation;
   const workspace = window.ServerManWorkspace.capture("tweaks");
+  const entryLoad = window.ServerManMapEditorEntry.beginLoad(profileId, workspace);
   // Show the loading state while each target is read.
   window.ServerManUi.renderLoading("Loading tweaks", "Reading each managed DayZ configuration target.");
+  window.ServerManTweaksRender.entry(document.getElementById("content-region").firstElementChild);
   try {
     // Load the mission, standard, and medical targets together.
     const results = await Promise.all(loadTargets.map(async (target) => {
@@ -60,6 +62,7 @@ async function loadTweaks() {
     }));
     const medical = await window.pywebview.api.load_medical_features(profileId);
     if (generation !== tweaksState.generation || !window.ServerManWorkspace.isActive(workspace)) return;
+    window.ServerManMapEditorEntry.loaded(entryLoad, results.find(([target]) => target === "economy")[1]);
     // Collect per-target failures for partial rendering.
     tweaksState.errors = new Map(results.filter(([, result]) => !result.success)
       .map(([target, result]) => [target, window.ServerManOperationMessages.bridgeError(
@@ -83,10 +86,12 @@ async function loadTweaks() {
     tweaksState.reviewed.clear(); tweaksState.pending.clear(); setTweakDirty(); renderTweaks();
   } catch (error) {
     if (generation !== tweaksState.generation || !window.ServerManWorkspace.isActive(workspace)) return;
+    window.ServerManMapEditorEntry.loaded(entryLoad, { error: { message: error instanceof Error ? error.message : "" } });
     // Report unexpected load failures through the host error panel.
     window.ServerManUi.renderHostError({ error: {
       message: error instanceof Error ? error.message : "Tweaks could not be loaded.",
     } });
+    window.ServerManTweaksRender.entry(document.getElementById("content-region").firstElementChild);
   }
 }
 

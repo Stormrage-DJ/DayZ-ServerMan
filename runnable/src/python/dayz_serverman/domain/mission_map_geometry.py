@@ -109,14 +109,20 @@ def _on_segment(a: Point, b: Point, p: Point) -> bool:
 
 def _segments_meet(a: Point, b: Point, c: Point, d: Point) -> bool:
     """Return whether the closed segments a–b and c–d share at least one point."""
+    # Strictly disjoint closed bounds cannot meet; equality retains endpoint touches
+    if (max(a[0], b[0]) < min(c[0], d[0]) or max(c[0], d[0]) < min(a[0], b[0])
+            or max(a[1], b[1]) < min(c[1], d[1]) or max(c[1], d[1]) < min(a[1], b[1])):
+        return False
     first, second = _orientation(a, b, c), _orientation(a, b, d)
+    if first == second and first != 0:
+        return False
     third, fourth = _orientation(c, d, a), _orientation(c, d, b)
     # A proper crossing has each segment's ends on both sides of the other
     if first * second < 0 and third * fourth < 0:
         return True
     # Otherwise they meet only where an end lies on the other segment
-    return (_on_segment(a, b, c) or _on_segment(a, b, d)
-            or _on_segment(c, d, a) or _on_segment(c, d, b))
+    return (first == 0 and _on_segment(a, b, c) or second == 0 and _on_segment(a, b, d)
+            or third == 0 and _on_segment(c, d, a) or fourth == 0 and _on_segment(c, d, b))
 
 
 def polygon_area(vertices: Sequence[Point]) -> Fraction:
@@ -141,6 +147,7 @@ def polygon_problem(vertices: Sequence[Point]) -> str | None:
             if math.hypot(other_x - x, other_z - z) < MIN_VERTEX_SPACING:
                 return f"two polygon vertices are closer than {MIN_VERTEX_SPACING} m"
     edges = [(vertices[index], vertices[(index + 1) % count]) for index in range(count)]
+    z_ranges = [(min(a[1], b[1]), max(a[1], b[1])) for a, b in edges]
     # Neighbouring edges share only their common vertex: no fold back along the same line
     for index in range(count):
         before, corner, after = vertices[index - 1], vertices[index], vertices[(index + 1) % count]
@@ -160,6 +167,8 @@ def polygon_problem(vertices: Sequence[Point]) -> str | None:
             if min(c[0], d[0]) > right:
                 break
             if (first - second) % count in (1, count - 1):
+                continue
+            if z_ranges[first][1] < z_ranges[second][0] or z_ranges[second][1] < z_ranges[first][0]:
                 continue
             if _segments_meet(a, b, c, d):
                 return "the polygon outline crosses or touches itself"

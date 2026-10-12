@@ -14,11 +14,12 @@ from .settings_api import SettingsHostMethods
 from .backup_api import BackupHostMethods
 from .legacy_import_api import LegacyImportHostMethods
 from .update_status_api import UpdateStatusHostMethods
+from .map_editor_api import MapEditorHostMethods
 
 class HostApi(MedicalFeatureHostMethods, SettingsHostMethods, LegacyImportHostMethods,
               ModInventoryHostMethods, ModPublicationHostMethods, OperationalHostMethods,
               PreferenceHostMethods, ProfileProvisioningHostMethods, ScheduleHostMethods,
-              BackupHostMethods, UpdateStatusHostMethods):
+              BackupHostMethods, UpdateStatusHostMethods, MapEditorHostMethods):
     """Translate approved browser calls into strict bridge requests."""
     def __init__(self, bridge: BridgeFacade) -> None:
         """Store the bridge and prepare request tracking and selection hooks."""
@@ -30,6 +31,7 @@ class HostApi(MedicalFeatureHostMethods, SettingsHostMethods, LegacyImportHostMe
         self._initialize_legacy_import_host()
         self._initialize_settings_host()
         self._backup_archive_selector = None
+        self._map_editor_opener = None
 
     def get_application_snapshot(self) -> dict[str, Any]:
         """Return the composed application snapshot for the shell."""

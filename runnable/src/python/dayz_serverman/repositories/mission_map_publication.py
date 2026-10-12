@@ -43,6 +43,7 @@ EDITOR_POLICY = PublicationPolicy(
     # D4 step 5: each group's old state is checked again just before its replace
     recheck_old_state=True,
     changed_message="A mission file changed after it was checked, so the publication stopped.",
+    ready_groups_untouched=True,
 )
 # D4 steps 6 and 8: the phase that follows each phase the caller may advance from
 NEXT_PHASE = {"PUBLISHING": "PUBLISHED", "PUBLISHED": "COMMITTING", "COMMITTING": "COMMITTED"}

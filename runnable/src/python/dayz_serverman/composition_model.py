@@ -7,6 +7,7 @@ from enum import Enum
 
 from .adapters.windows.diagnostics import WindowsPathDiagnostics
 from .application.coordinator import ApplicationCoordinator
+from .application.editor_guard import DelegatingEditorGuard
 from .application.backup_coordinator import BackupCoordinator
 from .application.backups import BackupService
 from .application.configuration import ConfigurationService
@@ -72,6 +73,7 @@ class ApplicationComposition:
     profile_repository: ProfileRepository
     profiles: ProfileService
     profile_coordinator: ProfileCoordinator
+    editor_guard: DelegatingEditorGuard
     preferences: PreferenceCoordinator
     backups: BackupService
     backup_coordinator: BackupCoordinator

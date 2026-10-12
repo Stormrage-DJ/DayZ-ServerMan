@@ -38,6 +38,9 @@ BLOCKED_TEXT = "Changes are blocked until recovery is resolved."
 
 # Per operation kind: name while active, success, failure, and cancellation sentence
 KIND_TEXTS: dict[str, tuple[str, str, str, str]] = {
+    "APPLY_MISSION_MAP": ("Applying mission map", "Mission map applied.", "The mission map could not be applied.", "Mission map apply cancelled."),
+    "RESTORE_MISSION_MAP_ORIGINAL": ("Restoring original mission map", "Original mission map restored.", "The original mission map could not be restored.", "Original mission map restore cancelled."),
+    "RESTORE_MISSION_MAP_PREVIOUS": ("Restoring previous mission map", "Previous mission map restored.", "The previous mission map could not be restored.", "Previous mission map restore cancelled."),
     "START_SERVER": ("Starting server", "Server started.", "The server could not be started.", "Server start cancelled."),
     "STOP_SERVER": ("Stopping server", "Server stopped.", "The server could not be stopped.", "Backup cancelled. The server stays stopped."),
     "RESTART_SERVER": ("Restarting server", "Server restarted.", "The server could not be restarted.", "Restart cancelled during the backup. The server stays stopped."),

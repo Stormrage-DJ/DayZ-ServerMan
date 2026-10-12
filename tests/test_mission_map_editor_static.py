@@ -1,0 +1,132 @@
+"""Pin editor security, asset order, isolated globals and accessible document regions."""
+
+from __future__ import annotations
+
+import re
+import shutil
+import tempfile
+import unittest
+from pathlib import Path
+
+from dayz_serverman.host.assets import SCRIPT_MARKER, STYLE_MARKER, compose_shell_html
+from dayz_serverman.host.editor_assets import EDITOR_SCRIPTS, EDITOR_STYLES, compose_editor_html
+
+
+FRONTEND = Path(__file__).resolve().parents[1] / "runnable" / "src" / "frontend"
+
+
+class MissionMapEditorStaticTests(unittest.TestCase):
+    """Keep the editor offline and independent of the shell's lifecycle globals."""
+
+    def test_csp_markers_regions_and_selectable_status(self) -> None:
+        """Editor CSP is identical to the shell and landmarks expose the map layers."""
+        document = (FRONTEND / "editor.html").read_text(encoding="utf-8")
+        shell = (FRONTEND / "index.html").read_text(encoding="utf-8")
+        policy = r'<meta http-equiv="Content-Security-Policy" content="([^"]+)"'
+        self.assertEqual(re.findall(policy, document), re.findall(policy, shell))
+        self.assertEqual(document.count(STYLE_MARKER), 1)
+        self.assertEqual(document.count(SCRIPT_MARKER), 1)
+        for region in ("map-identity", "map-toolbar", "map-viewport", "map-panel", "map-status"):
+            self.assertIn(f'id="{region}"', document)
+        self.assertIn('tabindex="0" aria-label="Map"', document)
+        self.assertIn('<canvas id="map-raster"', document)
+        self.assertIn('<svg id="map-vector"', document)
+        self.assertIn('<details id="map-panel"', document)
+        self.assertIn('id="map-announcement" role="status" aria-live="polite"', document)
+        self.assertNotRegex(document, r'id="map-status"[^>]*aria-live')
+        for slot in ("map-coordinates", "map-tool-status", "map-draft-changes", "map-fit", "map-coordinate-mode"):
+            self.assertIn(f'id="{slot}"', document)
+        self.assertNotRegex(document, r'\sstyle\s*=')
+        styles = (FRONTEND / "map_editor.css").read_text(encoding="utf-8")
+        self.assertIn("#map-viewport, #map-toolbar, #map-list { user-select: none; }", styles)
+        self.assertNotIn("#map-status { user-select", styles)
+
+    def test_assets_are_exactly_the_implemented_offline_inventory(self) -> None:
+        """Asset order follows the accepted contract without future module placeholders."""
+        self.assertEqual(EDITOR_STYLES, ("tokens.css", "controls.css", "styles.css", "map_editor.css"))
+        self.assertEqual(EDITOR_SCRIPTS, ("operation_labels.js", "diagnostic_labels.js",
+                         "host_sentences.js", "operation_messages.js", "map_editor_dom.js",
+                         "map_editor_wording.js", "map_editor_bridge.js", "map_editor_layout.js",
+                         "map_editor_coordinates.js", "map_editor_viewport.js", "map_editor_viewport_render.js",
+                         "map_editor_viewport_input.js", "map_editor_viewport_ui.js", "map_editor_bounds_plan.js",
+                         "map_editor_bounds_save.js", "map_editor_bounds.js", "map_editor_model.js", "map_editor_history.js",
+                         "map_editor_layers.js", "map_editor_keys.js", "map_editor_app.js"))
+        composed = compose_editor_html(FRONTEND)
+        self.assertNotIn(STYLE_MARKER, composed)
+        self.assertNotIn(SCRIPT_MARKER, composed)
+        self.assertNotIn('src="', composed)
+        scripts = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in EDITOR_SCRIPTS)
+        self.assertIn(scripts, composed)
+        for excluded in ("ServerManUi", "ServerManSections", "ServerManTransitions",
+                         "request_shutdown", "fetch(", "new Worker(", "blob:"):
+            self.assertNotIn(excluded, composed)
+        self.assertTrue("ServerManUi" in compose_shell_html(FRONTEND))
+
+    def test_editor_globals_and_top_level_names_are_unique_and_bounded(self) -> None:
+        """Each editor file owns its accepted global and uses the map prefix."""
+        expected = {"map_editor_dom.js": "ServerManMapDom", "map_editor_wording.js": "ServerManMapWording",
+                    "map_editor_bridge.js": "ServerManMapBridge", "map_editor_layout.js": "ServerManMapLayout",
+                    "map_editor_coordinates.js": "ServerManMapCoordinates", "map_editor_viewport.js": "ServerManMapViewport",
+                    "map_editor_viewport_render.js": "ServerManMapViewportRender",
+                    "map_editor_viewport_input.js": "ServerManMapViewportInput", "map_editor_viewport_ui.js": "ServerManMapViewportUi",
+                    "map_editor_bounds_plan.js": "ServerManMapBoundsPlan",
+                    "map_editor_bounds_save.js": "ServerManMapBoundsSave", "map_editor_bounds.js": "ServerManMapBounds",
+                    "map_editor_model.js": "ServerManMapModel", "map_editor_history.js": "ServerManMapHistory",
+                    "map_editor_layers.js": "ServerManMapLayers", "map_editor_keys.js": "ServerManMapKeys",
+                    "map_editor_app.js": "ServerManMapEditor"}
+        names = []
+        for filename, global_name in expected.items():
+            script = (FRONTEND / filename).read_text(encoding="utf-8")
+            self.assertEqual(re.findall(r"window\.(ServerMan\w+)\s*=", script), [global_name])
+            self.assertLess(len(script.splitlines()), 300)
+            self.assertLessEqual(len(script.splitlines()), 200)
+            top = re.findall(r"^(?:const|let|function|async function)\s+(\w+)", script, re.MULTILINE)
+            self.assertTrue(all(name.startswith("map") for name in top))
+            names.extend(top)
+        self.assertEqual(len(names), len(set(names)))
+
+    def test_layout_keeps_display_state_local_and_uses_text_only(self) -> None:
+        """Layout cannot store plan data, invent editing calls, or render backend markup."""
+        script = (FRONTEND / "map_editor_layout.js").read_text(encoding="utf-8")
+        for forbidden in ("innerHTML", "outerHTML", "insertAdjacentHTML", "localStorage",
+                          "sessionStorage", "pywebview", ".save(", "fetch("):
+            self.assertNotIn(forbidden, script)
+        self.assertIn('element.textContent = text', script)
+        self.assertIn('font-variant-numeric: tabular-nums', (FRONTEND / "map_editor.css").read_text(encoding="utf-8"))
+
+    def test_missing_or_duplicate_markers_refuse_composition(self) -> None:
+        """Ambiguous document markers fail before asset composition."""
+        original = (FRONTEND / "editor.html").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory(prefix="editor_assets_") as temporary:
+            root = Path(temporary)
+            for marker in (STYLE_MARKER, SCRIPT_MARKER):
+                for replacement in ("", marker + marker):
+                    with self.subTest(marker=marker, replacement=replacement):
+                        (root / "editor.html").write_text(original.replace(marker, replacement), encoding="utf-8")
+                        with self.assertRaises(ValueError):
+                            compose_editor_html(root)
+
+    def test_missing_asset_refuses_offline_composition(self) -> None:
+        """A broken offline bundle cannot silently lose an editor module."""
+        with tempfile.TemporaryDirectory(prefix="editor_missing_asset_") as temporary:
+            root = Path(temporary)
+            for name in ("editor.html", *EDITOR_STYLES, *EDITOR_SCRIPTS):
+                shutil.copyfile(FRONTEND / name, root / name)
+            (root / "map_editor_bridge.js").unlink()
+            with self.assertRaises(FileNotFoundError):
+                compose_editor_html(root)
+
+    def test_composition_preserves_utf8_and_text_newlines(self) -> None:
+        """Shared reads preserve exact offline output for UTF-8 assets with CRLF."""
+        with tempfile.TemporaryDirectory(prefix="editor_text_encoding_") as temporary:
+            root = Path(temporary)
+            document = "<html>é" + STYLE_MARKER + SCRIPT_MARKER + "\r\n</html>"
+            (root / "editor.html").write_bytes(document.encode("utf-8"))
+            for name in (*EDITOR_STYLES, *EDITOR_SCRIPTS):
+                (root / name).write_bytes((name + " é\r\nnext\r\n").encode("utf-8"))
+            # The oracle composes ordinary decoded text independently of the shared adapter
+            styles = "\n".join(name + " é\nnext\n" for name in EDITOR_STYLES)
+            scripts = "\n".join(name + " é\nnext\n" for name in EDITOR_SCRIPTS)
+            expected = document.replace("\r\n", "\n").replace(STYLE_MARKER, f"<style>\n{styles}\n</style>")
+            expected = expected.replace(SCRIPT_MARKER, f"<script>\n{scripts}\n</script>")
+            self.assertEqual(compose_editor_html(root), expected)

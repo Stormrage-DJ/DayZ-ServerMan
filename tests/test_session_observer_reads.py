@@ -68,6 +68,11 @@ class ObserverReadTests(unittest.TestCase):
         self.assertEqual(answers["get_ui_preferences"]["selected_profile_id"], PROFILE_ID)
         self.assertEqual(len(answers["list_backups"]["backups"]), 1)
         self.assertIn("digest", answers["load_mission_configuration"])
+        editor = answers["load_mission_map"]
+        self.assertEqual((editor["state"], editor["revision"]), ("VALID", 0))
+        self.assertEqual(editor["plan"]["association"]["profile_id"], PROFILE_ID)
+        self.assertEqual(editor["plan"]["objects"][0]["id"], "observer-loot")
+        self.assertTrue(editor["draft_changes"])
         self.assertTrue(answers["inspect_backup_archive"]["backup_id"].startswith("selected-"))
         self.assertNotIn("INTERNAL_FAILURE", {value for value in answers.values() if isinstance(value, str)})
 

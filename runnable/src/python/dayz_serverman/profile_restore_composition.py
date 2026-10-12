@@ -28,6 +28,6 @@ def build_profile_restore(paths, profiles, settings, backups, lifecycle, mutex, 
     return ProfileRestoreCoordinator(service, operations)
 
 
-def build_settings_repair(paths, settings, restore_journals) -> SettingsRepair:
+def build_settings_repair(paths, settings, restore_journals, *, editor_recovery=None) -> SettingsRepair:
     """Build the QF-069 repair save; it only reads the restore journals to match the chosen folder."""
-    return SettingsRepair(settings, restore_journals, paths.backup_recovery, _storage(paths))
+    return SettingsRepair(settings, restore_journals, paths.backup_recovery, _storage(paths), editor_recovery=editor_recovery)

@@ -20,6 +20,7 @@ from .profiles import ProfileService
 from .schedules import ScheduleCoordinator
 from .settings import SettingsService
 from .profile_restore_ownership import owns_complete_mission
+from .editor_guard import EditorGuardPort, NoEditorGuard
 
 
 class ProfileDeletionError(RuntimeError):
@@ -34,6 +35,7 @@ class ProfileDeletionService:
         preferences: PreferenceCoordinator, schedules: ScheduleCoordinator,
         applied_mod_state: AppliedModStateRepository,
         folder_writer: ServerFolderWriterPort | None = None,
+        editor_guard: EditorGuardPort | None = None,
     ) -> None:
         self._profiles = profiles
         self._settings = settings
@@ -42,6 +44,7 @@ class ProfileDeletionService:
         self._schedules = schedules
         self._applied_mod_state = applied_mod_state
         self._folder_writer = folder_writer
+        self._editor_guard = editor_guard if editor_guard is not None else NoEditorGuard()
 
     def delete(
         self, profile_id: str, expected_revision: int, *, before_change: Callable[[], None] | None = None,
@@ -50,6 +53,15 @@ class ProfileDeletionService:
 
         `before_change` runs right before the first change, inside the writer side (6.5 marker).
         """
+        # Reserve deletion before any lane preflight and retain it through the last change
+        with self._editor_guard.hold_for_deletion(profile_id):
+            return self._delete_guarded(profile_id, expected_revision, before_change=before_change)
+
+    def _delete_guarded(
+        self, profile_id: str, expected_revision: int, *, before_change: Callable[[], None] | None,
+    ) -> dict[str, object]:
+        """Run the existing ownership checks while new editors are excluded."""
+        # Refuse stale profile revisions and a server that still owns live files
         profile = self._profiles.read(profile_id)
         if profile.revision != expected_revision:
             raise RevisionConflict(
@@ -57,12 +69,14 @@ class ProfileDeletionService:
             )
         if self._lifecycle.status().state != ServerState.STOPPED:
             raise ProfileDeletionError("Stop the DayZ server before deleting a profile.")
+        # Resolve only the configured root and the profile's generated ownership
         settings = self._settings.load()
         if settings.dayz_root is None:
             raise ProfileDeletionError("The DayZ root is not configured.")
         root = Path(settings.dayz_root).resolve(strict=True)
         generated = (root / "serverman" / profile_id).resolve(strict=False)
         self._require_generated_ownership(root, generated, profile)
+        # Preserve mission storage shared with another profile
         mission_root, mission = self._mission(root, profile)
         instance_id = self._instance_id(root, profile)
         storage = mission / f"storage_{instance_id}"
@@ -70,6 +84,7 @@ class ProfileDeletionService:
             root, mission_root, instance_id, profile_id,
         )
         mission_is_exclusive = owns_complete_mission(root, mission_root, mission, profile_id, self._profiles.list())
+        # Verify every removal stays within its proved owner and contains no unsafe links
         self._preflight_directory(generated, root)
         if storage_is_exclusive:
             self._preflight_directory(storage, mission)

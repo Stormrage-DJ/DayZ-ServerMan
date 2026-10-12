@@ -34,8 +34,9 @@ class OldStateRecheckTests(PublicationFixture):
         self.assertEqual(str(caught.exception), EDITOR_POLICY.changed_message)
         self.assertEqual((self.mission / "areaflags.map").read_bytes(), b"external edit")
         self.assertEqual(Path(journal.groups[0].staging_path).read_bytes(), NEW["areaflags.map"])
-        # The target now matches neither state, so compensation refuses and recovery must block
-        self.assertFalse(self.publication().compensate(journal))
+        # READY proves the engine never touched this target; rollback preserves the edit
+        self.assertEqual(journal.groups[0].state, "READY")
+        self.assertTrue(self.publication().compensate(journal))
 
     def test_backup_restore_keeps_the_recheck_off(self) -> None:
         """The restore policy has no recheck and keeps its verification text byte for byte."""

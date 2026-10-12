@@ -117,6 +117,8 @@ class BridgeContractTests(unittest.TestCase):
                 "apply_mission_configuration",
                 "convert_starter_loadout",
                 "load_medical_features",
+                "load_mission_map",
+                "save_mission_map_plan",
                 "preview_medical_feature",
                 "apply_medical_feature",
                 "select_legacy_root",

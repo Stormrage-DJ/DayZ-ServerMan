@@ -103,7 +103,10 @@ EXCLUDED_METHODS = frozenset(EXCLUSION_REASONS)
 PENDING_PREFIX = "pending task 10: "
 # Bridge methods whose command task 10 of the mission map plan builds, each with
 # "pending task 10: <planned command>". A pending method is not an exclusion. Task 10 empties this table.
-PENDING_TASK_10: MappingProxyType[str, str] = MappingProxyType({})
+PENDING_TASK_10: MappingProxyType[str, str] = MappingProxyType({
+    "load_mission_map": "pending task 10: map show",
+    "save_mission_map_plan": "pending task 10: map save",
+})
 # Command words that are not leaf commands of the table
 HELP_WORD = "help"
 

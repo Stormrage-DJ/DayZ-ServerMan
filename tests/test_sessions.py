@@ -60,10 +60,10 @@ class MethodClassTests(unittest.TestCase):
         self.root = Path(temporary.name) / "Manager"
 
     def test_classes_cover_the_owner_allowlist_and_the_observer_facade_holds_only_reads(self) -> None:
-        """Disjoint classes whose union is the owner allowlist; 21 reads; exemptions are reads."""
+        """Disjoint classes whose union is the owner allowlist; 22 reads; exemptions are reads."""
         owner = build_composition(self.root)
         self.addCleanup(owner.operations.shutdown, 2)
-        self.assertEqual(len(OBSERVER_READ_METHODS), 21)
+        self.assertEqual(len(OBSERVER_READ_METHODS), 22)
         self.assertEqual(OBSERVER_READ_METHODS & OWNER_ONLY_METHODS, frozenset())
         self.assertEqual(OBSERVER_READ_METHODS | OWNER_ONLY_METHODS, owner.bridge.allowed_methods)
         self.assertLessEqual(READER_EXEMPT_METHODS, OBSERVER_READ_METHODS)

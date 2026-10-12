@@ -13,6 +13,7 @@ from typing import Callable
 
 from ...domain.workshop import AuthenticationMode, RequiredWorkshopItem
 from .process_tree import ChildEvidence, OwnedProcessTree, safe_child_environment
+from .steamcmd_custody import owner, fallback, escalate, retaining_call, with_custody
 # Preflight and path types live in their own module; they are re-exported for existing importers
 from .steamcmd_paths import (  # noqa: F401
     APP_ID,
@@ -49,6 +50,10 @@ class SteamCmdRunResult:
     termination_confirmed: bool
     process_id: int
     child_evidence: ChildEvidence | None = None
+    @property
+    def failure_custody(self):
+        """Expose nonpersisted fault custody without changing dataclass fields."""
+        return getattr(self, "_failure_custody", None)
 
 
 def build_update_argv(
@@ -80,32 +85,61 @@ def supervise_owned(
     # Adopt the child into an owned job for identity and tree control
     try:
         tree = OwnedProcessTree(process)
-    except OSError:
+    except OSError as error:
         # Without ownership the child is terminated rather than trusted
-        process.terminate()
+        confirmed, custody = fallback(process, error)
         try:
-            process.wait(timeout=5.0)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            try:
-                process.wait(timeout=5.0)
-            except subprocess.TimeoutExpired:
-                pass
-        return SteamCmdRunResult(None, (), cancellation_requested(),
-                                 process.poll() is not None, process.pid)
+            cancelled = cancellation_requested()
+        except BaseException as notification_error:
+            custody.fault(notification_error)
+            notification_error.custody = custody
+            raise
+        return with_custody(SteamCmdRunResult(None, (), cancelled, confirmed, process.pid), custody)
+    custody = owner(tree)
+    custody.anchors["legacy-process"] = process
+    try:
+        return _supervise_adopted(tree, process, cancellation_requested, on_launched, retained)
+    except BaseException as error:
+        # Preserve the public original exception and its surviving exact custodian.
+        custody.fault(error)
+        custody.attempt("fault-owned-escalation", lambda: _escalate(tree))
+        reader = custody.anchors.get("steamcmd-reader")
+        if reader is not None and reader.ident is not None:
+            custody.attempt("fault-reader-join", lambda: reader.join(READER_GRACE_SECONDS))
+        error.custody = custody
+        raise
+
+
+def _supervise_adopted(tree, process, cancellation_requested, on_launched, retained):
+    """Poll the retained tree and reader while preserving legacy outcome contracts."""
     # Publish the first evidence snapshot to the caller
-    last_evidence = tree.evidence
+    custody = owner(tree)
+    try:
+        last_evidence = tree.evidence
+    except OSError as error:
+        custody.fault(error)
+        _escalate(tree)
+        return with_custody(SteamCmdRunResult(None, tuple(retained), False, False, process.pid), custody)
     on_launched(last_evidence)
     messages: queue.Queue[str | None] = queue.Queue()
     if process.stdout is not None:
         def read_output() -> None:
             """Forward console lines into the queue until the stream ends."""
-            assert process.stdout is not None
-            for line in process.stdout:
-                messages.put(line[:LINE_LIMIT])
-            # A None sentinel marks end-of-stream for the supervisor loop
-            messages.put(None)
-        threading.Thread(target=read_output, daemon=True).start()
+            try:
+                assert process.stdout is not None
+                for line in process.stdout:
+                    messages.put(line[:LINE_LIMIT])
+            except BaseException as error:
+                custody.fault(error)
+            finally:
+                # A fault remains latched even after the reader ends.
+                try:
+                    messages.put(None)
+                except BaseException as error:
+                    custody.fault(error)
+        reader = threading.Thread(target=read_output, daemon=True)
+        custody.anchors["steamcmd-reader"] = reader
+        reader.start()
     else:
         # No pipe means output capture is already complete
         messages.put(None)
@@ -124,11 +158,19 @@ def supervise_owned(
                 output_size += len(message.encode("utf-8", errors="replace"))
         except queue.Empty:
             pass
+        if custody.primary is not None:
+            # A reader/notification fault cannot leave the supervisor waiting for a lost sentinel.
+            custody.attempt("reader-fault-containment", lambda: _escalate(tree))
+            if process.stdout is not None and reader.ident is not None:
+                custody.attempt("reader-fault-join", lambda: reader.join(READER_GRACE_SECONDS))
+            return with_custody(SteamCmdRunResult(None, tuple(retained), cancelled, False,
+                                                 process.pid, last_evidence), custody)
         try:
             current_evidence = tree.evidence
-        except OSError:
-            return SteamCmdRunResult(None, tuple(retained), cancelled, False,
-                                     process.pid, last_evidence)
+        except OSError as error:
+            custody.fault(error)
+            return with_custody(SteamCmdRunResult(None, tuple(retained), cancelled, False,
+                                                 process.pid, last_evidence), custody)
         # Evidence changes as job members appear; report each change
         if current_evidence != last_evidence:
             last_evidence = current_evidence
@@ -137,18 +179,34 @@ def supervise_owned(
         if cancellation_requested() and not cancelled:
             cancelled = True
             if not _escalate(tree):
-                return SteamCmdRunResult(None, tuple(retained), True, False,
-                                         process.pid, last_evidence)
+                return with_custody(SteamCmdRunResult(None, tuple(retained), True, False,
+                                                     process.pid, last_evidence), custody)
             reader_deadline = time.monotonic() + READER_GRACE_SECONDS
         # A pipe that stays open after the whole tree is gone has an unknown holder: not proven
         if reader_deadline is not None and not reader_done and time.monotonic() >= reader_deadline:
-            return SteamCmdRunResult(None, tuple(retained), True, False,
-                                     process.pid, last_evidence)
+            return with_custody(SteamCmdRunResult(None, tuple(retained), True, False,
+                                                 process.pid, last_evidence), custody)
     cancelled = cancelled or cancellation_requested()
+    if process.stdout is not None:
+        reader.join(READER_GRACE_SECONDS)
+        if reader.is_alive() or custody.primary is not None:
+            return with_custody(SteamCmdRunResult(None, tuple(retained), cancelled, False,
+                                                 process.pid, last_evidence), custody)
     # One last absence check settles the termination verdict
-    termination_confirmed = tree.wait_absent(5.0)
-    return SteamCmdRunResult(process.returncode, tuple(retained), cancelled,
-                             termination_confirmed, process.pid, last_evidence)
+    try:
+        termination_confirmed = tree.wait_absent(5.0)
+    except OSError as error:
+        custody.fault(error)
+        termination_confirmed = False
+    if termination_confirmed and hasattr(tree, "close_job"):
+        try:
+            tree.close_job()
+        except OSError as error:
+            custody.fault(error)
+            termination_confirmed = False
+    result = SteamCmdRunResult(process.returncode, tuple(retained), cancelled,
+                               termination_confirmed, process.pid, last_evidence)
+    return with_custody(result, custody if custody.primary is not None or custody.secondary else None)
 
 
 def _escalate(tree: OwnedProcessTree) -> bool:
@@ -156,15 +214,7 @@ def _escalate(tree: OwnedProcessTree) -> bool:
 
     A step is skipped once the tree is absent, so an exited tree costs no waiting.
     """
-    tree.request_close()
-    if tree.wait_absent(15.0):
-        return True
-    tree.terminate_tree()
-    if tree.wait_absent(5.0):
-        return True
-    tree.kill_tree()
-    # A bounded wait decides whether the tree is really gone
-    return tree.wait_absent(5.0)
+    return escalate(tree)
 
 
 class WindowsSteamCmdAdapter:
@@ -175,6 +225,7 @@ class WindowsSteamCmdAdapter:
         """Use the given preflight validator or a fresh default, and the console of the sign-in."""
         self._preflight = preflight or SteamCmdPreflight()
         self._console = console
+        self.custody_holds = []
 
     # The run methods and existing tests reach the shared supervisor through this name
     _wait_owned = staticmethod(supervise_owned)
@@ -191,15 +242,15 @@ class WindowsSteamCmdAdapter:
         before_launch()
         # Revalidate paths immediately before the process starts
         self._preflight.revalidate(paths)
-        # A separate console lets the user answer Steam's prompts; a CLI command shares its own
-        # console instead, and the new process group keeps the console's Ctrl+C away from SteamCMD
+        # A separate console lets the user answer Steam's prompts. A CLI command shares its console.
+        # The new process group keeps the console's Ctrl+C away from SteamCMD.
         flags = sign_in_flags(self._console)
         process = subprocess.Popen(
             [str(paths.executable), "+login", account_name, "+quit"],
             cwd=str(paths.root), shell=False, close_fds=True,
             creationflags=flags, env=safe_child_environment(),
         )
-        return self._wait_owned(process, cancellation_requested, on_launched, [])
+        return retaining_call(self, self._wait_owned, process, cancellation_requested, on_launched, [])
 
     def run_update(
         self, paths: SteamCmdPaths, argv: tuple[str, ...],
@@ -220,7 +271,7 @@ class WindowsSteamCmdAdapter:
             text=True, encoding="utf-8", errors="replace", close_fds=True,
             creationflags=flags, env=safe_child_environment(),
         )
-        return self._wait_owned(process, cancellation_requested, on_launched, [])
+        return retaining_call(self, self._wait_owned, process, cancellation_requested, on_launched, [])
 
 
 def sign_in_flags(console: SteamCmdConsole) -> int:

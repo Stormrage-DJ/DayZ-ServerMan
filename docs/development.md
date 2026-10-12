@@ -195,10 +195,14 @@ network access, validation, and persistent mutations.
 
 Bridge changes are additive: new methods and new response fields only.
 `CONTRACT_VERSION` stays 1, and every handler requires the exact request field
-set. The command line did not change this rule. It added no bridge method, and
-the 60-method pins in `tests/test_readonly_host_api.py` and
-`tests/test_bridge_contracts.py` stay unchanged. The JSON output of the
-command line has its own `cli_version`, which also grows only by new fields.
+set. The command line did not change this rule.
+
+The mission-map editor adds
+`load_mission_map` (observer read) and `save_mission_map_plan` (owner method).
+`tests/test_bridge_contracts.py` pins 62 bridge methods. The main-window host
+API remains pinned separately in `tests/test_readonly_host_api.py`. The two
+editor methods have pending task 10 entries for `map show` and `map save`.
+The command line has its own `cli_version`, which also grows only by new fields.
 
 ### Command line and sessions
 

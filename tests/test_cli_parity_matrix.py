@@ -64,7 +64,10 @@ CONFIRMING = {
 }
 # Bridge methods that wait for a command of task 10 of the mission map plan. Each leaf that adds an editor
 # method adds its entry here (3.7, 4.2, 5.3, 8.9), and task 10 removes them all.
-EXPECTED_PENDING_TASK_10: dict[str, str] = {}
+EXPECTED_PENDING_TASK_10: dict[str, str] = {
+    "load_mission_map": "pending task 10: map show",
+    "save_mission_map_plan": "pending task 10: map save",
+}
 
 
 class ParityMatrixTests(unittest.TestCase):
@@ -82,8 +85,8 @@ class ParityMatrixTests(unittest.TestCase):
                 composition.shutdown.wait_for_close(5)
 
     def test_every_owner_method_is_used_internal_excluded_or_pending(self) -> None:
-        """Each of the 60 methods is in a command, or internal, excluded or pending (53 + 4 + 3 + pending)."""
-        self.assertEqual(len(self.allowlist), 60)
+        """Each of the 62 methods is in a command, or internal, excluded or pending (53 + 4 + 3 + pending)."""
+        self.assertEqual(len(self.allowlist), 62)
         used = set().union(*(command.bridge_methods for command in COMMANDS))
         pending = set(PENDING_TASK_10)
         self.assertEqual(self.allowlist - used - INTERNAL_METHODS - EXCLUDED_METHODS - pending, set())

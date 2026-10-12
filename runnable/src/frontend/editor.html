@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <!-- Independent editor document, composed from bundled offline assets -->
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'">
+  <title>Map editor - DayZ-ServerMan</title>
+  <!-- INLINE_STYLES -->
+</head>
+<body data-map-ready="false">
+  <main id="map-editor" aria-busy="true">
+    <header id="map-identity" aria-label="Map identity">
+      <h1 id="map-title">Map editor</h1>
+      <dl id="map-identity-fields">
+        <div><dt>Profile</dt><dd id="map-profile">Loading</dd></div>
+        <div><dt>Mission</dt><dd id="map-mission">Loading</dd></div>
+        <div><dt>Terrain</dt><dd id="map-terrain">Loading</dd></div>
+      </dl>
+    </header>
+    <div id="map-workspace">
+      <section id="map-viewport" tabindex="0" aria-label="Map">
+        <canvas id="map-raster" aria-hidden="true"></canvas>
+        <svg id="map-vector" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
+        <span id="map-view-label">Plain terrain view</span>
+      </section>
+      <details id="map-panel" open>
+        <summary id="map-panel-toggle" aria-controls="map-panel-content" aria-expanded="true">Map controls</summary>
+        <div id="map-panel-content">
+          <section aria-labelledby="map-tools-title">
+            <h2 id="map-tools-title">Tools</h2>
+            <div id="map-toolbar" role="toolbar" aria-label="Map tools">
+              <button id="map-fit" type="button" class="button" disabled>Fit map</button>
+              <label id="map-coordinate-mode-label" for="map-coordinate-mode">Coordinates</label>
+              <select id="map-coordinate-mode" disabled>
+                <option value="Grid">Grid</option><option value="Native">Native</option><option value="Both" selected>Both</option>
+              </select>
+              <p id="map-navigation-help">Wheel to zoom; middle drag or Space+drag to pan.</p>
+              <p id="map-tools-empty">Drawing tools are not available yet.</p>
+            </div>
+          </section>
+          <section aria-labelledby="map-bounds-title">
+            <h2 id="map-bounds-title">Terrain bounds</h2>
+            <p id="map-bounds-confirmation">Bounds not confirmed</p>
+            <p id="map-bounds-detection">Detected bounds are not available.</p>
+            <button id="map-bounds-detected" type="button" class="button" disabled>Confirm detected bounds</button>
+            <p id="map-bounds-guidance">Use the actual terrain bounds in native metres.</p>
+            <fieldset id="map-bounds-fields" disabled>
+              <legend>Manual bounds (metres)</legend>
+              <label for="map-bounds-x_min">X minimum</label>
+              <input id="map-bounds-x_min" type="text" inputmode="decimal" autocomplete="off" aria-describedby="map-bounds-guidance map-bounds-error">
+              <label for="map-bounds-z_min">Z minimum</label>
+              <input id="map-bounds-z_min" type="text" inputmode="decimal" autocomplete="off" aria-describedby="map-bounds-guidance map-bounds-error">
+              <label for="map-bounds-width">Width</label>
+              <input id="map-bounds-width" type="text" inputmode="decimal" autocomplete="off" aria-describedby="map-bounds-guidance map-bounds-error">
+              <label for="map-bounds-height">Height</label>
+              <input id="map-bounds-height" type="text" inputmode="decimal" autocomplete="off" aria-describedby="map-bounds-guidance map-bounds-error">
+              <button id="map-bounds-save" type="button" class="button">Confirm and save manual bounds</button>
+            </fieldset>
+            <p id="map-bounds-error" role="alert"></p>
+          </section>
+          <section aria-labelledby="map-properties-title">
+            <h2 id="map-properties-title">Properties</h2>
+            <p id="map-properties-empty">Property editing is not available yet.</p>
+          </section>
+          <section aria-labelledby="map-layers-title">
+            <h2 id="map-layers-title">Layers</h2>
+            <div id="map-history-controls" role="group" aria-label="Draft history">
+              <button id="map-undo" type="button" class="button" aria-keyshortcuts="Control+Z" disabled>Undo</button>
+              <button id="map-redo" type="button" class="button" aria-keyshortcuts="Control+Y Control+Shift+Z" disabled>Redo</button>
+            </div>
+            <div id="map-list"><p id="map-layers-empty">Map layers are not available yet.</p></div>
+          </section>
+        </div>
+      </details>
+    </div>
+    <footer id="map-status-area" aria-label="Map status">
+      <dl>
+        <div><dt>Coordinates</dt><dd id="map-coordinates">Not available</dd></div>
+        <div><dt>Current tool</dt><dd id="map-tool-status">No tool active</dd></div>
+        <div id="map-plan-status"><dt>Plan state</dt><dd id="map-status">Loading map plan</dd></div>
+        <div><dt>Draft changes</dt><dd id="map-draft-changes">Not available</dd></div>
+      </dl>
+    </footer>
+    <div id="map-announcement" role="status" aria-live="polite" aria-atomic="true"></div>
+  </main>
+  <!-- INLINE_SCRIPT -->
+</body>
+</html>

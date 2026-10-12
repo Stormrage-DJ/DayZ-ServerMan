@@ -183,9 +183,16 @@ function tabButton(label, active, action) {
   button.addEventListener("click", action); return button;
 }
 
+// Mount the map editor action before the tabs or the loading message.
+function renderMapEditorEntry(root) {
+  const slot = tweakNode("div", "panel-heading"); slot.id = "map-editor-entry";
+  root.prepend(slot); window.ServerManMapEditorEntry.render(slot);
+}
+
 // Render the full tweaks workspace for the current selection.
 function renderWorkspace(api) {
   const root = tweakNode("section", "panel tweaks-panel"); root.id = "tweaks-workspace";
+  renderMapEditorEntry(root);
   // Build the primary area tabs.
   const top = tweakNode("div", "tab-list primary-tabs"); top.setAttribute("role", "tablist");
   [["gameplay", "Gameplay Tweaks"], ["events", "In-Game Events"], ["population", "Vehicles & Animals"]]
@@ -214,4 +221,4 @@ function renderWorkspace(api) {
 }
 
 // Publish the tweaks render module.
-window.ServerManTweaksRender = Object.freeze({ workspace: renderWorkspace });
+window.ServerManTweaksRender = Object.freeze({ workspace: renderWorkspace, entry: renderMapEditorEntry });

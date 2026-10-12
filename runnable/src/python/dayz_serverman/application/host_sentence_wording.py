@@ -22,6 +22,10 @@ _IMPORT_BLOCK = ("A legacy import was interrupted and could not be undone safely
                  "Restart DayZ-ServerMan; it checks the unfinished import again when it starts.")
 # Known reasons of a recovery block, by a fragment of the host reason; the first match wins
 BLOCK_REASONS: tuple[tuple[str, str], ...] = (
+    ("Mission map journals", "A mission map change did not finish, and its recovery records cannot be read. Restart DayZ-ServerMan to check them again."),
+    ("Mission map recovery requires a configured DayZ root", "A mission map change did not finish, and no DayZ server folder is set. In Settings, set the DayZ server folder that the change used. Keep the other settings unchanged, then save and restart DayZ-ServerMan."),
+    ("interrupted mission map publication", "A mission map change did not finish. Stop the DayZ server, then restart DayZ-ServerMan to check the unfinished change."),
+    ("unresolved mission map recovery", "A mission map change did not finish, and its files cannot be recovered safely. Check Manager diagnostics, then restart DayZ-ServerMan to check again."),
     # A direct profile restore is worded by cause (QF-075); these rows come before "restore recovery"
     ("Direct profile restore journals", "A profile restore from a backup archive did not finish, and its restore records cannot be read, so DayZ-ServerMan cannot finish or undo it. Restart DayZ-ServerMan to read them again."),
     ("Direct profile restore recovery requires a configured DayZ root", "A profile restore from a backup archive did not finish, and it cannot be checked because no DayZ server folder is set. In Settings, set the DayZ server folder that the restore used and change nothing else. Then save and restart DayZ-ServerMan."),

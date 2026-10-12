@@ -22,9 +22,10 @@ from .settings import SettingsService, SettingsValidationError
 class MissionPathChanged(RuntimeError):
     """Raised when the profile's mission moved: the old plan is read only until task 10 adoption."""
 
-    def __init__(self, folders: list[dict[str, Any]]) -> None:
+    def __init__(self, folders: list[dict[str, Any]], reason: str = "mission_path_changed") -> None:
         """Store every matching old association folder."""
         self.folders = folders
+        self.reason = reason
         super().__init__("the mission path of this profile changed; adopt the earlier plan before saving")
 
 
@@ -65,14 +66,16 @@ class MissionMapPlanService:
             shown = association_folder(self._area, association["profile_id"], matches[0]["mission_key"])
             inspection = MissionMapPlanStore(shown, staging=self._staging).inspect()
             change = {"shown_mission_key": matches[0]["mission_key"], "folders": matches}
-            return _load_result(association, inspection, read_only=True, path_change=change)
+            reason = self._change_reason(association)
+            return _load_result(association, inspection, read_only=True, path_change=change, reason=reason)
         # Otherwise report the active record as it is, valid, missing or invalid
         folder = association_folder(self._area, association["profile_id"], association["mission_key"])
         inspection = MissionMapPlanStore(folder, staging=self._staging).inspect()
         return _load_result(association, inspection, read_only=False, path_change=None)
 
-    def save(self, profile_id: object, raw_plan: object, expected_revision: object) -> dict[str, Any]:
-        """Validate and save the plan of the active association under its lock and revision guard."""
+    def save(self, profile_id: object, raw_plan: object, expected_revision: object, *,
+             before_save: Callable[[dict[str, Any]], None] | None = None) -> dict[str, Any]:
+        """Save the active plan under its lock and revision guard; before_save validates locked record identities."""
         self._require_owner()
         # Validate the revision proof and the whole document before any filesystem work
         if expected_revision is not None and (
@@ -88,7 +91,10 @@ class MissionMapPlanService:
         with self._locks.hold(association["profile_id"], association["mission_key"]):
             matches = self._path_change(association)
             if matches:
-                raise MissionPathChanged(matches)
+                raise MissionPathChanged(matches, self._change_reason(association))
+            # A coordinator checks record identities here, after any commit releases the same lock
+            if before_save is not None:
+                before_save(plan)
             folder = association_folder(self._area, association["profile_id"], association["mission_key"])
             revision, evidence = MissionMapPlanStore(folder).save(plan, expected_revision, self._clock())
         return {"association": plan["association"], "revision": revision, "plan": plan,
@@ -102,7 +108,7 @@ class MissionMapPlanService:
             # In the path-change state the records of an existing active folder stay unchanged
             matches = self._path_change(association)
             if matches:
-                raise MissionPathChanged(matches)
+                raise MissionPathChanged(matches, self._change_reason(association))
             folder = association_folder(self._area, association["profile_id"], association["mission_key"])
             target = MissionMapPlanStore(folder).set_aside(self._clock())
         return {"association": association, "set_aside": target.name}
@@ -112,6 +118,10 @@ class MissionMapPlanService:
         folder = profile_folder(self._area, association["profile_id"])
         if not folder.is_dir():
             return []
+        # A return to a retired active key follows the adoption chain instead of reviving its records
+        active = association_folder(self._area, association["profile_id"], association["mission_key"])
+        if retired_marker(active) is not None:
+            return _retired_successors(self._area, association, self._staging)
         wanted = _root_spelling(association["mission_root"])
         matches = []
         for child in folder.iterdir():
@@ -129,6 +139,11 @@ class MissionMapPlanService:
         # Show the folder whose plan file changed last; equal times are ordered by mission key
         matches.sort(key=lambda match: (-(match["plan_changed_ns"] or 0), match["mission_key"]))
         return matches
+
+    def _change_reason(self, association: dict[str, Any]) -> str:
+        """Distinguish a moved mission from a return to its own retired association."""
+        folder = association_folder(self._area, association["profile_id"], association["mission_key"])
+        return "returned_to_earlier_path" if retired_marker(folder) is not None else "mission_path_changed"
 
     def _resolve(self, profile_id: object) -> tuple[Any, Path, str, Path]:
         """Return the profile, the DayZ root, the relative mission root and the resolved mission folder."""
@@ -178,10 +193,36 @@ def _root_spelling(mission_root: str) -> str | None:
 
 
 def _load_result(association: dict[str, Any], inspection: PlanInspection, *, read_only: bool,
-                 path_change: dict[str, Any] | None) -> dict[str, Any]:
+                 path_change: dict[str, Any] | None, reason: str | None = None) -> dict[str, Any]:
     """Return the load answer: state, revision, plan, invalid-data detail and the path-change report."""
     return {
         "association": association, "state": inspection.state.value, "revision": inspection.revision,
         "plan": inspection.plan, "detail": inspection.detail, "read_only": read_only,
         "interrupted_evidence": [path.name for path in inspection.leftovers], "path_change": path_change,
+        "read_only_reason": reason,
+        "problems": [{"object_id": problem.object_id, "rule": "invalid_document", "message": problem.message}
+                     for problem in inspection.problems],
     }
+
+
+def _retired_successors(area: Path, association: dict[str, Any], staging: StagingPolicy) -> list[dict[str, Any]]:
+    """Follow adoption markers to the newest unretired folder; refuse a broken or cyclic chain."""
+    key = association["mission_key"]
+    seen: set[str] = set()
+    successors: list[dict[str, Any]] = []
+    while True:
+        # Never use a retired plan as active, or loop indefinitely through damaged adoption evidence
+        if key in seen:
+            raise MissionPathChanged(successors, "returned_to_earlier_path")
+        seen.add(key)
+        folder = association_folder(area, association["profile_id"], key)
+        if not folder.is_dir():
+            raise MissionPathChanged(successors, "returned_to_earlier_path")
+        store = MissionMapPlanStore(folder, staging=staging)
+        marker = retired_marker(folder)
+        if key != association["mission_key"]:
+            root = store.inspect().mission_root or record_mission_root(folder) or association["mission_root"]
+            successors.insert(0, {"mission_key": key, "mission_root": root, "plan_changed_ns": store.changed_ns()})
+        if marker is None:
+            return successors
+        key = marker["new_mission_key"]

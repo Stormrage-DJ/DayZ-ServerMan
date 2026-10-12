@@ -9,6 +9,7 @@ from .adapters.windows.steamcmd import SteamCmdConsole, SteamCmdPreflight, Windo
 from .application.backups import BackupService
 from .application.content_proof_records import ContentProofRecorder
 from .application.content_proofs import ContentProofResolver
+from .application.editor_guard import DelegatingEditorGuard
 from .application.installation_guard import InstallationGuard
 from .application.lifecycle_ports import ServerFolderWriterPort
 from .application.mod_inventory import CheckSource, ModInventoryService
@@ -45,6 +46,7 @@ class WorkshopComposition:
     """Services and coordinators of the Workshop and mod publication area."""
 
     profile_coordinator: ProfileCoordinator
+    editor_guard: DelegatingEditorGuard
     workshop_updates: WorkshopUpdateService
     workshop_coordinator: WorkshopCoordinator
     mod_inventory: ModInventoryService
@@ -87,8 +89,10 @@ def build_workshop(
     applied_mod_state = AppliedModStateRepository(paths.applied_mod_state)
     content_proofs = ContentProofStore(paths.content_proofs, logger)
     # Profile deletion also cleans the evidence that belongs to the profile
+    editor_guard = DelegatingEditorGuard()
     profile_deletion = ProfileDeletionService(
         profiles, settings, lifecycle, preferences, schedules, applied_mod_state, folder_writer,
+        editor_guard=editor_guard,
     )
     profile_coordinator = ProfileCoordinator(profiles, operations, profile_deletion)
     workshop_updates = WorkshopUpdateService(
@@ -117,6 +121,7 @@ def build_workshop(
     )
     return WorkshopComposition(
         profile_coordinator=profile_coordinator,
+        editor_guard=editor_guard,
         workshop_updates=workshop_updates,
         workshop_coordinator=workshop_coordinator,
         mod_inventory=mod_inventory,
