@@ -1,11 +1,14 @@
-"""Discover native infected support and the unavailable AI_Bandits provider without mutations."""
+"""Discover native infected support and the unavailable AI_Bandits, wolf and bear providers without mutations."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Callable
 
-from ..domain.mission_map_providers import INFECTED_TERRITORY_FILE, ProviderCapability, infected_registered, offered_infected_events
+from ..domain.mission_map_providers import (
+    INFECTED_TERRITORY_FILE, UNVERIFIED_TERRITORY_PROVIDERS, ProviderCapability, infected_registered,
+    offered_infected_events, unverified_territory_capability,
+)
 from ..domain.profiles import ProfileRecord
 from .mission_map_providers_bandits import read_bandits_capability
 from .mission_map_providers_paths import ProviderReadError, ProviderReader
@@ -34,5 +37,9 @@ def read_infected_capability(reader: ProviderReader) -> ProviderCapability:
 def read_encounter_providers(root: Path, mission: Path, profile: ProfileRecord, *,
                             containment: Callable[..., Path]) -> dict[str, Any]:
     """Return additive provider metadata; each failed discovery leaves other editor capabilities usable."""
-    return {"native_infected": read_infected_capability(ProviderReader(mission, containment)).to_dict(),
-            "ai_bandits": read_bandits_capability(ProviderReader(root, containment), profile).to_dict()}
+    providers = {"native_infected": read_infected_capability(ProviderReader(mission, containment)).to_dict(),
+                 "ai_bandits": read_bandits_capability(ProviderReader(root, containment), profile).to_dict()}
+    # Leaf 7.9: wolves and bears are always unavailable; no wolf or bear territory file is read or mapped
+    for provider in UNVERIFIED_TERRITORY_PROVIDERS:
+        providers[provider] = unverified_territory_capability().to_dict()
+    return providers

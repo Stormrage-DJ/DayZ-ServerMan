@@ -15,6 +15,11 @@ AI_BANDITS_WORKSHOP_ID = "3628006769"
 NO_VERIFIED_HEIGHT_REASON = "Bandit placement is not available on this terrain: no verified ground height source."
 # Mission registration path; only this native infected territory file is supported in leaf 7.2
 INFECTED_TERRITORY_FILE = "env/zombie_territories.xml"
+# Product Owner text of leaf 7.9; wolves and bears stay unavailable until a later plan verifies the pack mapping
+WOLF_BEAR_REASON = ("Wolf and bear territories are not supported in this version; "
+                    "the pack territory mapping is not verified.")
+# Providers that this version never offers; no file is read for them, so presence is not observed
+UNVERIFIED_TERRITORY_PROVIDERS = ("native_wolf", "native_bear")
 
 
 @dataclass(frozen=True)
@@ -31,6 +36,11 @@ class ProviderCapability:
         """Return additive browser metadata without filesystem paths or inferred population counts."""
         return {"detected": self.detected, "available": self.available, "reason": self.reason,
                 "event_names": list(self.event_names), "evidence": dict(self.evidence)}
+
+
+def unverified_territory_capability() -> ProviderCapability:
+    """Return the fixed wolf or bear entry: not observed, unavailable, with the Product Owner reason text."""
+    return ProviderCapability(False, False, WOLF_BEAR_REASON)
 
 
 def infected_registered(environment: Element) -> bool:

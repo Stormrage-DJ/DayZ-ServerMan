@@ -10,17 +10,18 @@ const mapDragState = {model: null, pending: null, drag: null, suppress: false};
 const mapDragThreshold = 4;
 const mapDragReach = 12;
 
-// The stored geometry fields of one zone, as one comparable value
+// The stored geometry fields of one zone or encounter, as one comparable value; an encounter moves like a circle (7.3)
 function mapDragGeometry(item) {
-  return item.kind === "loot_circle" ? {centre: item.centre, radius: item.radius} : {vertices: item.vertices};
+  return item.kind !== "loot_polygon" ? {centre: item.centre, radius: item.radius} : {vertices: item.vertices};
 }
 
 // Screen points of the handles: the east edge point of a circle, or each outline vertex.
 // A locked zone and a draft that cannot change show no handles.
 function mapDragHandles(view, item) {
   if (!item || item.locked || !mapDragState.model?.editable() || !window.ServerManMapVector.drawable(item)) return [];
-  const circle = item.kind === "loot_circle";
-  const points = circle ? [{x: item.centre.x + item.radius, z: item.centre.z}] : item.vertices;
+  // An encounter without a spawn radius has no resize handle
+  const circle = item.kind !== "loot_polygon", round = Number.isFinite(item.radius);
+  const points = circle ? (round ? [{x: item.centre.x + item.radius, z: item.centre.z}] : []) : item.vertices;
   return points.map((point, index) => ({grip: circle ? "radius" : "vertex", index, ...view.toScreen(point)}))
     .filter((handle) => Number.isFinite(handle.x) && Number.isFinite(handle.y));
 }
@@ -28,7 +29,7 @@ function mapDragHandles(view, item) {
 // The wording key of the advisory D1 reason that refuses a shape, or null; the backend check stays authoritative
 function mapDragProblem(item, bounds) {
   const outline = window.ServerManMapOutline;
-  if (item.kind === "loot_circle") return outline.inside(bounds, item.centre) ? null : "dragOutside";
+  if (item.kind !== "loot_polygon") return outline.inside(bounds, item.centre) ? null : "dragOutside";
   if (!item.vertices.every((point) => outline.inside(bounds, point))) return "dragOutside";
   if (item.vertices.some((point, index) => outline.tooClose(item.vertices.slice(index + 1), point))) return "dragClose";
   return {outlineNeedsPoints: "dragCrosses", outlineCrosses: "dragCrosses", outlineArea: "dragArea"}[outline.problem(item.vertices)] ?? null;
@@ -39,7 +40,7 @@ function mapDragApply(drag, native) {
   const item = structuredClone(drag.item), dx = native.x - drag.from.x, dz = native.z - drag.from.z;
   if (dx === 0 && dz === 0) return item;
   const shift = (point) => ({x: point.x + dx, z: point.z + dz});
-  if (drag.kind === "move" && item.kind === "loot_circle") item.centre = shift(item.centre);
+  if (drag.kind === "move" && item.kind !== "loot_polygon") item.centre = shift(item.centre);
   else if (drag.kind === "move") item.vertices = item.vertices.map(shift);
   else if (drag.kind === "vertex") item.vertices[drag.index] = shift(item.vertices[drag.index]);
   else {
@@ -69,7 +70,8 @@ function mapDragDown(event) {
   // The nearest handle within reach wins; else a press inside the zone moves it, also a zone below others
   const handle = mapDragHandles(view, item).map((point) => ({...point, gap: Math.hypot(point.x - screen.x, point.y - screen.y)}))
     .filter((point) => point.gap <= mapDragReach).sort((first, second) => first.gap - second.gap)[0];
-  const inside = window.ServerManMapOutline.contains(item, native);
+  const inside = item.kind === "encounter" ? window.ServerManMapEncounters.covers(item, native, view) :
+    window.ServerManMapOutline.contains(item, native);
   const kind = handle?.grip ?? (inside ? (item.locked ? "locked" : "move") : null);
   if (!kind) return;
   const bounds = plan.terrain.bounds;

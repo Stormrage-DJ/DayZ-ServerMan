@@ -1,8 +1,11 @@
-// Own the Select, Circle, Polygon and Inspect tools, the outline draft, placement and selection clicks and the tool status.
+// Own the Select, Circle, Polygon, Encounter and Inspect tools, placement and selection clicks and the tool status.
+// The outline draft of the Polygon tool is in map_editor_outline_draft.js.
 "use strict";
 
-// The draft outline lives outside the plan and the history, so selection, edits and panning keep it (R12).
-const mapToolsState = {model: null, value: null, tool: null, radius: 100, vertices: [], down: null, message: ""};
+// The active tool, the last circle radius and the press of the current click; the outline draft is not here.
+const mapToolsState = {model: null, value: null, tool: null, radius: 100, down: null, message: ""};
+// Tool buttons in toolbar order (UI-UX 10:22:15: Encounter between Polygon and Inspect)
+const mapToolsNames = Object.freeze(["select", "circle", "polygon", "encounter", "inspect"]);
 
 // Every tool needs confirmed bounds and a usable view transform. Drawing and selection need a writable draft.
 // Inspect writes nothing, so it also acts in a read-only draft without a dialog (Product Owner 2026-10-14 00:33:43).
@@ -25,29 +28,36 @@ function mapToolsMessage(text) {
 function mapToolsRefresh(value) {
   const state = mapToolsState, words = window.ServerManMapWording;
   if (value !== undefined) state.value = value;
-  const usable = mapToolsUsable("circle");
-  for (const tool of ["select", "circle", "polygon", "inspect"]) {
+  const usable = mapToolsUsable("circle"), choice = window.ServerManMapEncounterTool.render(usable);
+  // A load or a refresh that makes the chosen encounter type unavailable ends the Encounter tool (QA-7.3-F2)
+  if (state.tool === "encounter" && !choice.available) state.tool = null;
+  for (const tool of mapToolsNames) {
     const button = document.getElementById(`map-tool-${tool}`);
     button.disabled = !mapToolsUsable(tool);
     button.setAttribute("aria-pressed", String(state.tool === tool));
   }
   document.getElementById("map-circle-radius").disabled = !usable;
-  const count = state.vertices.length;
-  const crossing = count ? window.ServerManMapOutline.crossings(state.vertices).size : 0;
-  document.getElementById("map-outline-status").textContent = count ? words.outlinePoints(count, crossing) : "";
-  document.getElementById("map-outline-finish").disabled = !usable || !count;
-  document.getElementById("map-outline-discard").disabled = !count;
-  // The footer stays one line high, so the map never resizes while the admin draws
+  window.ServerManMapOutlineDraft.render(usable);
+  const count = window.ServerManMapOutlineDraft.count();
+  // The footer stays one line high, so the map never resizes while the admin draws; its title names the encounter type
   const footer = document.getElementById("map-tool-status");
   footer.textContent = words.toolStatusShort(state.tool, count);
-  footer.title = words.toolStatus(state.tool, count);
-  document.getElementById("map-viewport").classList.toggle("map-drawing", ["circle", "polygon"].includes(state.tool) && usable);
+  footer.title = state.tool === "encounter" ? window.ServerManMapEncounterWording.toolTitle(
+    window.ServerManMapEncounterWording.name(choice.provider)) : words.toolStatus(state.tool, count);
+  document.getElementById("map-viewport").classList.toggle("map-drawing",
+    ["circle", "polygon", "encounter"].includes(state.tool) && usable);
   window.ServerManMapViewportUi.redraw();
 }
 
 // A tool letter or button chooses a tool; a second press of the active button ends it. The outline stays.
 function mapToolsChoose(tool, toggle = false) {
   if (!mapToolsUsable(tool)) return;
+  // An unavailable encounter type chooses no tool; its reason goes to the panel, the map and the live region
+  const choice = tool === "encounter" ? window.ServerManMapEncounterTool.choice() : null;
+  if (choice && !choice.available) {
+    mapToolsMessage(choice.reason);
+    return;
+  }
   mapToolsState.tool = toggle && mapToolsState.tool === tool ? null : tool;
   mapToolsMessage("");
   mapToolsRefresh();
@@ -60,9 +70,15 @@ function mapToolsObject(kind, geometry) {
     tier: null, abundance: "rich"};
 }
 
-// One click is one circle with the last radius, or one outline vertex; a refused click says why.
+// One click is one circle with the last radius, one encounter, or one outline vertex; a refused click says why.
 function mapToolsPlace(point) {
   const state = mapToolsState, words = window.ServerManMapWording, bounds = state.value.plan.terrain.bounds;
+  if (state.tool === "encounter") {
+    const refusal = window.ServerManMapEncounterTool.place(point);
+    mapToolsMessage(refusal ?? "");
+    if (!refusal) mapToolsRefresh();
+    return;
+  }
   if (!window.ServerManMapOutline.inside(bounds, point)) {
     mapToolsMessage(words[state.tool === "circle" ? "outsideCircle" : "outsidePoint"]);
     return;
@@ -70,20 +86,23 @@ function mapToolsPlace(point) {
   if (state.tool === "circle") {
     const radius = Math.min(state.radius, Math.max(bounds.width, bounds.height));
     state.model.add(words.circleAction, mapToolsObject("loot_circle", {centre: {x: point.x, z: point.z}, radius}));
-  } else if (window.ServerManMapOutline.tooClose(state.vertices, point)) {
-    mapToolsMessage(words.pointTooClose);
-    return;
   } else {
-    state.vertices.push({x: point.x, z: point.z});
+    const refusal = window.ServerManMapOutlineDraft.add(point);
+    if (refusal) {
+      mapToolsMessage(words[refusal]);
+      return;
+    }
   }
   mapToolsMessage("");
   mapToolsRefresh();
 }
 
-// Selection takes the highest visible zone that covers the point; a hidden zone is never hit (R12)
+// Selection takes an encounter whose line or mark is within reach. Else it takes the highest visible zone that covers
+// the point. A hidden item is never hit (R12, UI-UX 10:22:15).
 function mapToolsHit(point) {
-  return (mapToolsState.value?.plan?.objects ?? []).find((item) => window.ServerManMapVector.drawable(item) &&
-    window.ServerManMapOutline.contains(item, point)) ?? null;
+  const objects = mapToolsState.value?.plan?.objects ?? [];
+  return window.ServerManMapEncounters.hit(objects, point, window.ServerManMapViewportUi.view()) ??
+    objects.find((item) => window.ServerManMapVector.drawable(item) && window.ServerManMapOutline.contains(item, point)) ?? null;
 }
 
 // A click places by the tool or reads one point in Inspect mode; Shift+click, and a click in Select-only mode,
@@ -109,42 +128,14 @@ function mapToolsClick(event) {
   }
 }
 
-// Finish refuses locally while a D1 rule fails; a valid outline enters the top and saves at once.
-function mapToolsFinish() {
-  const state = mapToolsState, words = window.ServerManMapWording;
-  if (!state.vertices.length || !mapToolsUsable("polygon")) return;
-  const problem = window.ServerManMapOutline.problem(state.vertices);
-  if (problem) {
-    mapToolsMessage(words[problem]);
-    return;
-  }
-  const object = mapToolsObject("loot_polygon", {vertices: structuredClone(state.vertices)});
-  try {
-    if (!state.model.add(words.outlineAction, object)) return;
-  } catch (error) {
-    mapToolsMessage(error.message);
-    return;
-  }
-  state.vertices = [];
-  mapToolsMessage("");
-  mapToolsRefresh();
-  window.ServerManMapPlanSave.finish(object);
-}
-
-// Remove the last vertex, or discard the whole outline only by its explicit button; a discard is announced.
-function mapToolsOutline(discard) {
-  if (discard) mapToolsState.vertices = []; else mapToolsState.vertices.pop();
-  mapToolsMessage(discard ? window.ServerManMapWording.outlineDiscarded : "");
-  mapToolsRefresh();
-}
-
 // Letters act only on the map or with no control focused, and never with Ctrl, Alt or Meta (WCAG 2.1.4).
 function mapToolsKey(event) {
   const viewport = document.getElementById("map-viewport");
   if (event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey || document.querySelector("dialog") ||
       ![viewport, document.body].includes(event.target) || viewport.classList.contains("map-panning")) return;
   const actions = {v: () => mapToolsChoose("select"), c: () => mapToolsChoose("circle"), p: () => mapToolsChoose("polygon"),
-    i: () => mapToolsChoose("inspect"), Enter: mapToolsFinish, Backspace: () => mapToolsOutline(false)};
+    e: () => mapToolsChoose("encounter"), i: () => mapToolsChoose("inspect"), Enter: window.ServerManMapOutlineDraft.finish,
+    Backspace: () => window.ServerManMapOutlineDraft.remove(false)};
   const run = actions[event.key.length === 1 ? event.key.toLowerCase() : event.key];
   if (!run) return;
   event.preventDefault();
@@ -168,33 +159,26 @@ function mapToolsInit(model) {
   state.model = model;
   state.value = model.status();
   for (const [id, text] of [["map-tool-select", words.selectTool], ["map-tool-circle", words.circleTool], ["map-tool-polygon", words.polygonTool],
-    ["map-circle-radius-label", words.circleRadius], ["map-outline-finish", words.finish],
-    ["map-outline-discard", words.discardOutline]]) {
+    ["map-circle-radius-label", words.circleRadius]]) {
     document.getElementById(id).textContent = text;
   }
-  for (const tool of ["select", "circle", "polygon", "inspect"]) {
+  for (const tool of mapToolsNames) {
     document.getElementById(`map-tool-${tool}`).addEventListener("click", () => mapToolsChoose(tool, true));
   }
   const radius = document.getElementById("map-circle-radius");
   radius.value = String(state.radius);
   radius.addEventListener("change", () => mapToolsRadius(radius));
-  // A button that empties the draft disables itself, so the focus goes to the map, where the tool keys act
-  document.getElementById("map-outline-finish").addEventListener("click", () => {
-    mapToolsFinish();
-    if (!state.vertices.length) viewport.focus();
-  });
-  document.getElementById("map-outline-discard").addEventListener("click", () => {
-    mapToolsOutline(true);
-    viewport.focus();
-  });
+  window.ServerManMapOutlineDraft.init(model);
+  window.ServerManMapEncounterTool.init(model);
   viewport.addEventListener("pointerdown", (event) => { state.down = {x: event.clientX, y: event.clientY}; });
   viewport.addEventListener("click", mapToolsClick);
   document.addEventListener("keydown", mapToolsKey);
   mapToolsRefresh();
 }
 
-// The outline save module returns a refused outline to the draft through restore.
+// The outline save module returns a refused outline to the draft through restore; the outline draft owns it.
 window.ServerManMapTools = Object.freeze({init: mapToolsInit, refresh: mapToolsRefresh, usable: mapToolsUsable,
-  value: () => mapToolsState.value, draft: () => structuredClone(mapToolsState.vertices),
-  restore: (vertices) => { mapToolsState.vertices = structuredClone(vertices); mapToolsRefresh(); },
-  message: mapToolsMessage, hit: (point) => mapToolsHit(point)?.id ?? null, choose: (tool) => mapToolsChoose(tool)});
+  value: () => mapToolsState.value, draft: () => window.ServerManMapOutlineDraft.draft(),
+  restore: (vertices) => window.ServerManMapOutlineDraft.restore(vertices), object: mapToolsObject,
+  message: mapToolsMessage, hit: (point) => mapToolsHit(point)?.id ?? null, choose: (tool) => mapToolsChoose(tool),
+  active: () => mapToolsState.tool, end: () => { mapToolsState.tool = null; }, radius: () => mapToolsState.radius});

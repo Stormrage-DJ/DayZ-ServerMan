@@ -43,10 +43,14 @@
                 <button id="map-tool-select" type="button" class="button" aria-pressed="false" aria-keyshortcuts="V" title="Select (V)" disabled>Select</button>
                 <button id="map-tool-circle" type="button" class="button" aria-pressed="false" aria-keyshortcuts="C" title="Circle (C)" disabled>Circle</button>
                 <button id="map-tool-polygon" type="button" class="button" aria-pressed="false" aria-keyshortcuts="P" title="Polygon (P)" disabled>Polygon</button>
+                <button id="map-tool-encounter" type="button" class="button" aria-pressed="false" aria-keyshortcuts="E" title="Encounter (E)" disabled>Encounter</button>
                 <button id="map-tool-inspect" type="button" class="button" aria-pressed="false" aria-keyshortcuts="I" title="Inspect (I)" disabled>Inspect</button>
               </div>
               <label id="map-circle-radius-label" for="map-circle-radius">Circle radius (m)</label>
               <input id="map-circle-radius" type="number" min="1" step="any" inputmode="decimal" autocomplete="off" aria-describedby="map-tool-message" disabled>
+              <label id="map-encounter-provider-label" for="map-encounter-provider">Encounter type</label>
+              <select id="map-encounter-provider" aria-describedby="map-encounter-provider-reason" disabled></select>
+              <p id="map-encounter-provider-reason"></p>
               <p id="map-outline-status"></p>
               <div id="map-outline-actions">
                 <button id="map-outline-finish" type="button" class="button" aria-keyshortcuts="Enter" title="Finish (Enter)" disabled>Finish</button>
@@ -100,14 +104,28 @@
             <p id="map-tiers-status"></p>
             <ul id="map-tiers-legend" aria-label="Original tier legend"></ul>
           </section>
+          <section aria-labelledby="map-global-capacity-title">
+            <h2 id="map-global-capacity-title">Global container capacity</h2>
+            <div id="map-global-capacity-row">
+              <input id="map-global-capacity" type="range" min="-50" max="100" step="25" value="0" aria-labelledby="map-global-capacity-title" aria-describedby="map-global-capacity-explanation" disabled>
+              <output id="map-global-capacity-value" for="map-global-capacity">0%</output>
+            </div>
+            <p id="map-global-capacity-explanation"></p>
+          </section>
           <section aria-labelledby="map-properties-title">
             <h2 id="map-properties-title">Properties</h2>
             <p id="map-properties-empty">Property editing is not available yet.</p>
             <div id="map-properties-fields" hidden>
               <p id="map-properties-name"></p>
               <p id="map-properties-state"></p>
+              <div id="map-encounter-availability" hidden>
+                <p id="map-encounter-reason"></p>
+                <p id="map-encounter-next"></p>
+                <label class="check-row" for="map-encounter-exclude"><input id="map-encounter-exclude" type="checkbox" aria-describedby="map-encounter-reason map-encounter-next"><span id="map-encounter-exclude-label">Exclude this encounter from Apply</span></label>
+              </div>
               <label id="map-properties-name-label" for="map-properties-name-field">Name</label>
               <input id="map-properties-name-field" type="text" autocomplete="off" aria-describedby="map-properties-message">
+              <p id="map-encounter-provider-text" hidden></p>
               <div id="map-properties-radius-row">
                 <label id="map-properties-centre-x-label" for="map-properties-centre-x">Centre X (m)</label>
                 <input id="map-properties-centre-x" type="text" inputmode="decimal" autocomplete="off" aria-describedby="map-properties-message">
@@ -115,6 +133,26 @@
                 <input id="map-properties-centre-z" type="text" inputmode="decimal" autocomplete="off" aria-describedby="map-properties-message">
                 <label id="map-properties-radius-label" for="map-properties-radius">Radius (m)</label>
                 <input id="map-properties-radius" type="number" min="1" step="any" inputmode="decimal" autocomplete="off" aria-describedby="map-properties-message">
+              </div>
+              <div id="map-encounter-fields" hidden>
+                <label id="map-encounter-event-label" for="map-encounter-event">Infected event</label>
+                <select id="map-encounter-event" aria-describedby="map-encounter-reason map-properties-message"></select>
+                <fieldset id="map-encounter-population">
+                  <legend id="map-encounter-population-legend">Infected population</legend>
+                  <div class="map-encounter-pair">
+                  <div><label id="map-encounter-smin-label" for="map-encounter-smin">Static minimum (smin)</label><input id="map-encounter-smin" type="text" inputmode="numeric" autocomplete="off" aria-describedby="map-encounter-population-note map-properties-message"></div>
+                  <div><label id="map-encounter-smax-label" for="map-encounter-smax">Static maximum (smax)</label><input id="map-encounter-smax" type="text" inputmode="numeric" autocomplete="off" aria-describedby="map-encounter-population-note map-properties-message"></div>
+                  </div>
+                  <div class="map-encounter-pair">
+                  <div><label id="map-encounter-dmin-label" for="map-encounter-dmin">Dynamic minimum (dmin)</label><input id="map-encounter-dmin" type="text" inputmode="numeric" autocomplete="off" aria-describedby="map-encounter-population-note map-properties-message"></div>
+                  <div><label id="map-encounter-dmax-label" for="map-encounter-dmax">Dynamic maximum (dmax)</label><input id="map-encounter-dmax" type="text" inputmode="numeric" autocomplete="off" aria-describedby="map-encounter-population-note map-properties-message"></div>
+                  </div>
+                </fieldset>
+                <p id="map-encounter-population-note"></p>
+              </div>
+              <div id="map-linked-loot" hidden>
+                <label class="check-row" for="map-linked-loot-enable"><input id="map-linked-loot-enable" type="checkbox" aria-describedby="map-linked-loot-note"><span id="map-linked-loot-enable-label">Link loot to this encounter</span></label>
+                <p id="map-linked-loot-note"></p>
               </div>
               <div id="map-tier-row">
                 <label id="map-tier-label" for="map-tier-select">Tier</label>
@@ -130,6 +168,13 @@
                   <ul id="map-tier-capacity-list"></ul>
                 </div>
               </div>
+              <div id="map-zone-capacity-row" hidden>
+                <label id="map-zone-capacity-label" for="map-zone-capacity">Zone capacity</label>
+                <select id="map-zone-capacity" aria-describedby="map-zone-capacity-effective map-zone-capacity-explanation"></select>
+                <p id="map-zone-capacity-effective"></p>
+                <p id="map-zone-capacity-explanation"></p>
+              </div>
+              <button id="map-linked-loot-detach" type="button" class="button" hidden>Detach loot zone</button>
               <p id="map-properties-message"></p>
               <button id="map-properties-delete" type="button" class="button button-danger" aria-keyshortcuts="Delete">Delete</button>
             </div>

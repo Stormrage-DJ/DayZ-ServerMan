@@ -10,7 +10,27 @@ function mapLayerSummary(item) {
   // An encounter has a loot summary only when its stored linked loot is enabled.
   const loot = item.kind === "encounter" ? (item.linked_loot.enabled ? item.linked_loot : null) : item;
   const summary = loot ? `${words.tier}: ${loot.tier ?? words.inherit}; ${words.zoneCapacity}: ${words.capacityPresets[loot.abundance]}` : "";
-  return `${type}${item.kind === "encounter" ? ` (${item.provider})` : ""}${summary ? `; ${summary}` : ""}`;
+  const provider = item.kind === "encounter" ? ` (${window.ServerManMapEncounterWording.name(item.provider)})` : "";
+  return `${type}${provider}${summary ? `; ${summary}` : ""}`;
+}
+
+// The tags "Unavailable" and "Excluded" in bordered boxes, then the reason of an unavailable encounter, or null (R11)
+function mapLayerNote(item, capabilities) {
+  const words = window.ServerManMapEncounterWording;
+  const status = item.kind === "encounter" ? window.ServerManMapEncounters.status(item, capabilities) : null;
+  if (!status || (!status.unavailable && !status.excluded)) return null;
+  const note = document.createElement("p");
+  note.className = "map-layer-note";
+  note.id = `map-layer-note-${item.id}`;
+  for (const [shown, text] of [[status.unavailable, words.unavailableTag], [status.excluded, words.excludedTag]]) {
+    if (!shown) continue;
+    const tag = document.createElement("span");
+    tag.className = `map-layer-tag map-layer-tag-${text === words.unavailableTag ? "unavailable" : "excluded"}`;
+    tag.textContent = text;
+    note.append(tag, " ");
+  }
+  if (status.unavailable && status.reason) note.append(status.reason);
+  return note;
 }
 
 // The map and the list share one selection; the vector layer shows it.
@@ -73,6 +93,12 @@ function mapLayersRender() {
     const summary = document.createElement("p");
     summary.textContent = mapLayerSummary(item);
     row.append(summary);
+    // A screen reader reads the tags and the reason with the item name
+    const note = mapLayerNote(item, status.capabilities);
+    if (note) {
+      row.append(note);
+      select.setAttribute("aria-describedby", note.id);
+    }
     // Visibility and lock are explicit flags, rather than mission exclusion or priority.
     const visible = button("visible", words.visible, () => model.visible(item.id));
     visible.setAttribute("aria-pressed", String(item.visible));

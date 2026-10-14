@@ -49,6 +49,7 @@ function mapInitModel() {
   window.ServerManMapCalibration.init(mapEditorState.model);
   // After the calibration, so its Escape and its pick clicks come first (4.5)
   window.ServerManMapDrag.init(mapEditorState.model);
+  window.ServerManMapAbundance.init(mapEditorState.model);
   window.ServerManMapProperties.init(mapEditorState.model);
   window.ServerManMapInspect.init(mapEditorState.model);
   window.ServerManMapSetAside.init(mapEditorState.model);

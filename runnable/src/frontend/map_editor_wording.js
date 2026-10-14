@@ -69,7 +69,7 @@ function mapDisplayError(kind, error) {
 }
 
 // Tool names of the panel and the footer; no tool shows "No tool active"
-const mapToolNames = Object.freeze({select: "Select", circle: "Circle", polygon: "Polygon", inspect: "Inspect"});
+const mapToolNames = Object.freeze({select: "Select", circle: "Circle", polygon: "Polygon", encounter: "Encounter", inspect: "Inspect"});
 
 // Public editor wording is independent of the main shell's page state.
 window.ServerManMapWording = Object.freeze({

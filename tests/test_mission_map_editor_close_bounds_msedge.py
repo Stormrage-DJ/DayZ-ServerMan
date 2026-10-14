@@ -109,6 +109,20 @@ const closing=settle("editor");closing.then(()=>{answered=true});await sleep(300
 await answer(success(5));check(await closing==="close"&&!dialog()&&model.snapshot().terrain.bounds.width===3000,"then closes");
 ''', budget=20000), "PASS")
 
+    def test_a_load_or_a_saved_bounds_change_clears_the_bounds_failure(self) -> None:
+        """QA-5.4-F11 (B9): after a load or a successful bounds save, the close dialog shows no old bounds failure."""
+        self.assertEqual(run_editor_harness(BOUNDS + r'''
+const ask=`${sentence} / Keep editing|Save changes|Discard changes`;
+await load(value(plan()));fill(bounds(0,0,3000,1000));manual();await wait();await answer(failure("REVISION_CONFLICT","stale_revision","changed"));await sleep(100);
+await load(value(plan()));fill(bounds(0,0,2500,1000));let closing=settle("editor");await sleep(100);
+check(`${message()} / ${labels()}`===ask,`after a reload refusal and a load: ${message()} / ${labels()}`);
+await choose("Keep editing");await closing;
+fill(bounds(0,0,3000,1000));manual();await wait();await answer(storage());await sleep(100);manual();await wait();await answer(success(5,true));await sleep(100);
+fill(bounds(0,0,3500,1000));closing=settle("editor");await sleep(100);
+check(`${message()} / ${labels()}`===ask,`after a failed and then a successful bounds save: ${message()} / ${labels()}`);
+await choose("Discard changes");check(await closing==="close","the discard closes");
+''', budget=20000), "PASS")
+
 
 if __name__ == "__main__":
     unittest.main()

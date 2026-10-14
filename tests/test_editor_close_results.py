@@ -16,6 +16,9 @@ from tests.test_editor_windows import FakeEditor, registry_fixture
 SETTLE = "window.ServerManMapEditor.settleForClose('{}')"
 JOIN = "window.ServerManMapEditor.settleForClose('application', true)"
 RELEASE = "window.ServerManMapEditor.releaseClose()"
+# A patched acknowledgement limit that the tests wait out. A helper thread that starts late under machine load
+# stays far inside it, so the settle never takes the confirmation path by accident (QA-5.4-F10).
+ACK_LIMIT = 1.0
 
 
 def wait_until(predicate, seconds=1.0):
@@ -78,17 +81,17 @@ class EditorCloseResultTests(unittest.TestCase):
         for window in webview.windows:
             window.answer = None
         controller, main, order = main_controller(registry)
-        with patch("dayz_serverman.host.editor_close.ACK_TIMEOUT", 0.03):
+        with patch("dayz_serverman.host.editor_close.ACK_TIMEOUT", ACK_LIMIT):
             worker = threading.Thread(target=controller._request_close, daemon=True)
             worker.start()
             for window in webview.windows:
-                self.assertTrue(wait_until(lambda current=window: current.callback is not None))
-                time.sleep(0.1)
+                self.assertTrue(wait_until(lambda current=window: current.callback is not None, 5))
+                time.sleep(ACK_LIMIT + 0.2)
                 self.assertTrue(worker.is_alive())
                 self.assertEqual(order, ["shell"])
                 self.assertIn(SETTLE.format("application"), window.actions)
                 window.callback("close")
-            worker.join(1)
+            worker.join(5)
         self.assertEqual(order, ["shell", "shutdown"])
         self.assertTrue(all("destroy" in window.actions for window in webview.windows))
         self.assertEqual(main.actions[-1], "destroy")
@@ -103,14 +106,14 @@ class EditorCloseResultTests(unittest.TestCase):
         for window in webview.windows:
             window.answer = None
         controller, main, order = main_controller(registry)
-        with patch("dayz_serverman.host.editor_close.ACK_TIMEOUT", 0.03):
+        with patch("dayz_serverman.host.editor_close.ACK_TIMEOUT", ACK_LIMIT):
             worker = threading.Thread(target=controller._request_close, daemon=True)
             worker.start()
             for window, answer in zip(webview.windows, ("close", "cancel")):
-                self.assertTrue(wait_until(lambda current=window: current.callback is not None))
-                time.sleep(0.1)
+                self.assertTrue(wait_until(lambda current=window: current.callback is not None, 5))
+                time.sleep(ACK_LIMIT + 0.2)
                 window.callback(answer)
-            worker.join(1)
+            worker.join(5)
         self.assertEqual(order, ["shell"])
         for window in [main, *webview.windows]:
             self.assertNotIn("destroy", window.actions)

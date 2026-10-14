@@ -28,6 +28,8 @@ TERMINAL_PHASES = ("complete", "cancelled", "failed", "shutdown")
 # An upper-case identifier with an underscore, and a snake_case word
 UPPER_IDENTIFIER = re.compile(r"[A-Z]{2,}_[A-Z_]+")
 SNAKE_WORD = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
+# A mission file name that an operator text names on purpose, such as env/zombie_territories.xml (7.3 Product Owner texts)
+MISSION_FILE = re.compile(r"\b[\w/]+\.(?:xml|map)\b")
 # String literals of a script: double-quoted, single-quoted, and template literals
 LITERAL = re.compile(r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'|`(?:[^`\\]|\\.)*`')
 # Record fields whose raw value must never be put into text
@@ -164,7 +166,7 @@ class OperatorTextLeakTests(unittest.TestCase):
                 if " " not in text.strip():
                     continue
                 self.assertIsNone(UPPER_IDENTIFIER.search(text), f"{name}: {literal}")
-                self.assertIsNone(SNAKE_WORD.search(text), f"{name}: {literal}")
+                self.assertIsNone(SNAKE_WORD.search(MISSION_FILE.sub(" ", text)), f"{name}: {literal}")
 
     def test_templates_do_not_interpolate_raw_record_fields(self) -> None:
         """Outside the catalogue and the bar model no text template inserts a raw state, kind, phase, or code."""

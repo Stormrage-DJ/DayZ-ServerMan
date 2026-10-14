@@ -94,6 +94,10 @@ check(view.snapshot().offsetX!==before.offsetX&&draft()===outline,"panning keeps
 press(region,"c");press(region,"Escape");check(draft()===outline,"tool letters and Escape never discard the outline");
 press(region,"p");press(region,"Enter");check(text("map-tool-message")==="An outline needs 3 points"&&saved.length===0,"Finish needs 3 points");
 click(400,400);press(region,"Backspace");check(draft()===outline,"Backspace removes the last point");
+click(400,100);check(draft()===outline&&text("map-tool-message")==="This point is too close to another point of the outline.","a point on another point is refused");
+window.ServerManMapTools.restore([{x:100,z:100},{x:400,z:100},{x:400,z:400}]);
+check(text("map-outline-status")==="Unfinished outline: 3 points"&&!document.getElementById("map-outline-finish").disabled&&document.querySelectorAll("#map-outline-draft .map-outline-vertex").length===3,"restore shows the outline at once");
+window.ServerManMapTools.restore(JSON.parse(outline));
 click(400,400);const history=model.status().history.position,finishButton=document.getElementById("map-outline-finish");
 finishButton.focus();finishButton.click();await wait();check(document.activeElement.id==="map-viewport","focus moves to the map after Finish");
 const objects=model.snapshot().objects;

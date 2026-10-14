@@ -1,9 +1,9 @@
-// Show and edit the selected item's properties: name, circle centre and radius, Delete; zoom to the selection.
+// Show and edit the selected item's properties: name, circle and encounter centre and radius, Delete; zoom to the selection.
 "use strict";
 
 const mapPropertiesState = {model: null, shown: null};
 
-// Field IDs of the editable properties; the circle fields show only for a circle
+// Field IDs of the editable properties; the centre and radius fields show for a circle and an encounter
 const mapPropertiesFields = Object.freeze({name: "map-properties-name-field", x: "map-properties-centre-x",
   z: "map-properties-centre-z", radius: "map-properties-radius"});
 
@@ -22,8 +22,9 @@ function mapPropertiesBounds() {
 function mapPropertiesRender() {
   const state = mapPropertiesState, words = window.ServerManMapWording, item = mapPropertiesItem();
   if (!state.model) return;
-  // The tier control and the Inspect point follow the same selection and draft changes (4.6)
+  // The tier control and the Inspect point follow the same selection and draft changes (4.6), as do the capacity controls (5.1)
   window.ServerManMapInspect.sync();
+  window.ServerManMapAbundance.render();
   document.getElementById("map-properties-empty").hidden = Boolean(item);
   document.getElementById("map-properties-empty").textContent = words.noSelection;
   document.getElementById("map-properties-fields").hidden = !item;
@@ -34,6 +35,7 @@ function mapPropertiesRender() {
   }
   if (!item) {
     state.shown = null;
+    window.ServerManMapEncounterProperties.render(null, true, null);
     return;
   }
   // The kind goes through the wording lookup, with a fallback for a kind that the window does not know
@@ -42,9 +44,14 @@ function mapPropertiesRender() {
   // Lock and visibility affect editing and display only, not the mission settings (R12)
   document.getElementById("map-properties-state").textContent = [item.locked ? words.lockedNote : "",
     item.visible ? "" : words.hiddenNote].filter(Boolean).join(" ");
-  const circle = item.kind === "loot_circle", locked = item.locked || !state.model.editable();
+  const circle = ["loot_circle", "encounter"].includes(item.kind), locked = item.locked || !state.model.editable();
+  // An encounter has a spawn radius, and one without a radius (AI_Bandits) has the centre fields only (PO decision 5)
+  const encounter = item.kind === "encounter", radius = !encounter || item.radius !== null;
   document.getElementById("map-properties-radius-row").hidden = !circle;
+  document.getElementById("map-properties-radius-label").textContent = encounter ? window.ServerManMapEncounterWording.spawnRadius : words.objectRadius;
+  document.getElementById("map-properties-radius-label").hidden = fields.radius.hidden = !radius;
   document.getElementById("map-properties-delete").disabled = locked;
+  window.ServerManMapEncounterProperties.render(item, locked, state.model.status().capabilities);
   const values = {name: item.name, x: item.centre?.x, z: item.centre?.z, radius: item.radius};
   for (const [key, field] of Object.entries(fields)) {
     field.disabled = locked || (key !== "name" && !circle);
@@ -69,12 +76,17 @@ function mapPropertiesCommit(field, refusal, patch) {
   if (stored) field.value = String({name: stored.name, x: stored.centre?.x, z: stored.centre?.z, radius: stored.radius}[key]);
 }
 
+// The refusal texts name the circle or the encounter (UI-UX 10:22:15)
+function mapPropertiesWords() {
+  return mapPropertiesItem()?.kind === "encounter" ? window.ServerManMapEncounterWording : window.ServerManMapWording;
+}
+
 // A radius from 1 m to the larger terrain extent; the edit happens at change (Enter or leaving the field)
 function mapPropertiesRadius(field) {
   const bounds = mapPropertiesBounds(), limit = bounds ? Math.max(bounds.width, bounds.height) : 100000;
-  const radius = Number(field.value);
+  const radius = Number(field.value), words = mapPropertiesWords();
   const valid = field.value.trim() !== "" && Number.isFinite(radius) && radius >= 1 && radius <= limit;
-  mapPropertiesCommit(field, valid ? null : window.ServerManMapWording.radiusEditInvalid(limit), () => ({radius}));
+  mapPropertiesCommit(field, valid ? null : words.radiusEditInvalid(limit), () => ({radius}));
 }
 
 // A centre axis inside the closed terrain bounds; the other axis keeps its stored value (UI-UX 15:44:25)
@@ -82,7 +94,7 @@ function mapPropertiesCentre(field, axis) {
   const bounds = mapPropertiesBounds(), value = Number(field.value);
   const low = axis === "x" ? bounds?.x_min : bounds?.z_min, extent = axis === "x" ? bounds?.width : bounds?.height;
   const valid = Boolean(bounds) && field.value.trim() !== "" && Number.isFinite(value) && value >= low && value <= low + extent;
-  mapPropertiesCommit(field, valid ? null : window.ServerManMapWording.centreInvalid(bounds),
+  mapPropertiesCommit(field, valid ? null : mapPropertiesWords().centreInvalid(bounds),
     (item) => ({centre: {...item.centre, [axis]: value}}));
 }
 
@@ -106,8 +118,9 @@ function mapPropertiesDelete() {
 
 // The native box of a zone, or null for geometry that the window cannot use
 function mapPropertiesBox(item) {
-  const points = item.kind === "loot_circle" ?
-    [{x: item.centre?.x - item.radius, z: item.centre?.z - item.radius}, {x: item.centre?.x + item.radius, z: item.centre?.z + item.radius}] :
+  const reach = item.radius ?? 0;
+  const points = ["loot_circle", "encounter"].includes(item.kind) ?
+    [{x: item.centre?.x - reach, z: item.centre?.z - reach}, {x: item.centre?.x + reach, z: item.centre?.z + reach}] :
     (Array.isArray(item.vertices) ? item.vertices : []);
   const xs = points.map((point) => point?.x), zs = points.map((point) => point?.z);
   if (!points.length || ![...xs, ...zs].every(Number.isFinite)) return null;
@@ -169,9 +182,10 @@ function mapPropertiesInit(model) {
   field("radius").addEventListener("change", () => mapPropertiesRadius(field("radius")));
   document.getElementById("map-properties-delete").addEventListener("click", mapPropertiesDelete);
   document.addEventListener("keydown", mapPropertiesKey);
+  window.ServerManMapEncounterProperties.init(model);
   mapPropertiesRender();
 }
 
 // The model owns the undo actions; the layers own the selection.
 window.ServerManMapProperties = Object.freeze({init: mapPropertiesInit, render: mapPropertiesRender, zoom: mapPropertiesZoom,
-  box: mapPropertiesBox, delete: mapPropertiesDelete});
+  box: mapPropertiesBox, delete: mapPropertiesDelete, item: mapPropertiesItem});

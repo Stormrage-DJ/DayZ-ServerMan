@@ -6,9 +6,6 @@
 // timer: the 1 s wait before a percent can show.
 const mapTierControlState = {model: null, id: null, options: null, read: null, timer: null};
 
-// Only loot zones have a tier select here; the encounter tool comes with task 7
-const mapTierControlKinds = Object.freeze(["loot_circle", "loot_polygon"]);
-
 // One element of the tier control
 function mapTierControlElement(id) {
   return document.getElementById(id);
@@ -23,7 +20,7 @@ function mapTierControlAnnounce(text) {
 // stays as a disabled option with its reason; a tier override says "(not writable)" while tier writes are off.
 function mapTierControlOptions(item, capabilities) {
   const state = mapTierControlState, words = window.ServerManMapInspectWording, select = mapTierControlElement("map-tier-select");
-  const tiers = capabilities?.holdable_tiers ?? [], stored = item.tier;
+  const tiers = capabilities?.holdable_tiers ?? [], stored = window.ServerManMapLinkedLoot.of(item).tier;
   const held = stored === null ? "" : tiers.find((tier) => tier.toLowerCase() === stored.toLowerCase()) ?? null;
   const writable = capabilities?.tier_writes?.available !== false;
   const options = [["", words.inherit, false], ...tiers.map((tier) => [tier, tier === held && !writable ? words.notWritable(tier) : tier, false])];
@@ -111,9 +108,11 @@ function mapTierControlHandlers(display) {
 
 // Follow the selection and the draft: a newer selection or edit replaces the read. A mission without a usable
 // tier map shows its reason without a read. context is null while the editor loads or closes.
+// A loot zone and the enabled linked loot of an encounter have the tier select (7.4); the object read of an
+// encounter samples its linked loot circle.
 function mapTierControlRender(item, status, context) {
   const state = mapTierControlState, words = window.ServerManMapInspectWording;
-  const loot = Boolean(item && mapTierControlKinds.includes(item.kind));
+  const loot = Boolean(window.ServerManMapLinkedLoot.of(item));
   mapTierControlElement("map-tier-row").hidden = !loot;
   state.id = loot ? item.id : null;
   if (!loot) state.options = null;
@@ -144,8 +143,10 @@ function mapTierControlInit(model) {
     ["map-tier-point", words.inspectPoint], ["map-tier-capacity-title", words.capacityTitle]]) mapTierControlElement(id).textContent = text;
   // A tier choice is one undo action and an edit, so it starts a new read (T4)
   select.addEventListener("change", () => {
-    if (!state.id) return;
-    try { model.edit(state.id, {tier: select.value || null}); } catch (error) { mapTierControlElement("map-tier-message").textContent = error.message; }
+    const item = model.snapshot()?.objects.find((object) => object.id === state.id);
+    if (!window.ServerManMapLinkedLoot.of(item)) return;
+    try { model.edit(state.id, window.ServerManMapLinkedLoot.patch(item, {tier: select.value || null})); }
+    catch (error) { mapTierControlElement("map-tier-message").textContent = error.message; }
   });
   // Read again keeps the focus in the tier control, because the action hides while the read runs
   mapTierControlElement("map-tier-again").addEventListener("click", () => {

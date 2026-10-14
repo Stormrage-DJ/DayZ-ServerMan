@@ -78,8 +78,13 @@ function mapOutlineTooClose(vertices, point) {
   return vertices.some((vertex) => Math.hypot(vertex.x - point.x, vertex.z - point.z) < mapOutlineSpacing);
 }
 
-// Selection hit test of one loot zone: on an edge counts as inside, else the even-odd rule
+// Selection hit test of one loot zone: on an edge counts as inside, else the even-odd rule.
+// An encounter takes part only with enabled linked loot, as the loot circle at its list position (UI-UX 10:22:15, 7.4).
 function mapOutlineContains(item, point) {
+  if (item.kind === "encounter") {
+    const area = window.ServerManMapLinkedLoot.area(item);
+    return Boolean(area) && mapOutlineContains(area, point);
+  }
   if (item.kind === "loot_circle") return Math.hypot(item.centre.x - point.x, item.centre.z - point.z) <= item.radius;
   if (item.kind !== "loot_polygon") return false;
   let inside = false;

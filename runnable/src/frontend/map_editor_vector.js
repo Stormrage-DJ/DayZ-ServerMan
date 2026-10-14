@@ -1,4 +1,4 @@
-// Draw loot zones, the selection and the outline draft on the vector layer above the grid.
+// Draw loot zones, encounters, the selection and the outline draft on the vector layer above the grid.
 "use strict";
 
 // Build one SVG element; geometry stays in attributes, so no inline style is needed.
@@ -13,7 +13,8 @@ function mapVectorPoints(view, vertices) {
   return vertices.map((vertex) => { const point = view.toScreen(vertex); return `${point.x},${point.y}`; }).join(" ");
 }
 
-// One zone: a dark halo under a 2 px line; an explicit tier uses its tier colour, Inherit a dashed line
+// One zone: a dark halo under a 2 px line; an explicit tier uses its tier colour, Inherit a dashed line.
+// Linked loot draws as a zone with its own attribute; the selection cue is the encounter ring above it (7.4).
 function mapVectorZone(view, item, state) {
   const scale = view.snapshot().scale;
   const shape = (attributes) => item.kind === "loot_circle" ?
@@ -21,9 +22,9 @@ function mapVectorZone(view, item, state) {
       r: item.radius * scale}) :
     mapVectorElement("polygon", {...attributes, points: mapVectorPoints(view, item.vertices)});
   const classes = ["map-zone", item.tier === null ? "map-zone-inherit" : "map-zone-tier"];
-  if (item.id === state.selected) classes.push("map-zone-selected");
+  if (item.id === state.selected && !item.linked) classes.push("map-zone-selected");
   if (state.problems.has(item.id)) classes.push("map-zone-problem");
-  const line = {class: classes.join(" "), "data-map-zone": item.id};
+  const line = {class: classes.join(" "), [item.linked ? "data-map-linked" : "data-map-zone"]: item.id};
   if (item.tier !== null) line.stroke = state.colour(item.tier);
   return [shape({class: "map-zone-halo"}), shape(line)];
 }
@@ -60,6 +61,8 @@ function mapVectorDrawable(item) {
   const point = (value) => Number.isFinite(value?.x) && Number.isFinite(value?.z);
   if (!item?.visible) return false;
   if (item.kind === "loot_circle") return point(item.centre) && Number.isFinite(item.radius);
+  // An encounter without a spawn radius (AI_Bandits) shows only its centre mark (7.3)
+  if (item.kind === "encounter") return point(item.centre) && (item.radius === null || Number.isFinite(item.radius));
   return item.kind === "loot_polygon" && Array.isArray(item.vertices) && item.vertices.every(point);
 }
 
@@ -83,8 +86,17 @@ function mapVectorDraw(view) {
   const shown = (item) => drag && item?.id === drag.item.id ? drag.item : item;
   const zones = mapVectorElement("g", {id: "map-zones"});
   // The list top wins, so zones draw from the list bottom up; hidden zones are not drawn
-  for (const item of [...(plan?.objects ?? [])].reverse().map(shown)) {
-    if (mapVectorDrawable(item)) zones.append(...mapVectorZone(view, item, state));
+  const order = [...(plan?.objects ?? [])].reverse().map(shown);
+  for (const item of order) {
+    // Enabled linked loot is a loot zone at its encounter's list position, under every encounter ring (7.4)
+    const zone = item?.kind === "encounter" ? window.ServerManMapLinkedLoot.area(item) : item;
+    if (zone && mapVectorDrawable(zone)) zones.append(...mapVectorZone(view, zone, state));
+  }
+  // Encounters lie above every loot zone, also from the list bottom up (Rendering)
+  for (const item of order) {
+    if (item?.kind !== "encounter" || !mapVectorDrawable(item)) continue;
+    zones.append(window.ServerManMapEncounterDraw.item(view, item, {selected: item.id === state.selected,
+      problem: state.problems.has(item.id), status: window.ServerManMapEncounters.status(item, value.capabilities)}));
   }
   // The handles of the selected zone lie above every zone
   const selected = state.selected ? plan?.objects?.find((item) => item?.id === state.selected) : null;

@@ -143,10 +143,11 @@ function mapModelCreate(changed, review) {
     notify();
   };
   const adopt = (submitted, result) => {
-    // The saved snapshot remains exactly what was submitted, not the newer object draft.
+    // The saved snapshot remains exactly what was submitted, not the newer object draft; its evaluation goes with it.
     saved = structuredClone(submitted);
     metadata = {...metadata, association: structuredClone(result.association), revision: result.revision,
-      state: "VALID", draft_changes: result.draft_changes, interrupted_evidence: structuredClone(result.interrupted_evidence)};
+      state: "VALID", draft_changes: result.draft_changes, interrupted_evidence: structuredClone(result.interrupted_evidence),
+      evaluation: structuredClone(result.evaluation ?? null)};
     notify();
   };
   const acceptBounds = (submitted, result) => {
@@ -165,17 +166,18 @@ function mapModelCreate(changed, review) {
     notify();
     return true;
   };
-  const setBackground = (label, background) => {
-    // The image reference and its calibration change as one undo action; objects and bounds stay.
+  const setPlan = (label, name, value) => {
+    // A plan value (the image reference with its calibration, or the global capacity) is one undo action; objects stay.
     if (!writable() || !draft || document.querySelector("dialog")) return false;
     const candidate = snapshot();
-    candidate.background = structuredClone(background);
+    candidate[name] = structuredClone(value);
     if (!history.push(label, draft, candidate)) return false;
     draft = candidate;
     notify();
     return true;
   };
-  return Object.freeze({load, snapshot, status, action, edit, move, acceptBounds, setBackground, adopt, withdraw,
+  return Object.freeze({load, snapshot, status, action, edit, move, acceptBounds, adopt, withdraw,
+    setBackground: (label, value) => setPlan(label, "background", value), setGlobal: (label, value) => setPlan(label, "global_abundance", value),
     // A placement enters at the top of the list (index 0); a load or close changes the epoch, only a load the loads
     add: (label, object) => action(label, (plan) => plan.objects.unshift(structuredClone(object)), 1),
     remove: (label, id) => action(label, (plan) => { plan.objects = plan.objects.filter((item) => item.id !== id); }, -1, id),

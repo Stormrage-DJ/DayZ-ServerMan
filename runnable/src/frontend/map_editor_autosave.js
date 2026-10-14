@@ -26,6 +26,8 @@ function mapAutosaveShow(text, notice = null, announce = false, reason = "") {
   window.ServerManMapLayout.status(text, {notice, announce});
   document.getElementById("map-save-reload").hidden = !state.blocked;
   window.ServerManMapLayout.draftChanges(mapAutosaveDraft(state.model.status()));
+  // The effective capacity texts follow the save state: Updating, Not evaluated or the backend values (5.1)
+  window.ServerManMapAbundance.render();
 }
 
 // The delayed text shows 2 s after the save started, also when a cancelled close interrupted the timer (QA-5.2-F6).

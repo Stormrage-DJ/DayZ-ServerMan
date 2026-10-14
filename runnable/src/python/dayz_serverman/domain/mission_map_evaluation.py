@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .mission_map_evaluation_shapes import LootShape, loot_shape
-from .mission_map_geometry import Bounds
+from .mission_map_geometry import Bounds, circle_covers
 from .mission_map_terrain import TerrainCapabilities, ValueRows, tiers_of
 from .mission_map_values import ABUNDANCE_PERCENT
 
@@ -30,6 +30,22 @@ def tier_problem(shape: LootShape, capabilities: TerrainCapabilities, writable: 
     if shape.tier.casefold() not in {name.casefold() for name in capabilities.holdable_tiers}:
         return "tier_not_holdable"
     return None
+
+
+def covering_encounters(plan: dict[str, Any], x: float, z: float) -> list[dict[str, Any]]:
+    """Return each encounter whose closed spawn circle covers the point, in plan order (R14).
+
+    Hidden, excluded and unavailable encounters stay listed, because they stay
+    in the plan (R11, R12). A provider without a spawn radius covers no point.
+    """
+    result = []
+    for item in plan["objects"]:
+        if item["kind"] != "encounter" or item["radius"] is None:
+            continue
+        if circle_covers(item["centre"]["x"], item["centre"]["z"], item["radius"], x, z):
+            result.append({"id": item["id"], "name": item["name"], "provider": item["provider"],
+                           "hidden": not item["visible"], "excluded": item["excluded"]})
+    return result
 
 
 def evaluate_plan(plan: dict[str, Any], capabilities: TerrainCapabilities,
@@ -65,7 +81,8 @@ def evaluate_location(plan: dict[str, Any], capabilities: TerrainCapabilities,
 
     Values are an immutable snapshot. A missing header or layer leaves original
     tiers unknown. Bounds mismatch retains header tiers and evaluates abundance
-    at the clicked point. No capacity is invented without building data.
+    at the clicked point. Covering encounters use the same point as the loot
+    zones. No capacity is invented without building data.
     """
     bounds = plan_bounds(plan)
     writable, _ = capabilities.tier_writes(bounds, plan["terrain"]["bounds_confirmed"])
@@ -114,4 +131,4 @@ def evaluate_location(plan: dict[str, Any], capabilities: TerrainCapabilities,
                           "effective": plan["global_abundance"] + zone},
             "hidden_contributors": [shape_reference(shape) for shape in contributors.values() if shape.hidden],
             "abundance_only": winner is not None and winner.tier is None,
-            "encounters": [], "capacity": None}
+            "encounters": covering_encounters(plan, test_x, test_z), "capacity": None}
