@@ -153,12 +153,15 @@ def configuration_fingerprint(plan: dict[str, Any]) -> str:
 
 
 def _number_form(value: Any) -> Any:
-    """Return the value with integral floats as integers, so -0.0, 0.0 and 0, and 2.0 and 2, are one number.
+    """Return the value with each number in one canonical form: its binary64 value, an integral one as an integer.
 
-    JSON from the window does not keep that difference, so it must not show as a configuration change.
+    So -0.0, 0.0 and 0, and 2.0 and 2, are one number, and an integer beyond 2**53 is the binary64 value that
+    the window keeps. Window JSON does not keep these differences, so they must not show as a change (T2.3-F4).
+    D1 admits only numbers that convert to a finite binary64 value.
     """
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        number = float(value)
+        return int(number) if number.is_integer() else number
     if isinstance(value, dict):
         return {key: _number_form(item) for key, item in value.items()}
     if isinstance(value, list):

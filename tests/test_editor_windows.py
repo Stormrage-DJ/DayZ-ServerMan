@@ -41,7 +41,8 @@ class FakeEditor:
 
     def __init__(self) -> None:
         """Make a loaded document with the accepted immediate close response."""
-        self.events = SimpleNamespace(loaded=FakeEvent(), closing=FakeEvent(), closed=FakeEvent())
+        self.events = SimpleNamespace(loaded=FakeEvent(), closing=FakeEvent(), closed=FakeEvent(),
+                                      minimized=FakeEvent(), maximized=FakeEvent(), restored=FakeEvent())
         self.events.loaded.set()
         self.actions = []
         self.ack = True
@@ -78,6 +79,10 @@ class FakeEditor:
     def show(self):
         """Record foreground presentation."""
         self.actions.append("show")
+
+    def maximize(self):
+        """Record a maximize."""
+        self.actions.append("maximize")
 
     def destroy(self):
         """Respect the closing refusal and optionally send the native closed event."""
@@ -163,6 +168,15 @@ class EditorWindowTests(unittest.TestCase):
         options["js_api"].toggle_full_screen()
         self.assertEqual(webview.windows[0].actions[-1], "fullscreen")
         self.assertEqual(len(webview.windows), 1)
+
+    def test_editor_api_gets_the_image_selection_service(self):
+        """Each editor's image dialog registers with the one in-process selection service (3.16)."""
+        webview, selections = FakeWebview(), object()
+        registry = EditorWindowRegistry(webview, None, FakeProfiles(), None, FRONTEND, FakeLogger(),
+                                        work_area=lambda _: (100, 200, 1300, 950), selections=selections)
+        registry.mark_started()
+        registry.open("alpha")
+        self.assertIs(webview.options[0]["js_api"]._selections, selections)
 
     def test_duplicate_open_is_serialized(self):
         """Concurrent browser callbacks must create exactly one native editor."""

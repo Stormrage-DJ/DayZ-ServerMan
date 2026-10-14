@@ -198,10 +198,18 @@ Bridge changes are additive: new methods and new response fields only.
 set. The command line did not change this rule.
 
 The mission-map editor adds
-`load_mission_map` (observer read) and `save_mission_map_plan` (owner method).
-`tests/test_bridge_contracts.py` pins 62 bridge methods. The main-window host
-API remains pinned separately in `tests/test_readonly_host_api.py`. The two
-editor methods have pending task 10 entries for `map show` and `map save`.
+`load_mission_map` (observer read), `save_mission_map_plan` (owner method),
+the Inspect methods `inspect_mission_map`, `continue_mission_map_inspection`
+and `cancel_mission_map_inspection` (observer reads), and
+`set_aside_mission_map_plan` (owner method). Set aside renames invalid saved
+plan data to its dated name and deletes nothing.
+`tests/test_bridge_contracts.py` pins 68 bridge methods. The main-window host
+API remains pinned separately in `tests/test_readonly_host_api.py`. These six
+editor methods have pending task 10 entries for `map show`, `map save`,
+`map inspect` and `map set-aside`.
+The display reads `read_mission_map_tier_layer` and
+`read_mission_map_background` are owner methods and permanent command-line
+exclusions: they carry only display-only rendering data.
 The command line has its own `cli_version`, which also grows only by new fields.
 
 ### Command line and sessions

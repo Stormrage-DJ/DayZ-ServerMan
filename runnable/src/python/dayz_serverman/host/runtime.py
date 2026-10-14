@@ -110,7 +110,8 @@ def launch_application(
         raise RuntimeError("pywebview did not create a window")
     # Bind the owner guard before native callbacks can open or delete a profile
     editors = EditorWindowRegistry(webview, window, composition.profiles,
-                                   composition.host_bridge, assets, composition.logger, hidden=hidden)
+                                   composition.host_bridge, assets, composition.logger, hidden=hidden,
+                                   selections=composition.mission_map.images)
     composition.editor_guard.bind(editors)
     host_api._set_map_editor_opener(editors.open)
     # Resolve dialog constants for both pywebview API generations

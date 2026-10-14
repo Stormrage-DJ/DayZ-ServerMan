@@ -112,7 +112,7 @@ const canceled=model.undo();await wait();document.querySelector("dialog button")
 check(JSON.stringify(model.snapshot())===JSON.stringify(before)&&model.status().history.position===cursor,"traversal Cancel preserves cursor and draft");
 const undone=model.undo();await acceptReview();await undone;
 check(model.snapshot().terrain.bounds.width===2000&&!model.snapshot().objects[0].visible&&model.status().revision===5,"terrain undo preserves object edit and actual revision");
-check(model.status().draft_changes===null&&document.getElementById("map-draft-changes").textContent==="Not available","unsaved draft comparison unavailable");
+check(model.status().draft_changes===null&&document.getElementById("map-draft-changes").textContent==="Updating","unsaved draft has no comparison; Updating while its save waits");
 const redone=model.redo();await acceptReview();await redone;
 check(model.snapshot().terrain.bounds.width===3000&&model.status().draft_changes===false,"return to backend-confirmed snapshot restores actual comparison");
 const count=model.status().history.length;manual();await wait();check(saved.length===2&&model.status().history.length===count&&model.status().revision===6,"no-op terrain save creates no duplicate action");
@@ -130,8 +130,8 @@ finish(success(5,true));await wait();
 check(model.snapshot().objects[0].visible&&model.snapshot().objects[2].locked&&model.snapshot().terrain.bounds.width===3000,"success merges only terrain into current object draft");
 check(JSON.stringify(saved[0].plan)===submitted&&model.status().history.length===2,"captured submission immutable; terrain joins current branch");
 check(model.status().revision===5&&model.status().draft_changes===null&&document.getElementById("map-status").textContent.includes("unsaved changes"),"newer edits not shown as saved/current comparison");
-check(await window.ServerManMapEditor.settleForClose()==="close","immediate close contract unchanged");window.ServerManMapEditor.releaseClose();
-check(document.getElementById("map-draft-changes").textContent==="Not available","release never revives obsolete comparison");
+window.ServerManMapEditor.settleForClose();await wait();check(saved.length===2,"a close saves the unsaved draft at once (5.4)");window.ServerManMapEditor.releaseClose();
+check(document.getElementById("map-draft-changes").textContent==="Updating","release never revives obsolete comparison; the unsaved draft waits for its save");
 '''), "PASS")
 
     def test_refusal_invalid_metadata_cancel_reload_and_late_response_preserve_history(self) -> None:
@@ -148,9 +148,10 @@ for(const response of [{success:false,error:{code:"REVISION_CONFLICT",message:"c
 let finish;window.pywebview.api.save_plan=(document,revision,selection)=>{saved.push({plan:structuredClone(document),revision,selection});return new Promise(resolve=>finish=resolve)};
 manual();await acceptReview();await load({...value(mixed()),revision:11});finish(success(5,true));await wait();
 check(model.status().revision===11&&model.status().history.length===0&&model.snapshot().terrain.bounds.width===2000,"new load clears history and rejects late success");
-model.visible("Circle_A");manual();await wait();await window.ServerManMapEditor.settleForClose();finish(success(12,true));await wait();
-check(model.status().revision===11&&model.status().history.length===1&&document.getElementById("map-status").textContent==="Closing","Closing invalidates late save without losing draft");
-window.ServerManMapEditor.releaseClose();check(!model.snapshot().objects[0].visible&&model.status().draft_changes===null,"close release retains unsaved object edit");
+model.visible("Circle_A");manual();await wait();const closing=window.ServerManMapEditor.settleForClose();finish(success(12,true));await wait();
+check(model.status().revision===12&&model.status().history.length===1&&document.getElementById("map-status").textContent==="Closing","a committed answer during a close is adopted and keeps Closing (QA-5.2-F5)");
+check(await closing==="close","the adopted bounds answer leaves nothing unsaved");
+window.ServerManMapEditor.releaseClose();check(!model.snapshot().objects[0].visible&&!model.status().dirty&&model.status().draft_changes===true,"close release keeps the edit that the adopted answer saved");
 '''), "PASS")
 
     def test_unconfirmed_numeric_failure_and_unavailable_states_guard_mutation(self) -> None:
@@ -179,4 +180,22 @@ check(document.getElementById("map-status").textContent.includes("saved plan is 
 check(!model.visible("anything")&&!model.action("missing",()=>{}),"ordinary no-plan edits disabled");
 await model.redo();check(JSON.stringify(model.snapshot())===JSON.stringify(accepted)&&model.status().draft_changes===false,"redo restores same accepted identity, geometry and actual comparison");
 check(saved.length===1&&JSON.stringify(model.status().association)===JSON.stringify(association),"history neither saves nor rolls association back");
+'''), "PASS")
+
+    def test_history_keeps_100_entries_and_buttons_traverse_it(self) -> None:
+        """101 actions keep 100 entries; 100 undos reach action 1, 100 redos return; the buttons step the same history."""
+        self.assertEqual(run_editor_harness(STATE + r'''
+await load(value(mixed()));const after=[];
+for(let index=1;index<=101;index++){model.edit("Circle_A",{name:`Name ${index}`});after.push(JSON.stringify(model.snapshot()))}
+check(model.status().history.length===100&&model.status().history.position===100,"101 actions keep 100 entries at position 100");
+for(let index=0;index<100;index++)check(await model.undo(),"each of 100 undo steps applies");
+check(JSON.stringify(model.snapshot())===after[0]&&!model.status().history.undo&&!(await model.undo()),"100 undos reach the plan after action 1, then undo stops");
+for(let index=0;index<100;index++)check(await model.redo(),"each of 100 redo steps applies");
+check(JSON.stringify(model.snapshot())===after[100]&&!model.status().history.redo,"100 redos return to the plan after action 101");
+const undo=document.getElementById("map-undo"),redo=document.getElementById("map-redo");
+check(!undo.disabled&&redo.disabled,"button states at the newest entry");
+undo.click();await wait();undo.click();await wait();
+check(JSON.stringify(model.snapshot())===after[98]&&!redo.disabled,"Undo button steps back twice");
+redo.click();await wait();check(JSON.stringify(model.snapshot())===after[99]&&model.status().history.position===99,"Redo button steps forward once");
+check(saved.length===0,"history buttons never save");
 '''), "PASS")

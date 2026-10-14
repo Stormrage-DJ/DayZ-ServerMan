@@ -2,7 +2,8 @@
 "use strict";
 
 // One pending save stays pending across load/close invalidation until its call returns.
-function mapBoundsCreateSave(refresh, failed) {
+// A success binds to the load count: only a load drops it, because a close cannot undo a commit (QA-5.2-F5).
+function mapBoundsCreateSave(refresh, failed, loads = () => 0) {
   let generation = 0;
   let pending = false;
   let failureGeneration = null;
@@ -16,22 +17,25 @@ function mapBoundsCreateSave(refresh, failed) {
   // The submitted immutable snapshot is the local saved document; the backend owns its revision.
   const run = async (plan, revision, accepted) => {
     if (pending) return;
-    const token = generation, submitted = structuredClone(plan);
+    const token = generation, load = loads(), submitted = structuredClone(plan);
     pending = true;
     refresh();
-    document.getElementById("map-status").textContent = window.ServerManMapWording.boundsSaving;
+    window.ServerManMapLayout.status(window.ServerManMapWording.boundsSaving);
     try {
-      const result = await window.ServerManMapBridge.save(submitted, revision, null);
-      if (token !== generation) return;
-      if (!validResult(result, submitted)) throw new Error(window.ServerManMapWording.boundsResultUnknown);
+      // A chosen image goes with its selection token, so the save stores its path
+      const selection = window.ServerManMapBackground?.selection(submitted) ?? null;
+      const result = await window.ServerManMapBridge.save(submitted, revision, selection);
+      if (load !== loads()) return;
+      if (!validResult(result, submitted)) throw Object.assign(new Error(window.ServerManMapWording.boundsResultUnknown), {unconfirmed: true});
       const status = accepted(submitted, result);
-      // Routine save success stays quiet; a recovery after failure is announced.
-      if (failureGeneration === token) window.ServerManMapLayout.status(status ?? window.ServerManMapWording.boundsSaved);
+      // Routine save success stays quiet; a recovery after failure is announced, but never over Closing.
+      if (failureGeneration === token && token === generation) window.ServerManMapLayout.status(status ?? window.ServerManMapWording.boundsSaved, {announce: true});
       failureGeneration = null;
     } catch (error) {
-      if (token === generation) { failureGeneration = token; failed(error); }
+      // A failure binds to the load count like a success; the bounds module holds it while a close lasts (QA-5.2-F9)
+      if (load === loads()) { failureGeneration = generation; failed(error); }
     } finally {
-      // A late answer may release busy controls, but cannot replace current loaded state or Closing.
+      // A late answer may release busy controls; it never replaces a newer load or the Closing state.
       pending = false;
       refresh();
     }

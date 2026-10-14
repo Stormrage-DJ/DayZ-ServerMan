@@ -168,7 +168,10 @@ async function reviewOrApplyTweakTarget(target) {
     if (!result.success) return showTweakError(result, "Changes could not be reviewed.");
     // Remember the reviewed arguments and ask the operator to apply.
     tweaksState.reviewed.set(target, { fingerprint, args });
-    showTweakFeedback(`${result.value.changed_fields.length} ${target.replaceAll("_", " ")} change(s) validated. Select Apply to publish one file.`);
+    // A medical toggle that changes no group says so instead of counting changes.
+    const unchanged = window.ServerManOperationMessages.medicalUnchanged;
+    showTweakFeedback(result.value.message === unchanged ? unchanged
+      : `${result.value.changed_fields.length} ${target.replaceAll("_", " ")} change(s) validated. Select Apply to publish one file.`);
     return renderTweaksActions();
   }
   const method = medicalTargets.has(target) ? "apply_medical_feature"
@@ -264,8 +267,12 @@ function tweakOperationFinished(operation) {
   if (!["SUCCEEDED", "FAILED", "CANCELLED", "RECOVERY_REQUIRED"].includes(operation.state)) return true;
   tweaksState.pending.delete(operation.operation_id);
   // Reload after success, otherwise return the target to review.
-  if (operation.state === "SUCCEEDED") void loadTweaks();
-  else {
+  if (operation.state === "SUCCEEDED") {
+    // A medical toggle that changed no file keeps its sentence on the page after the reload.
+    const unchanged = window.ServerManOperationMessages.medicalUnchanged;
+    const said = operation.result?.message === unchanged;
+    void loadTweaks().then(() => { if (said) showTweakFeedback(unchanged); });
+  } else {
     tweaksState.reviewed.delete(target);
     showTweakFeedback(window.ServerManOperationBar?.pageResult(operation).text || "Tweak publication failed.", true);
     renderTweaksActions();

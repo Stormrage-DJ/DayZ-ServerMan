@@ -114,7 +114,17 @@ function mapCreateViewport(changed) {
     return true;
   };
 
-  return Object.freeze({setBounds, resize, fit, zoom, pan, toScreen, toNative, toNativeAxes,
+  // Zoom to selection: a native box fills about 80% of the view, within the wheel zoom limits
+  const focus = (box) => {
+    if (!state.bounds || !state.fitScale || state.failure ||
+        ![box?.x_min, box?.z_min, box?.width, box?.height].every(Number.isFinite)) return false;
+    const scale = Math.max(state.fitScale / 2, Math.min(20, 0.8 * state.width / box.width, 0.8 * state.height / box.height));
+    if (!anchor({x: box.x_min + box.width / 2, z: box.z_min + box.height / 2}, {x: state.width / 2, y: state.height / 2}, scale)) return false;
+    changed();
+    return true;
+  };
+
+  return Object.freeze({setBounds, resize, fit, focus, zoom, pan, toScreen, toNative, toNativeAxes,
     snapshot: () => Object.freeze({...state})});
 }
 

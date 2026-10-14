@@ -6,7 +6,15 @@ const mapEditorState = {loaded: null, closing: false, loading: false, model: nul
 
 // Draft rendering never estimates the backend's last-applied comparison.
 function mapDraftChanged(value) {
+  // Autosave decides the wait and the save status first, so the redraw below shows current refusal marks
+  if (mapEditorState.loaded && !mapEditorState.closing && !mapEditorState.loading) window.ServerManMapAutosave.changed(value);
   window.ServerManMapLayers.render();
+  // A load, a close or a change of the dragged zone ends a drag without an action (QA-4.5-F2)
+  window.ServerManMapDrag.sync();
+  // The tools keep this status copy for drawing; their refresh redraws the vector layer
+  window.ServerManMapTools.refresh(value);
+  // After the tools, so the tier control sees the current tool availability (QA-4.6-F7)
+  window.ServerManMapProperties.render();
   if (!mapEditorState.loaded) return;
   const current = {...mapEditorState.loaded, ...value};
   const terrain = JSON.stringify(value.plan?.terrain ?? null);
@@ -15,11 +23,9 @@ function mapDraftChanged(value) {
     window.ServerManMapViewportUi.load(current);
     window.ServerManMapBounds.load(current);
   }
-  window.ServerManMapLayout.draftChanges(value.draft_changes);
-  if (!mapEditorState.closing && !mapEditorState.loading) {
-    document.getElementById("map-status").textContent = value.dirty ?
-      (value.plan ? window.ServerManMapWording.localUnsaved : window.ServerManMapWording.localNoPlan) : mapLoadStatus(current);
-  }
+  window.ServerManMapLayout.draftChanges(window.ServerManMapAutosave.draft(value));
+  // Undo, redo and calibration can change the image reference; the overlays and objects stay
+  window.ServerManMapBackground.draft(value.plan);
 }
 
 // Pass one shared model to rows and keys, retaining the existing host API surface.
@@ -27,9 +33,34 @@ function mapInitModel() {
   if (mapEditorState.model) return;
   mapEditorState.model = window.ServerManMapModel.create(mapDraftChanged,
     (before, after) => window.ServerManMapBounds.reviewHistory(before, after));
-  window.ServerManMapBounds.init(mapAdoptBounds, () => ({...mapEditorState.loaded, ...mapEditorState.model.status()}));
+  window.ServerManMapBounds.init(mapAdoptBounds, () => ({...mapEditorState.loaded, ...mapEditorState.model.status()}),
+    () => mapEditorState.model.loads());
   window.ServerManMapLayers.init(mapEditorState.model);
   window.ServerManMapKeys.init(mapEditorState.model);
+  window.ServerManMapPlanSave.init(mapEditorState.model);
+  // The loaded text keeps its notice kind, so reload guidance shows in full again after an undo (QA-5.2-F8)
+  window.ServerManMapAutosave.init(mapEditorState.model, (value) => {
+    const current = {...mapEditorState.loaded, ...value};
+    return [mapLoadStatus(current), mapLoadNotice(current)];
+  });
+  window.ServerManMapTools.init(mapEditorState.model);
+  window.ServerManMapTiers.init();
+  window.ServerManMapBackground.init(mapEditorState.model);
+  window.ServerManMapCalibration.init(mapEditorState.model);
+  // After the calibration, so its Escape and its pick clicks come first (4.5)
+  window.ServerManMapDrag.init(mapEditorState.model);
+  window.ServerManMapProperties.init(mapEditorState.model);
+  window.ServerManMapInspect.init(mapEditorState.model);
+  window.ServerManMapSetAside.init(mapEditorState.model);
+}
+
+// Display reads follow the editor's enabled state; closing drops their late answers.
+function mapDisplayEnabled(enabled) {
+  window.ServerManMapTiers.enabled(enabled);
+  window.ServerManMapBackground.enabled(enabled);
+  // The set-aside action also stops while loading or closing, and a cancelled close may load again (5.3)
+  window.ServerManMapSetAside.enabled(enabled);
+  if (!enabled) window.ServerManMapCalibration.cancel();
 }
 
 // Report the current state without saving or changing the loaded document.
@@ -38,22 +69,30 @@ function mapLoadStatus(value) {
   // Backend details include stale-record reload guidance that must stay visible.
   const status = value.read_only ? words.readOnly(value.read_only_reason) :
     (!value.plan ? words.boundsRequired : (value.state === "MISSING" ? words.unsaved : words.loaded));
-  return value.detail ? `${status} ${value.detail}` : status;
+  const detail = words.detail(value);
+  return detail ? `${status} ${detail}` : status;
+}
+
+// A read-only reason and reload guidance also show in full on the map.
+function mapLoadNotice(value) {
+  return value.read_only || value.detail ? "info" : null;
 }
 
 // Keep the submitted snapshot locally, with only actual returned save metadata.
 function mapAdoptBounds(plan, result) {
-  // Bounds save generations already reject reload/close answers before this callback.
-  if (mapEditorState.closing || !mapEditorState.loaded) return;
+  // A load drops the answer before this callback; an answer during a close is committed, so it is adopted (QA-5.2-F5)
+  if (!mapEditorState.loaded) return;
   const previous = mapEditorState.loaded;
   const value = {...previous, plan, association: result.association, revision: result.revision,
     state: "VALID", draft_changes: result.draft_changes, interrupted_evidence: result.interrupted_evidence};
   mapEditorState.loaded = value;
   window.ServerManMapLayout.identity(value);
   mapEditorState.model.acceptBounds(plan, result);
+  // A close keeps its controls disabled and its "Closing" state; the release shows the current state
+  if (mapEditorState.closing) return;
   window.ServerManMapBounds.enabled(true);
   const status = mapEditorState.model.status().dirty ? window.ServerManMapWording.savedSnapshot : window.ServerManMapWording.boundsSaved;
-  document.getElementById("map-status").textContent = status;
+  window.ServerManMapLayout.status(status);
   return status;
 }
 
@@ -63,12 +102,14 @@ async function mapLoad() {
   window.ServerManMapViewportUi.init();
   mapInitModel();
   mapEditorState.loading = true;
+  window.ServerManMapAutosave.reset();
   mapEditorState.model.enabled(false);
   window.ServerManMapBounds.enabled(false);
   window.ServerManMapViewportUi.enabled(false);
+  mapDisplayEnabled(false);
   const region = document.getElementById("map-editor");
   region.setAttribute("aria-busy", "true");
-  window.ServerManMapLayout.status(window.ServerManMapWording.loading);
+  window.ServerManMapLayout.status(window.ServerManMapWording.loading, {announce: true});
   window.ServerManMapLayout.draftChanges(null);
   try {
     const answer = await window.ServerManMapBridge.load();
@@ -79,14 +120,20 @@ async function mapLoad() {
     window.ServerManMapLayout.identity(value);
     window.ServerManMapViewportUi.load(value);
     window.ServerManMapBounds.load(value);
+    // The tier overlay and the stored image read in the background; editing does not wait for them
+    window.ServerManMapTiers.load(value);
+    window.ServerManMapBackground.load(value);
     mapEditorState.terrain = JSON.stringify(value.plan?.terrain ?? null);
     mapEditorState.model.load(value);
     window.ServerManMapLayers.reset();
     mapEditorState.loading = false;
     mapEditorState.model.enabled(true);
     window.ServerManMapBounds.enabled(true);
-    window.ServerManMapLayout.status(mapLoadStatus(value));
+    mapDisplayEnabled(true);
+    // A read-only reason and reload guidance also show in full on the map
+    window.ServerManMapLayout.status(mapLoadStatus(value), {notice: mapLoadNotice(value), announce: true});
     window.ServerManMapLayout.draftChanges(value.draft_changes);
+    window.ServerManMapSetAside.load(value);
     document.body.dataset.mapReady = "true";
     region.dataset.readOnly = String(value.read_only);
     region.setAttribute("aria-busy", "false");
@@ -97,9 +144,12 @@ async function mapLoad() {
     mapEditorState.loading = false;
     window.ServerManMapViewportUi.load(null);
     window.ServerManMapBounds.load(null);
+    window.ServerManMapTiers.load(null);
+    window.ServerManMapBackground.load(null);
+    window.ServerManMapSetAside.load(null);
     document.body.dataset.mapReady = "false";
     region.setAttribute("aria-busy", "false");
-    window.ServerManMapLayout.status(error.message || window.ServerManMapWording.failed);
+    window.ServerManMapLayout.status(error.message || window.ServerManMapWording.failed, {notice: "error", announce: true});
     window.ServerManMapLayout.draftChanges(null);
   }
 }
@@ -112,35 +162,12 @@ function mapStart() {
   if (window.pywebview?.api) mapLoad();
 }
 
-// Keep the immediate close promise until the accepted later close leaf.
+// The close module owns the settle and the release of this document (map_editor_close.js).
+window.ServerManMapClose.init(mapEditorState, mapDisplayEnabled, mapLoad);
 window.ServerManMapEditor = Object.freeze({
   load: mapLoad,
-  // Freeze pending loads until native destruction or release of the close request.
-  settleForClose: async () => {
-    mapEditorState.closing = true;
-    mapEditorState.model?.enabled(false);
-    window.ServerManMapViewportUi.enabled(false);
-    window.ServerManMapBounds.enabled(false);
-    window.ServerManMapBridge.invalidateLoads();
-    window.ServerManMapLayout.status(window.ServerManMapWording.closing);
-    return "close";
-  },
-  // Restore the loaded status and backend comparison after a cancelled application close.
-  releaseClose: () => {
-    mapEditorState.closing = false;
-    if (mapEditorState.loaded) {
-      mapEditorState.loading = false;
-      mapEditorState.model.enabled(true);
-      window.ServerManMapViewportUi.enabled(true);
-      window.ServerManMapBounds.enabled(true);
-      // Pending answers stay invalidated; the retained snapshot is no longer loading.
-      const current = {...mapEditorState.loaded, ...mapEditorState.model.status()};
-      window.ServerManMapLayout.draftChanges(current.draft_changes);
-      document.getElementById("map-editor").setAttribute("aria-busy", "false");
-      window.ServerManMapLayout.status(current.dirty ?
-        (current.plan ? window.ServerManMapWording.localUnsaved : window.ServerManMapWording.localNoPlan) : mapLoadStatus(current));
-    } else mapLoad();
-  },
+  settleForClose: (reason, join) => window.ServerManMapClose.settle(reason, join),
+  releaseClose: () => window.ServerManMapClose.release(),
 });
 
 document.addEventListener("DOMContentLoaded", mapStart, {once: true});

@@ -8,6 +8,7 @@ Path roles and block reasons live in `host_sentence_wording.py`; this module re-
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 
 # Host sentence wording lives in its own module; it is re-exported for existing importers
 from .host_sentence_wording import (  # noqa: F401
@@ -134,6 +135,30 @@ KIND_ERROR_TEXTS: dict[str, dict[str, str]] = {
         "UPDATE_RESULT_UNKNOWN": "SteamCMD did not close cleanly after the Steam sign-in, so the sign-in cannot be confirmed. Changes are blocked.",
     },
 }
+# Host sentences shown unchanged, by their opening text; each names its cause, its file and the outcome
+SHOWN_HOST_TEXTS: tuple[str, ...] = (
+    "mapgroupproto.xml has a layout that this setting cannot change safely: ",
+    "mapgroupproto.xml differs from its stored original: ",
+)
+# Way out of a loot-zone refusal where mapgroupproto.xml and its stored original do not match (6.5, PO 15:19:49)
+ZONE_ORIGINAL_WAY_OUT = ("DayZ-ServerMan does not guess the original loot of these groups. If mapgroupproto.xml "
+                         "changed on purpose, for example after a game or mod update or by another tool, first make "
+                         "sure that its medical loot groups have the loot that you want when medical loot zones are "
+                         "off. Then move the stored original to another folder. The current file then becomes the "
+                         "original, which is the Off state. Otherwise, put back the mapgroupproto.xml that matches "
+                         "the stored original.")
+# Admin text of a loot-zone refusal, by the opening of its host reason (6.5). Each row gives the sentence
+# that replaces the reason ("" shows the reason) and the way out ("" for none). The frontend has the same rows.
+ZONE_REFUSAL_TEXTS: tuple[tuple[str, str, str], ...] = (
+    ("mapgroupproto.xml differs from its stored original: ", "", ZONE_ORIGINAL_WAY_OUT),
+    ("medical feature target differs from both its original and managed state",
+     "mapgroupproto.xml differs from its stored original and from the form that DayZ-ServerMan writes when medical loot zones are on. No file was changed.",
+     ZONE_ORIGINAL_WAY_OUT),
+    ("mapgroupproto.xml has a layout that this setting cannot change safely: ", "",
+     "Correct this in mapgroupproto.xml, then try again."),
+    ("medical loot zones cannot change because the map editor manages this mission",
+     "Medical loot zones cannot change because the map editor manages this mission.", ""),
+)
 # Known host sentences of a rejected request, by a fragment of the host message
 REQUEST_TEXTS: tuple[tuple[str, str], ...] = (
     ("must contain only letters, digits, or underscore", "The Steam account name may contain only letters, digits and underscores."),
@@ -218,6 +243,9 @@ def error_text(code: object, message: object, owner: object = None, kind: object
         return f"This cannot be done while the server is {SERVER_STATES[states[-1] if states else 'RUNNING_EXTERNAL']}."
     if code == "MUTATION_CONFLICT":
         return conflict_text(text, owner=owner)
+    # A host sentence that already says what to do is shown as it is, whatever its code
+    if text.startswith(SHOWN_HOST_TEXTS):
+        return text
     own = KIND_ERROR_TEXTS.get(kind, {}) if isinstance(kind, str) else {}
     if code in own:
         return own[str(code)]
@@ -229,3 +257,21 @@ def error_text(code: object, message: object, owner: object = None, kind: object
             return sentence
     # Any other host sentence is shown when it holds no identifier
     return plain_sentence(text) or (REQUEST_TEXT if code == "INVALID_REQUEST" else INTERNAL_TEXT)
+
+
+def zone_baseline_text(baseline: object) -> tuple[str, str | None] | None:
+    """Return the admin text of an unmappable loot-zone baseline and the stored original to name (6.5).
+
+    A mappable baseline, or a reason without a row, gives None: the state is never guessed, and the
+    caller keeps its existing text.
+    """
+    if not isinstance(baseline, Mapping) or baseline.get("mappable") is not False:
+        return None
+    reason = str(baseline.get("reason") or "")
+    for opening, replacement, way_out in ZONE_REFUSAL_TEXTS:
+        if reason.startswith(opening):
+            text = " ".join(part for part in (replacement or reason, way_out) if part)
+            # Only the way out that moves or matches the stored original needs its path
+            path = baseline.get("stored_original") if way_out == ZONE_ORIGINAL_WAY_OUT else None
+            return text, str(path) if path else None
+    return None

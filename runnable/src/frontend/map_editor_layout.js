@@ -19,17 +19,23 @@ function mapPanelState() {
   toggle.setAttribute("aria-label", panel.open ? window.ServerManMapWording.hideControls : window.ServerManMapWording.showControls);
 }
 
-// Keep status text separate from polite announcements and future coordinates.
-function mapLayoutStatus(text) {
-  mapLayoutText("map-status", text);
-  mapLayoutText("map-announcement", text);
+// The one writer of the plan state (UI-UX 2026-10-13 00:01:25): the full text and its title in the one-line footer,
+// the full text on the map for a notice ("info", "success" or "error"), and the live region only when the caller asks.
+function mapLayoutStatus(text, {notice = null, announce = false} = {}) {
+  mapLayoutText("map-status", text, true);
+  const board = document.getElementById("map-save-notice");
+  board.textContent = notice ? text : "";
+  board.classList.toggle("map-save-error", notice === "error");
+  board.classList.toggle("map-save-success", notice === "success");
+  if (announce) mapLayoutText("map-announcement", text);
 }
 
-// Show only the backend's last-applied comparison, never a browser estimate.
+// Show only the backend's last-applied comparison, never a browser estimate; "updating" while a save waits or runs.
 function mapLayoutDraft(value) {
   const words = window.ServerManMapWording;
-  const text = value === true ? words.yes : (value === false ? words.no : words.unavailable);
+  const text = value === true ? words.yes : (value === false ? words.no : (value === "updating" ? words.updating : words.unavailable));
   mapLayoutText("map-draft-changes", text);
+  document.getElementById("map-draft-changes").classList.toggle("map-draft-updating", value === "updating");
 }
 
 // Expose the current layout responsibilities without future editing controls.
@@ -42,7 +48,6 @@ window.ServerManMapLayout = Object.freeze({
     document.getElementById("map-panel").addEventListener("toggle", mapPanelState);
     mapPanelState();
     // Empty states name unavailable capabilities instead of pretending they exist.
-    mapLayoutText("map-tools-empty", words.toolsUnavailable);
     mapLayoutText("map-properties-empty", words.propertiesUnavailable);
     mapLayoutText("map-layers-empty", words.layersUnavailable);
     mapLayoutText("map-coordinates", words.unavailable);
@@ -56,5 +61,7 @@ window.ServerManMapLayout = Object.freeze({
     document.title = `Map editor - ${value.profile.display_name}`;
   },
   status: mapLayoutStatus,
+  // Announce the current plan state again, for example after a cancelled close
+  announce: () => mapLayoutText("map-announcement", document.getElementById("map-status").textContent),
   draftChanges: mapLayoutDraft,
 });

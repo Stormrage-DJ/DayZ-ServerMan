@@ -21,7 +21,7 @@ function mapKeysInit(model) {
     event.preventDefault();
     // Current history shortcuts change only the draft and never dispatch a save.
     const result = key === "y" || event.shiftKey ? model.redo() : model.undo();
-    result.catch((error) => window.ServerManMapLayout.status(error.message));
+    result.catch((error) => window.ServerManMapLayout.status(error.message, {notice: "error", announce: true}));
   });
 }
 

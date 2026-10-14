@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import dataclasses
 import os
 from pathlib import Path
 from typing import Any, Callable
 
 from ..adapters.windows.shared_files import read_bytes_shared
-from ..domain.models import RevisionConflict
 from ..repositories.atomic_file import AtomicFilePublisher, ContentChangedError
 from ..repositories.configuration_common import digest_bytes
-from ..repositories.medical_features import transform_medical_feature
+from ..repositories.medical_features import project_zones, transform_medical_feature
+from ..repositories.medical_zone_classification import (
+    LEGACY, MANAGER, ZoneBaselineClass, ZoneReading, read_zones, zone_class,
+)
+from ..repositories.medical_zone_fragments import has_zone_changes, holds_reserved_group, zones_enabled
+from ..repositories.mission_map_layout import APPLIED_FILE, TargetClass, target_key
 from .mission_configuration import _contained, _digest, _revision, resolve_profile_mission
 from .profiles import ProfileService
 from .settings import SettingsService, SettingsValidationError
@@ -20,16 +25,21 @@ FEATURE_PATHS = {
     "medical_loot_zones": Path("mapgroupproto.xml"),
     "medical_item_spawns": Path("db/types.xml"),
 }
+# Refusal of a loot-zone change on a mission whose loot groups the map editor also writes
+EDITOR_MANAGED = "medical loot zones cannot change because the map editor manages this mission"
+# Result of a loot-zone toggle on a mission where no medical group changes; it succeeds and writes nothing
+NO_ZONE_CHANGE = "No medical loot group on this mission changes with this setting. No file was changed."
 
 
 class MedicalFeatureService:
     """Toggle legacy medical files between their original and managed states."""
 
     def __init__(self, profiles: ProfileService, settings: SettingsService,
-                 baselines: Path, publisher: AtomicFilePublisher | None = None) -> None:
-        """Bind profiles, settings, the baseline store, and the atomic publisher."""
+                 baselines: Path, publisher: AtomicFilePublisher | None = None, *,
+                 mission_map: Path | None = None) -> None:
+        """Bind profiles, settings, the baseline store, the atomic publisher and the map editor area."""
         self._profiles, self._settings = profiles, settings
-        self._baselines = baselines
+        self._baselines, self._mission_map = baselines, mission_map
         self._publisher = publisher or AtomicFilePublisher()
 
     def load(self, profile_id: object) -> dict[str, Any]:
@@ -38,13 +48,72 @@ class MedicalFeatureService:
         profile, settings_revision, mission_root, mission = self._context(profile_id)
         # Collect the current state of every reversible feature
         features = {}
+        zone: dict[str, Any] | None = None
         for feature, relative in FEATURE_PATHS.items():
             path = _contained(mission, mission / relative, directory=False)
-            enabled, digest = self._state(profile.values.profile_id, feature, path)
+            if feature == "medical_loot_zones":
+                enabled, digest, zone = self._zone_state(profile.values.profile_id, mission_root, mission, path)
+            else:
+                enabled, digest = self._state(profile.values.profile_id, feature, path)
             features[feature] = {"enabled": enabled, "digest": digest,
                                  "relative_path": str(Path(mission_root) / relative)}
+        # Additive (6.5): whether the zone toggle can use its stored original, with the reason when it cannot
+        features["medical_loot_zones"]["zone_baseline"] = zone
         return {"profile_id": profile.values.profile_id, "profile_revision": profile.revision,
                 "settings_revision": settings_revision, "features": features}
+
+    def classify_zone_baseline(self, profile_id: object) -> ZoneBaselineClass | None:
+        """Classify the loot-zone baseline that the toggle uses, or return None when there is none.
+
+        On an editor-managed mission the result is unmappable with the toggle's editor-managed reason. Read-only:
+        no mission file, baseline or manager metadata is written, and item-spawn baselines are not read.
+        """
+        profile, _settings_revision, _mission_root, mission = self._context(profile_id)
+        path = _contained(mission, mission / FEATURE_PATHS["medical_loot_zones"], directory=False)
+        found = self._zone_reading(profile.values.profile_id, mission, path, read_bytes_shared(path))
+        return None if found is None else found[0]
+
+    def _zone_state(self, profile_key: str, mission_root: str, mission: Path,
+                    path: Path) -> tuple[bool, str, dict[str, Any] | None]:
+        """Return the zone state, digest and bridge classification from one scan of each file (6.5).
+
+        A state refusal is raised as before. When it is also the classification reason, the error carries
+        that classification as `zone_baseline`, and the coordinator adds it to the error details.
+        """
+        current = read_bytes_shared(path); digest = digest_bytes(current)
+        found = self._zone_reading(profile_key, mission, path, current)
+        if found is None:
+            # Without a baseline the current file is the original
+            return zones_enabled(current, current), digest, None
+        result, reading, baseline = found
+        # A legacy stored original is named from the DayZ server folder, as the feature files are
+        shown = (Path(mission_root) / ".dayz_manager_backups" / FEATURE_PATHS["medical_loot_zones"]
+                 if result.location == LEGACY else baseline)
+        data = {"mappable": result.mappable, "reason": result.reason, "location": result.location,
+                "stored_original": str(shown)}
+        if reading.error is not None:
+            if result.reason == str(reading.error):
+                reading.error.zone_baseline = data  # type: ignore[union-attr]
+            raise reading.error
+        return bool(reading.enabled), digest, data
+
+    def _zone_reading(self, profile_key: str, mission: Path, path: Path,
+                      current: bytes) -> tuple[ZoneBaselineClass, ZoneReading, Path] | None:
+        """Classify the loot-zone baseline that the toggle uses; return None when there is none."""
+        feature = "medical_loot_zones"
+        # Use the baseline that the toggle reads: the manager store first, then the legacy folder
+        baseline = self._baseline_source(profile_key, feature, path)
+        if not baseline.exists():
+            return None
+        original = read_bytes_shared(baseline)
+        location = MANAGER if baseline == self._baseline(profile_key, feature) else LEGACY
+        reading = read_zones(current, original)
+        result = zone_class(reading, current, original, location)
+        # The toggle refuses an editor-managed mission before it reads the baseline, so that reason comes first.
+        # A file that cannot be scanned refuses with its scan error first, as the editor check of the toggle does.
+        if reading.reserved is not None and (reading.reserved or self._editor_record(mission)):
+            result = dataclasses.replace(result, mappable=False, enabled=None, reason=EDITOR_MANAGED)
+        return result, reading, baseline
 
     def preview(self, profile_id: object, feature: str, enabled: object,
                 expected_profile_revision: object, expected_settings_revision: object,
@@ -53,6 +122,11 @@ class MedicalFeatureService:
         # Validate the request and resolve the target context
         context = self._validated_context(profile_id, feature, enabled, expected_profile_revision,
                                           expected_settings_revision, expected_digest)
+        # A loot-zone toggle that changes no group succeeds without a change
+        if self._zones_unchanged(context[1], context[2], context[4]):
+            return {"profile_id": context[0], "feature": feature, "enabled": bool(enabled),
+                    "expected_digest": context[3], "proposed_digest": context[3], "changed_fields": [],
+                    "message": NO_ZONE_CHANGE}
         # Project the toggled bytes and describe the change
         proposed = self._proposed(*context, bool(enabled))
         return {"profile_id": context[0], "feature": feature, "enabled": bool(enabled),
@@ -68,6 +142,11 @@ class MedicalFeatureService:
                                           expected_settings_revision, expected_digest)
         profile_key, _feature, path, digest, baseline = context
         checkpoint("loaded", 20)
+        # A loot-zone toggle that changes no group writes neither the baseline nor the mission file
+        if self._zones_unchanged(feature, path, baseline):
+            checkpoint("verified", 100)
+            return {"profile_id": profile_key, "feature": feature, "enabled": bool(enabled),
+                    "digest": digest, "changed_fields": [], "message": NO_ZONE_CHANGE}
         # Snapshot the original bytes once so the toggle stays reversible
         owned_baseline = self._baseline(profile_key, feature)
         if not owned_baseline.exists():
@@ -94,15 +173,17 @@ class MedicalFeatureService:
         digest = _digest(expected_digest)
         # Locate the feature file inside the mission and read its current state
         path = _contained(mission, mission / FEATURE_PATHS[feature], directory=False)
+        # The map editor also writes the loot groups of its missions, so the zone toggle waits for it there
+        if feature == "medical_loot_zones" and self._editor_managed(mission, path):
+            raise ValueError(EDITOR_MANAGED)
         current_enabled, current_digest = self._state(profile.values.profile_id, feature, path)
-        # Refuse stale digests and toggles that would change nothing
+        baseline = self._baseline_source(profile.values.profile_id, feature, path)
+        # Refuse stale digests and toggles that would change nothing, except a zone toggle without any change
         if current_digest != digest:
             raise ContentChangedError("medical feature target changed after it was loaded")
-        if current_enabled == enabled:
+        if current_enabled == enabled and not self._zones_unchanged(feature, path, baseline):
             raise ValueError("medical feature already has the requested state")
-        return profile.values.profile_id, feature, path, digest, self._baseline_source(
-            profile.values.profile_id, feature, path,
-        )
+        return profile.values.profile_id, feature, path, digest, baseline
 
     def _context(self, profile_id: object) -> tuple[Any, int, str, Path]:
         """Load the profile and settings and resolve the mission root safely."""
@@ -121,6 +202,11 @@ class MedicalFeatureService:
         # Read the current bytes and locate the baseline file
         current = read_bytes_shared(path); current_digest = digest_bytes(current)
         baseline = self._baseline_source(profile_id, feature, path)
+        # Loot zones compare each medical group with its original and managed children; without a
+        # baseline the current file is the original
+        if feature == "medical_loot_zones":
+            original = read_bytes_shared(baseline) if baseline.exists() else current
+            return zones_enabled(current, original), current_digest
         # Without a baseline the file is assumed original
         if not baseline.exists():
             return False, current_digest
@@ -144,7 +230,30 @@ class MedicalFeatureService:
             raise ContentChangedError("medical feature target changed after it was loaded")
         # Prefer the stored baseline; fall back to current bytes when none exists
         original = read_bytes_shared(baseline) if baseline.exists() else current
+        if feature == "medical_loot_zones":
+            return project_zones(current, original, enabled)
         return transform_medical_feature(feature, original) if enabled else original
+
+    @staticmethod
+    def _zones_unchanged(feature: str, path: Path, baseline: Path) -> bool:
+        """Return whether a loot-zone toggle changes no group, because no group's on and off forms differ."""
+        if feature != "medical_loot_zones":
+            return False
+        current = read_bytes_shared(path)
+        return not has_zone_changes(current, read_bytes_shared(baseline) if baseline.exists() else current)
+
+    def _editor_managed(self, mission: Path, path: Path) -> bool:
+        """Return whether the file holds an editor group or any profile has an editor apply on the mission."""
+        if path.is_file() and holds_reserved_group(read_bytes_shared(path)):
+            return True
+        return self._editor_record(mission)
+
+    def _editor_record(self, mission: Path) -> bool:
+        """Return whether any profile has an editor apply on the mission."""
+        if self._mission_map is None:
+            return False
+        key = target_key(TargetClass.MISSION, mission)
+        return any((self._mission_map / "profiles").glob(f"*/{key}/{APPLIED_FILE}"))
 
     def _baseline(self, profile_id: str, feature: str) -> Path:
         """Return the manager-owned baseline path for one profile and feature."""

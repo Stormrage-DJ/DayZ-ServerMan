@@ -108,13 +108,21 @@ class CoordinatorAssociationTests(CoordinatorFixture):
                                  self.service._settings)
         self.assertIs(parts.coordinator._plans, parts.plans)
         self.assertIs(parts.plans._locks, parts.locks)
-        self.assertEqual(set(parts.coordinator.handlers()), {"load_mission_map", "save_mission_map_plan"})
+        self.assertEqual(set(parts.coordinator.handlers()), {"load_mission_map", "save_mission_map_plan",
+                                                             "inspect_mission_map", "continue_mission_map_inspection", "cancel_mission_map_inspection",
+                                                             "set_aside_mission_map_plan"})
+        self.assertIs(parts.coordinator.inspection._reader, parts.reader)
         self.assertFalse(self.area.exists())
         observer = build_mission_map(PortablePaths.from_root(self.area.parent.parent), self.profiles,
                                     self.service._settings, staging=StagingPolicy.OBSERVER)
         with self.assertRaises(ApplicationCallError) as caught:
             observer.coordinator.save_mission_map_plan({"profile_id": "main", "plan": self.draft(),
                                                        "expected_revision": None, "background_selection_id": None})
+        self.assertEqual(caught.exception.code, ErrorCode.CONTROL_CONFLICT)
+        # An observer never sets aside invalid saved data (5.3)
+        key = self.service.active_association("main")["mission_key"]
+        with self.assertRaises(ApplicationCallError) as caught:
+            observer.coordinator.set_aside_mission_map_plan({"profile_id": "main", "mission_key": key})
         self.assertEqual(caught.exception.code, ErrorCode.CONTROL_CONFLICT)
         self.assertFalse(self.area.exists())
 

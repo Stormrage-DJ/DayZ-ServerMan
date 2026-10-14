@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import inspect
+import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from unittest.mock import Mock
 
 from dayz_serverman.bridge.contracts import ErrorCode
+from dayz_serverman.bridge_composition import OBSERVER_READ_METHODS, OWNER_ONLY_METHODS
+from dayz_serverman.composition import build_composition
 from dayz_serverman.bridge.facade import ApplicationCallError, BridgeFacade
 from dayz_serverman.host.map_editor_window_api import MissionMapEditorApi
 
@@ -19,14 +23,62 @@ class MissionMapEditorApiTests(unittest.TestCase):
         """Only currently implemented named calls are exposed to the editor."""
         methods = {name for name, member in inspect.getmembers(MissionMapEditorApi, inspect.isfunction)
                    if not name.startswith("_")}
-        self.assertEqual(methods, {"load_plan", "save_plan", "toggle_full_screen"})
+        self.assertEqual(methods, {"load_plan", "save_plan", "toggle_full_screen", "read_tier_layer",
+                                   "read_background", "select_background", "set_aside_plan", "inspect",
+                                   "continue_inspection", "cancel_inspection"})
         self.assertEqual(tuple(inspect.signature(MissionMapEditorApi.save_plan).parameters),
                          ("self", "plan", "expected_revision", "background_selection_id"))
+        # The display reads name the mission key; none takes a profile ID or a path
+        self.assertEqual(tuple(inspect.signature(MissionMapEditorApi.read_tier_layer).parameters),
+                         ("self", "mission_key", "tier"))
+        self.assertEqual(tuple(inspect.signature(MissionMapEditorApi.read_background).parameters),
+                         ("self", "mission_key", "selection_id", "part"))
+        self.assertEqual(tuple(inspect.signature(MissionMapEditorApi.select_background).parameters),
+                         ("self", "mission_key"))
+        # Set aside names only the loaded mission key (5.3)
+        self.assertEqual(tuple(inspect.signature(MissionMapEditorApi.set_aside_plan).parameters),
+                         ("self", "mission_key"))
+        # Inspect names the draft and its target; continue and cancel name only the job (4.6)
+        self.assertEqual(tuple(inspect.signature(MissionMapEditorApi.inspect).parameters), ("self", "plan", "target"))
+        for name in ("continue_inspection", "cancel_inspection"):
+            self.assertEqual(tuple(inspect.signature(getattr(MissionMapEditorApi, name)).parameters), ("self", "job_id"))
         api = MissionMapEditorApi(Mock(), "alpha", None)
         with self.assertRaises(TypeError):
             api.load_plan("bravo")
         with self.assertRaises(TypeError):
             api.save_plan({}, None, None, profile_id="bravo")
+
+    def test_bridge_backed_calls_reach_registered_methods_of_their_a11_class(self) -> None:
+        """Each bridge-backed editor call names a method of the real handler table (3.17 display reads, 5.3)."""
+        bridge = Mock()
+        api = MissionMapEditorApi(bridge, "alpha", None)
+        api.load_plan()
+        api.save_plan({}, None, None)
+        api.read_tier_layer("key", "Tier1")
+        api.read_background("key", None, 0)
+        api.set_aside_plan("key")
+        self.assertEqual(bridge.dispatch.call_args_list[-1].args[0]["parameters"],
+                         {"mission_key": "key", "profile_id": "alpha"})
+        api.inspect(None, {"object": "zone"})
+        self.assertEqual(bridge.dispatch.call_args_list[-1].args[0]["parameters"],
+                         {"plan": None, "target": {"object": "zone"}, "profile_id": "alpha"})
+        api.continue_inspection("job")
+        api.cancel_inspection("job")
+        self.assertEqual(bridge.dispatch.call_args_list[-1].args[0]["parameters"], {"job_id": "job", "profile_id": "alpha"})
+        called = [call.args[0]["method"] for call in bridge.dispatch.call_args_list]
+        self.assertEqual(called, ["load_mission_map", "save_mission_map_plan", "read_mission_map_tier_layer",
+                                  "read_mission_map_background", "set_aside_mission_map_plan", "inspect_mission_map",
+                                  "continue_mission_map_inspection", "cancel_mission_map_inspection"])
+        with tempfile.TemporaryDirectory(prefix="serverman_editor_api_") as temporary:
+            composition = build_composition(Path(temporary) / "Manager")
+            try:
+                self.assertLessEqual(set(called), composition.bridge.allowed_methods)
+            finally:
+                composition.operations.shutdown(2)
+        # Load and the three Inspect calls are observer reads; save, both display reads and set aside are owner methods
+        self.assertEqual([name in OBSERVER_READ_METHODS for name in called],
+                         [True, False, False, False, False, True, True, True])
+        self.assertLessEqual(set(called[1:5]), OWNER_ONLY_METHODS)
 
     def test_load_and_save_bind_profile_and_preserve_parameters(self) -> None:
         """Host binding stays alpha even when a draft contains another association."""

@@ -23,20 +23,36 @@
         <canvas id="map-raster" aria-hidden="true"></canvas>
         <svg id="map-vector" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
         <span id="map-view-label">Plain terrain view</span>
+        <p id="map-tool-notice"></p>
+        <p id="map-save-notice"></p>
       </section>
       <details id="map-panel" open>
         <summary id="map-panel-toggle" aria-controls="map-panel-content" aria-expanded="true">Map controls</summary>
         <div id="map-panel-content">
           <section aria-labelledby="map-tools-title">
             <h2 id="map-tools-title">Tools</h2>
-            <div id="map-toolbar" role="toolbar" aria-label="Map tools">
+            <div id="map-toolbar" role="group" aria-label="Map tools">
               <button id="map-fit" type="button" class="button" disabled>Fit map</button>
+              <button id="map-zoom-selection" type="button" class="button" aria-keyshortcuts="F" title="Zoom to selection (F)" disabled>Zoom to selection</button>
               <label id="map-coordinate-mode-label" for="map-coordinate-mode">Coordinates</label>
               <select id="map-coordinate-mode" disabled>
                 <option value="Grid">Grid</option><option value="Native">Native</option><option value="Both" selected>Both</option>
               </select>
               <p id="map-navigation-help">Wheel to zoom; middle drag or Space+drag to pan.</p>
-              <p id="map-tools-empty">Drawing tools are not available yet.</p>
+              <div id="map-tool-buttons">
+                <button id="map-tool-select" type="button" class="button" aria-pressed="false" aria-keyshortcuts="V" title="Select (V)" disabled>Select</button>
+                <button id="map-tool-circle" type="button" class="button" aria-pressed="false" aria-keyshortcuts="C" title="Circle (C)" disabled>Circle</button>
+                <button id="map-tool-polygon" type="button" class="button" aria-pressed="false" aria-keyshortcuts="P" title="Polygon (P)" disabled>Polygon</button>
+                <button id="map-tool-inspect" type="button" class="button" aria-pressed="false" aria-keyshortcuts="I" title="Inspect (I)" disabled>Inspect</button>
+              </div>
+              <label id="map-circle-radius-label" for="map-circle-radius">Circle radius (m)</label>
+              <input id="map-circle-radius" type="number" min="1" step="any" inputmode="decimal" autocomplete="off" aria-describedby="map-tool-message" disabled>
+              <p id="map-outline-status"></p>
+              <div id="map-outline-actions">
+                <button id="map-outline-finish" type="button" class="button" aria-keyshortcuts="Enter" title="Finish (Enter)" disabled>Finish</button>
+                <button id="map-outline-discard" type="button" class="button button-danger" disabled>Discard outline</button>
+              </div>
+              <p id="map-tool-message"></p>
             </div>
           </section>
           <section aria-labelledby="map-bounds-title">
@@ -59,9 +75,71 @@
             </fieldset>
             <p id="map-bounds-error" role="alert"></p>
           </section>
+          <section aria-labelledby="map-image-title">
+            <h2 id="map-image-title">Map image</h2>
+            <p id="map-background-status">No map image. The plain terrain is shown.</p>
+            <button id="map-background-choose" type="button" class="button" disabled>Choose image</button>
+            <label class="check-row" for="map-background-dim"><input id="map-background-dim" type="checkbox" disabled><span id="map-background-dim-label">Dim image</span></label>
+            <button id="map-calibrate" type="button" class="button" disabled>Calibrate with three points</button>
+            <fieldset id="map-calibration" hidden>
+              <legend id="map-calibration-title">Calibrate with three points</legend>
+              <p id="map-calibration-guidance"></p>
+              <div id="map-calibration-points"></div>
+              <p id="map-calibration-result"></p>
+              <p id="map-calibration-warning"></p>
+              <div id="map-calibration-actions">
+                <button id="map-calibration-accept" type="button" class="button" disabled>Accept</button>
+                <button id="map-calibration-fit" type="button" class="button">Fit to terrain bounds</button>
+                <button id="map-calibration-cancel" type="button" class="button">Cancel</button>
+              </div>
+            </fieldset>
+          </section>
+          <section aria-labelledby="map-tiers-title">
+            <h2 id="map-tiers-title">Original tiers</h2>
+            <label class="check-row" for="map-tiers-toggle"><input id="map-tiers-toggle" type="checkbox" checked><span id="map-tiers-toggle-label">Original tiers</span></label>
+            <p id="map-tiers-status"></p>
+            <ul id="map-tiers-legend" aria-label="Original tier legend"></ul>
+          </section>
           <section aria-labelledby="map-properties-title">
             <h2 id="map-properties-title">Properties</h2>
             <p id="map-properties-empty">Property editing is not available yet.</p>
+            <div id="map-properties-fields" hidden>
+              <p id="map-properties-name"></p>
+              <p id="map-properties-state"></p>
+              <label id="map-properties-name-label" for="map-properties-name-field">Name</label>
+              <input id="map-properties-name-field" type="text" autocomplete="off" aria-describedby="map-properties-message">
+              <div id="map-properties-radius-row">
+                <label id="map-properties-centre-x-label" for="map-properties-centre-x">Centre X (m)</label>
+                <input id="map-properties-centre-x" type="text" inputmode="decimal" autocomplete="off" aria-describedby="map-properties-message">
+                <label id="map-properties-centre-z-label" for="map-properties-centre-z">Centre Z (m)</label>
+                <input id="map-properties-centre-z" type="text" inputmode="decimal" autocomplete="off" aria-describedby="map-properties-message">
+                <label id="map-properties-radius-label" for="map-properties-radius">Radius (m)</label>
+                <input id="map-properties-radius" type="number" min="1" step="any" inputmode="decimal" autocomplete="off" aria-describedby="map-properties-message">
+              </div>
+              <div id="map-tier-row">
+                <label id="map-tier-label" for="map-tier-select">Tier</label>
+                <select id="map-tier-select" aria-describedby="map-tier-effective map-tier-message"></select>
+                <div id="map-tier-read" aria-busy="false" hidden>
+                  <p id="map-tier-effective" aria-live="off"></p>
+                  <p id="map-tier-original" hidden></p>
+                  <div id="map-tier-actions" hidden><button id="map-tier-again" type="button" class="link-button">Read again</button><button id="map-tier-point" type="button" class="link-button">Inspect a point</button></div>
+                </div>
+                <p id="map-tier-message"></p>
+                <div id="map-tier-capacity" hidden>
+                  <h3 id="map-tier-capacity-title">Building capacity</h3>
+                  <ul id="map-tier-capacity-list"></ul>
+                </div>
+              </div>
+              <p id="map-properties-message"></p>
+              <button id="map-properties-delete" type="button" class="button button-danger" aria-keyshortcuts="Delete">Delete</button>
+            </div>
+          </section>
+          <section id="map-inspect" aria-labelledby="map-inspect-title" aria-busy="false">
+            <h2 id="map-inspect-title">Inspect</h2>
+            <p id="map-inspect-status">Choose Inspect (I) and click a point on the map.</p>
+            <dl id="map-inspect-result" hidden></dl>
+            <p id="map-inspect-capacity" hidden></p>
+            <div id="map-inspect-actions"><button id="map-inspect-cancel" type="button" class="link-button" hidden>Cancel read</button><button id="map-inspect-again" type="button" class="link-button" hidden>Read again</button></div>
           </section>
           <section aria-labelledby="map-layers-title">
             <h2 id="map-layers-title">Layers</h2>
@@ -78,7 +156,8 @@
       <dl>
         <div><dt>Coordinates</dt><dd id="map-coordinates">Not available</dd></div>
         <div><dt>Current tool</dt><dd id="map-tool-status">No tool active</dd></div>
-        <div id="map-plan-status"><dt>Plan state</dt><dd id="map-status">Loading map plan</dd></div>
+        <div id="map-plan-status"><dt>Plan state</dt><dd id="map-status">Loading map plan</dd>
+          <dd><button id="map-save-reload" type="button" class="link-button" aria-describedby="map-save-notice" hidden>Reload plan</button><button id="map-set-aside" type="button" class="link-button" aria-describedby="map-save-notice" hidden>Set aside invalid plan</button></dd></div>
         <div><dt>Draft changes</dt><dd id="map-draft-changes">Not available</dd></div>
       </dl>
     </footer>

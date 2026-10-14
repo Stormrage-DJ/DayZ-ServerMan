@@ -69,20 +69,24 @@ class EditorCloseTests(unittest.TestCase):
         """Acknowledged dialogs have no deadline and a second settle shares their answer."""
         controller, window, logger, states, _ = self.make_controller()
         window.answer = None
-        answers = []
-        with patch("dayz_serverman.host.editor_close.ACK_TIMEOUT", 0.03):
-            first = threading.Thread(target=lambda: answers.append(controller.settle("editor")))
+        answers, join = [], "window.ServerManMapEditor.settleForClose('application', true)"
+        # A 1 s limit that the test waits out: a late helper thread under machine load stays far inside it (QA-5.4-F10)
+        with patch("dayz_serverman.host.editor_close.ACK_TIMEOUT", 1.0):
+            first = threading.Thread(target=lambda: answers.append(controller.settle("editor")), daemon=True)
             first.start()
-            self.assertTrue(wait_until(lambda: window.callback is not None))
-            second = threading.Thread(target=lambda: answers.append(controller.settle("application")))
+            self.assertTrue(wait_until(lambda: window.callback is not None, 5))
+            second = threading.Thread(target=lambda: answers.append(controller.settle("application")), daemon=True)
             second.start()
-            time.sleep(0.08)
-            self.assertTrue(first.is_alive())
-            self.assertTrue(second.is_alive())
-            self.assertEqual(len(window.actions), 1)
+            notified = wait_until(lambda: join in window.actions, 5)
+            time.sleep(1.2)
+            alive, actions = (first.is_alive(), second.is_alive()), list(window.actions)
             window.callback("cancel")
-            first.join(1)
-            second.join(1)
+            first.join(5)
+            second.join(5)
+        self.assertTrue(notified)
+        self.assertEqual(alive, (True, True))
+        # The joining application close tells the document once, in the join form, without a second callback wait
+        self.assertEqual(actions, ["window.ServerManMapEditor.settleForClose('editor')", join])
         self.assertEqual(answers, ["cancel", "cancel"])
         self.assertEqual(states, ["SETTLING", "OPEN"])
         self.assertEqual(logger.events, [])

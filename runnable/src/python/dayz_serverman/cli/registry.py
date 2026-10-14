@@ -92,11 +92,17 @@ INTERNAL_METHODS = frozenset(("get_operation", "read_operation_events", "request
                               "request_shutdown"))
 # Reason of the two legacy backup reference methods (01.04)
 _NOT_PARITY = "Never called by the GUI; no operator documentation; new feature, not parity"
-# Bridge methods that no command calls, each with the Product Owner's reason in 01.04 of the CLI plan
+# Product Owner reason of the two display reads of the map editor (A11, RQ1)
+_DISPLAY_ONLY = "display-only rendering data; Inspect and the capability read give the same facts as text"
+# Bridge methods that no command calls, each with the Product Owner's reason in 01.04 of the CLI plan.
+# The display reads (3.17) are permanent exclusions, never pending: the tier PNG and the background parts
+# (`part` from 0) are display transport, and their `over_budget` details carry no fact for a command.
 EXCLUSION_REASONS = MappingProxyType({
     "save_selected_profile": "GUI selection memory; a script must not move the window's selection",
     "list_legacy_backup_references": _NOT_PARITY,
     "revalidate_legacy_backup_references": _NOT_PARITY,
+    "read_mission_map_tier_layer": _DISPLAY_ONLY,
+    "read_mission_map_background": _DISPLAY_ONLY,
 })
 EXCLUDED_METHODS = frozenset(EXCLUSION_REASONS)
 # Start of each PENDING_TASK_10 value
@@ -106,6 +112,11 @@ PENDING_PREFIX = "pending task 10: "
 PENDING_TASK_10: MappingProxyType[str, str] = MappingProxyType({
     "load_mission_map": "pending task 10: map show",
     "save_mission_map_plan": "pending task 10: map save",
+    "inspect_mission_map": "pending task 10: map inspect",
+    "continue_mission_map_inspection": "pending task 10: map inspect",
+    "cancel_mission_map_inspection": "pending task 10: map inspect",
+    # A confirming owner command (Product Owner Q1): a CLI-only admin must be able to leave invalid saved data
+    "set_aside_mission_map_plan": "pending task 10: map set-aside",
 })
 # Command words that are not leaf commands of the table
 HELP_WORD = "help"

@@ -38,7 +38,8 @@ OWNER_METHODS_BEFORE_SPLIT = (
     "request_update_check", "read_log",
 )
 # The additive editor methods are inserted at their coordinator position.
-MISSION_MAP_METHODS = ("load_mission_map", "save_mission_map_plan")
+MISSION_MAP_METHODS = ("load_mission_map", "save_mission_map_plan", "inspect_mission_map", "continue_mission_map_inspection", "cancel_mission_map_inspection",
+                       "set_aside_mission_map_plan", "read_mission_map_tier_layer", "read_mission_map_background")
 OWNER_METHODS_WITH_MISSION_MAP = (
     OWNER_METHODS_BEFORE_SPLIT[:37] + MISSION_MAP_METHODS + OWNER_METHODS_BEFORE_SPLIT[37:]
 )

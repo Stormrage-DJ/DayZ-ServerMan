@@ -17,8 +17,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from edit_cli_fixtures import PROFILE, ChangingTerminal, EditRoot, FakeTerminal  # noqa: E402
 from lifecycle_cli_fixtures import saved_state  # noqa: E402
 
+from dayz_serverman.application.medical_features import NO_ZONE_CHANGE  # noqa: E402
+
 ECONOMY = ["tweaks", "set", *PROFILE, "--target", "economy"]
 MEDICAL = ["tweaks", "medical", "set", *PROFILE, "medical_item_spawns"]
+ZONES = ["tweaks", "medical", "set", *PROFILE, "medical_loot_zones"]
 CONVERT = ["tweaks", "convert-loadout", *PROFILE]
 
 
@@ -98,6 +101,55 @@ class MedicalSetTests(EditRoot):
         self.assertEqual((code, stdin.reads), (4, 1), stderr)
         code, stdout, _stderr = self.cli(*MEDICAL, "off", "--yes", "--json")
         self.assertEqual((code, json.loads(stdout)["error"]["code"]), (2, "INVALID_REQUEST"))
+        self.assertEqual(saved_state(self.manager, self.dayz), before)
+
+    def test_zone_toggle_without_a_changing_group_exits_0_and_says_so(self) -> None:
+        """On and off succeed without a medical group; the end line says once that no file was changed."""
+        proto = self.mission / "mapgroupproto.xml"
+        before = saved_state(self.manager, self.dayz)
+        for state in ("on", "off"):
+            with self.subTest(state=state):
+                code, stdout, stderr = self.cli(*ZONES, state, "--yes")
+                self.assertEqual(code, 0, stderr)
+                self.assertEqual((stdout + stderr).count(NO_ZONE_CHANGE), 1, stdout + stderr)
+                self.assertIn(NO_ZONE_CHANGE, stderr)
+                self.assertNotIn("Medical loot setting applied.", stderr)
+        code, stdout, stderr = self.cli(*ZONES, "on", "--yes", "--json")
+        result = json.loads(stdout)["value"]["operations"][0]["result"]
+        self.assertEqual((code, result["changed_fields"], result["message"]), (0, [], NO_ZONE_CHANGE), stderr)
+        self.assertEqual(proto.read_text(encoding="utf-8"), "<groups/>")
+        self.assertEqual(saved_state(self.manager, self.dayz), before)
+
+    def test_zone_layout_refusal_names_the_cause_and_keeps_its_exit_code(self) -> None:
+        """A group with another element between its usages refuses as recovery-required, naming the group."""
+        proto = self.mission / "mapgroupproto.xml"
+        proto.write_text('<prototype><group name="Hospital_A"><usage name="Medic"/><value name="Tier1"/>'
+                         '<usage name="Town"/></group></prototype>', encoding="utf-8")
+        before = saved_state(self.manager, self.dayz)
+        code, stdout, stderr = self.cli(*ZONES, "on", "--yes")
+        self.assertEqual(code, 6, stderr)
+        self.assertIn("mapgroupproto.xml has a layout that this setting cannot change safely: group Hospital_A has "
+                      "another element between usage and category. No file was changed.", stderr)
+        code, stdout, _stderr = self.cli(*ZONES, "on", "--yes", "--json")
+        self.assertEqual((code, json.loads(stdout)["error"]["code"]), (6, "RECOVERY_REQUIRED"))
+        self.assertEqual(saved_state(self.manager, self.dayz), before)
+
+    def test_a_medical_group_missing_from_the_original_refuses_like_differs(self) -> None:
+        """A qualified group that the stored original lacks keeps the exit code of "differs from both" and names it."""
+        proto = self.mission / "mapgroupproto.xml"
+        proto.write_text('<prototype><group name="Hospital_A"><usage name="Medic"/><usage name="Town"/></group>'
+                         '<group name="Clinic_New"><usage name="Medic"/></group></prototype>', encoding="utf-8")
+        (self.mission / ".dayz_manager_backups").mkdir()
+        (self.mission / ".dayz_manager_backups" / "mapgroupproto.xml").write_text(
+            '<prototype><group name="Hospital_A"><usage name="Medic"/><usage name="Town"/></group></prototype>',
+            encoding="utf-8")
+        before = saved_state(self.manager, self.dayz)
+        code, _stdout, stderr = self.cli(*ZONES, "on", "--yes")
+        self.assertEqual(code, 3, stderr)
+        self.assertIn("mapgroupproto.xml differs from its stored original: group Clinic_New is not in the stored "
+                      "original. No file was changed.", stderr)
+        code, stdout, _stderr = self.cli(*ZONES, "on", "--yes", "--json")
+        self.assertEqual((code, json.loads(stdout)["error"]["code"]), (3, "REVISION_CONFLICT"))
         self.assertEqual(saved_state(self.manager, self.dayz), before)
 
 

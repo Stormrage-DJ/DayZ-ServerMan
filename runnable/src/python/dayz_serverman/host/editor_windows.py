@@ -30,6 +30,9 @@ class EditorWindowEntry:
     api: MissionMapEditorApi
     close: EditorCloseController
     state: str = "OPEN"
+    # Native size state from the window events; a minimized editor remembers whether it was maximized
+    minimized: bool = False
+    maximized: bool = False
 
 
 class EditorWindowRegistry:
@@ -37,8 +40,12 @@ class EditorWindowRegistry:
 
     def __init__(self, webview: Any, main_window: Any, profiles: Any, bridge: Any,
                  frontend_root: Path, logger: Any, *, hidden: bool = False,
-                 work_area: Callable[[Any], tuple[int, int, int, int]] = window_work_area) -> None:
-        """Bind the composition services without creating an editor before start."""
+                 work_area: Callable[[Any], tuple[int, int, int, int]] = window_work_area,
+                 selections: Any = None) -> None:
+        """Bind the composition services without creating an editor before start.
+
+        `selections` is the image selection service that each editor's image dialog registers with.
+        """
         self._webview = webview
         self._main_window = main_window
         self._profiles = profiles
@@ -47,6 +54,7 @@ class EditorWindowRegistry:
         self._logger = logger
         self._hidden = hidden
         self._work_area = work_area
+        self._selections = selections
         self._lock = threading.RLock()
         self._entries: dict[str, EditorWindowEntry] = {}
         self._deleting: set[str] = set()
@@ -78,7 +86,7 @@ class EditorWindowRegistry:
             if not self._started:
                 raise RuntimeError("webview has not started")
             # Size the new document on the main window's monitor and bind only its profile
-            api = MissionMapEditorApi(self._bridge, identifier, None)
+            api = MissionMapEditorApi(self._bridge, identifier, self._selections)
             window = self._webview.create_window(
                 f"Map editor - {profile.values.display_name}",
                 html=compose_editor_html(self._frontend_root), js_api=api,
@@ -95,6 +103,9 @@ class EditorWindowRegistry:
             entry = EditorWindowEntry(window, api, controller)
             self._entries[identifier] = entry
             window.events.closing += controller.on_closing
+            window.events.minimized += lambda: self._size_state(entry, True, entry.maximized)
+            window.events.maximized += lambda: self._size_state(entry, False, True)
+            window.events.restored += lambda: self._size_state(entry, False, False)
             window.events.closed += lambda: self._remove(identifier, entry)
             # A very fast native close may precede event registration
             if window.events.closed.is_set():
@@ -106,6 +117,22 @@ class EditorWindowRegistry:
         with self._lock:
             if profile_id in self._entries and (entry is None or self._entries[profile_id] is entry):
                 self._entries[profile_id].state = state
+
+    @staticmethod
+    def _size_state(entry: EditorWindowEntry, minimized: bool, maximized: bool) -> None:
+        """Keep the size state that the native window reports."""
+        entry.minimized, entry.maximized = minimized, maximized
+
+    @staticmethod
+    def _present(entry: EditorWindowEntry) -> None:
+        """Show an editor for its close dialog; a minimized one returns to its earlier size (QA-5.4-F2)."""
+        if entry.minimized:
+            # restore() sets the normal size, so an editor that was maximized is maximized again instead
+            if entry.maximized:
+                entry.window.maximize()
+            else:
+                entry.window.restore()
+        entry.window.show()
 
     def _remove(self, profile_id: str, entry: EditorWindowEntry) -> None:
         """Remove only the closed generation and unblock its settle waiters."""
@@ -154,7 +181,7 @@ class EditorWindowRegistry:
         for entry in self.begin_close():
             if entry.close.closed.is_set():
                 continue
-            entry.window.show()
+            self._present(entry)
             if entry.close.settle("application") == "cancel":
                 self.end_close()
                 return False

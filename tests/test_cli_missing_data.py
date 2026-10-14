@@ -117,10 +117,14 @@ class UnclassifiableFeatureTests(PopulatedRoot):
         super().setUpClass()
         mission = cls.dayz / "mpmissions" / "dayzOffline.enoch"
         (mission / "db" / "types.xml").write_text('<?xml version="1.0"?><types/>', encoding="utf-8")
-        (mission / "mapgroupproto.xml").write_text("<groups/>", encoding="utf-8")
+        # A medical group whose usages are neither the original ones nor the managed ones
+        (mission / "mapgroupproto.xml").write_text(
+            '<groups><group name="Hospital"><usage name="Medic"/><usage name="Farm"/></group></groups>',
+            encoding="utf-8")
         (mission / ".dayz_manager_backups").mkdir()
         (mission / ".dayz_manager_backups" / "mapgroupproto.xml").write_text(
-            '<groups><group name="Hand edited"/></groups>', encoding="utf-8")
+            '<groups><group name="Hospital"><usage name="Medic"/><usage name="Town"/></group></groups>',
+            encoding="utf-8")
 
     def test_unknown_feature_exits_2_although_the_data_cannot_be_classified(self) -> None:
         """An unknown name exits 2 in text and JSON; nothing changed."""

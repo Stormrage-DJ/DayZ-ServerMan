@@ -61,6 +61,11 @@ const operationKindErrorTexts = Object.freeze({
     UPDATE_RESULT_UNKNOWN: "SteamCMD did not close cleanly after the Steam sign-in, so the sign-in cannot be confirmed. Changes are blocked.",
   }),
 });
+// Host sentences shown unchanged, by their opening text; each names its cause, its file and the outcome.
+const operationShownHostTexts = Object.freeze([
+  "mapgroupproto.xml has a layout that this setting cannot change safely: ",
+  "mapgroupproto.xml differs from its stored original: ",
+]);
 // Known host sentences of a rejected request, by a fragment of the host message.
 const operationRequestTexts = Object.freeze([
   ["must contain only letters, digits, or underscore", "The Steam account name may contain only letters, digits and underscores."],
@@ -100,8 +105,42 @@ const operationRestartApplyTexts = Object.freeze({
   start: "Mods applied, but the server start did not succeed or could not be confirmed. Check the server state on Overview.",
 });
 
+// Success of a medical loot-zone toggle where no group changes; it replaces the normal success sentence.
+const OPERATION_MEDICAL_UNCHANGED = "No medical loot group on this mission changes with this setting. No file was changed.";
+// Way out of a loot-zone refusal where mapgroupproto.xml and its stored original do not match (6.5, PO 15:19:49).
+const OPERATION_ZONE_ORIGINAL_WAY_OUT = "DayZ-ServerMan does not guess the original loot of these groups. If mapgroupproto.xml "
+  + "changed on purpose, for example after a game or mod update or by another tool, first make sure that its medical "
+  + "loot groups have the loot that you want when medical loot zones are off. Then move the stored original to another "
+  + "folder. The current file then becomes the original, which is the Off state. Otherwise, put back the "
+  + "mapgroupproto.xml that matches the stored original.";
+// Admin text of a loot-zone refusal, by the opening of its host reason (6.5). Each row gives the sentence
+// that replaces the reason ("" shows the reason) and the way out ("" for none). Python has the same rows.
+const operationZoneRefusalTexts = Object.freeze([
+  ["mapgroupproto.xml differs from its stored original: ", "", OPERATION_ZONE_ORIGINAL_WAY_OUT],
+  ["medical feature target differs from both its original and managed state",
+    "mapgroupproto.xml differs from its stored original and from the form that DayZ-ServerMan writes when medical loot zones are on. No file was changed.",
+    OPERATION_ZONE_ORIGINAL_WAY_OUT],
+  ["mapgroupproto.xml has a layout that this setting cannot change safely: ", "",
+    "Correct this in mapgroupproto.xml, then try again."],
+  ["medical loot zones cannot change because the map editor manages this mission",
+    "Medical loot zones cannot change because the map editor manages this mission.", ""]
+]);
+
 // Item states of a verification that mean no problem; a mod in any other state needs the operator.
 const operationVerifyGood = Object.freeze({ source: "VERIFIED", target: "MATCHES_SOURCE" });
+
+// Word an unmappable loot-zone baseline: its reason, the way out and the stored original (6.5).
+// A mappable baseline, or a reason without a row, gives null, so the state is never guessed.
+function zoneBaselineText(baseline) {
+  if (!baseline || typeof baseline !== "object" || baseline.mappable !== false) return null;
+  const reason = String(baseline.reason || "");
+  const row = operationZoneRefusalTexts.find(([opening]) => reason.startsWith(opening));
+  if (!row) return null;
+  const text = [row[1] || reason, row[2]].filter(Boolean).join(" ");
+  // Only the way out that moves or matches the stored original needs its path.
+  const named = row[2] === OPERATION_ZONE_ORIGINAL_WAY_OUT && baseline.stored_original;
+  return named ? `${text} Stored original: ${baseline.stored_original}` : text;
+}
 
 // Find the name of the server state that a host message names last; null when it names none.
 function namedServerStateName(message) {
@@ -118,6 +157,9 @@ function namedServerState(message) {
 // Turn a host error into operator text; the fallback replaces a missing error, the kind of its operation picks its text.
 function operationErrorText(error, fallback = OPERATION_INTERNAL_TEXT, kind = null) {
   if (!error || typeof error !== "object") return fallback;
+  // A medical loot-zone refusal names its way out and the stored original (6.5).
+  const zone = zoneBaselineText(error.details?.zone_baseline);
+  if (zone) return zone;
   const code = typeof error.code === "string" ? error.code : "";
   const message = typeof error.message === "string" ? error.message : "";
   // A message that names a server state becomes one sentence about that state.
@@ -126,6 +168,8 @@ function operationErrorText(error, fallback = OPERATION_INTERNAL_TEXT, kind = nu
     return `This cannot be done while the server is ${state || operationServerStates.RUNNING_EXTERNAL}.`;
   }
   if (code === "MUTATION_CONFLICT") return mutationConflictText(error.details?.reason, message, error.details?.owner);
+  // A host sentence that already says what to do is shown as it is, whatever its code.
+  if (operationShownHostTexts.some((opening) => message.startsWith(opening))) return message;
   const own = typeof kind === "string" && Object.hasOwn(operationKindErrorTexts, kind) ? operationKindErrorTexts[kind] : {};
   if (Object.hasOwn(own, code)) return own[code];
   if (Object.hasOwn(operationErrorTexts, code)) return operationErrorTexts[code];
@@ -200,6 +244,10 @@ function successPresentation(operation, labels) {
     return { sentence: problems === 1 ? "1 mod has a problem." : `${problems} mods have problems.`, look: "warning" };
   }
   if (operation.kind === "APPLY_MODS_AND_RESTART") return restartApplySuccess(result, labels);
+  // A medical toggle that changed no group says that no file was changed.
+  if (operation.kind === "APPLY_MEDICAL_FEATURE" && result.message === OPERATION_MEDICAL_UNCHANGED) {
+    return { sentence: OPERATION_MEDICAL_UNCHANGED, look: "success" };
+  }
   if (operation.kind === "PUBLISH_MODS_AND_KEYS") {
     // An apply names the outcome of the server start that it was asked to do.
     if (result.start_state === "STARTED") return { sentence: `${labels.success} The server was started.`, look: "success" };
@@ -236,4 +284,6 @@ window.ServerManOperationMessages = Object.freeze({
   result: operationResult,
   recoveryText: OPERATION_RECOVERY_TEXT,
   recoveryNotice: recoveryNoticeText,
+  medicalUnchanged: OPERATION_MEDICAL_UNCHANGED,
+  zoneBaseline: zoneBaselineText,
 });

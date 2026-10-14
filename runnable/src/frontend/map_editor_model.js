@@ -31,11 +31,11 @@ function mapModelNextName(kind, objects) {
 }
 
 // Refuse changed identifiers, invalid names and accidental edits to locked objects.
-function mapModelCheck(before, after) {
-  // Object actions cannot change canonical metadata or create and remove objects.
+function mapModelCheck(before, after, added = 0, removed = null) {
+  // Object actions cannot change canonical metadata or remove objects; only a placement adds one.
   const protectedPlan = (plan) => { const copy = structuredClone(plan); delete copy.objects; return JSON.stringify(copy); };
   if (protectedPlan(before) !== protectedPlan(after) || !Array.isArray(after.objects) ||
-      after.objects.length !== before.objects.length || after.objects.length > 2000) {
+      after.objects.length !== before.objects.length + added || after.objects.length > 2000) {
     throw new Error(window.ServerManMapWording.invalidAction);
   }
   const identifiers = new Set();
@@ -49,7 +49,8 @@ function mapModelCheck(before, after) {
     if (!mapModelPatterns[item.kind] || mapModelName(item.name) !== item.name) throw new Error(window.ServerManMapWording.invalidName);
   }
   for (const item of before.objects) {
-    // Existing IDs and kinds stay stable, including objects moved in priority.
+    // A delete removes only its unlocked object; other IDs and kinds stay stable, also when moved in priority.
+    if (item.id === removed) { if (item.locked) throw new Error(window.ServerManMapWording.objectLocked); continue; }
     const next = after.objects.find((candidate) => candidate.id === item.id);
     if (!next || next.kind !== item.kind) throw new Error(window.ServerManMapWording.invalidIdentifier);
     if (item.locked) {
@@ -71,7 +72,7 @@ function mapModelCheck(before, after) {
 function mapModelCreate(changed, review) {
   // Saved content and metadata stay outside the undoable draft snapshots.
   const history = window.ServerManMapHistory.create();
-  let draft = null, saved = null, metadata = null, enabled = false, epoch = 0;
+  let draft = null, saved = null, metadata = null, enabled = false, epoch = 0, loads = 0;
   const equal = (left, right) => JSON.stringify(left) === JSON.stringify(right);
   // Local equality determines whether the saved comparison still describes this draft.
   const dirty = () => !equal(draft, saved);
@@ -88,12 +89,12 @@ function mapModelCreate(changed, review) {
     draft_changes: dirty() ? null : metadata?.draft_changes ?? null, history: history.state()});
   const notify = () => changed(status());
   // Commit one guarded object action at the administrator's current history branch.
-  const action = (label, mutate) => {
+  const action = (label, mutate, added = 0, removed = null) => {
     if (!editable()) return false;
     const candidate = snapshot();
     mutate(candidate);
     // Refusal and no-op leave both the active draft and history cursor unchanged.
-    mapModelCheck(draft, candidate);
+    mapModelCheck(draft, candidate, added, removed);
     if (!history.push(label, draft, candidate)) return false;
     draft = candidate;
     notify();
@@ -134,10 +135,18 @@ function mapModelCreate(changed, review) {
   const load = (value) => {
     // Authoritative reload replaces the draft and ends every previous history branch.
     epoch += 1;
+    loads += 1;
     metadata = structuredClone(value);
     draft = structuredClone(value?.plan ?? null);
     saved = snapshot();
     history.reset();
+    notify();
+  };
+  const adopt = (submitted, result) => {
+    // The saved snapshot remains exactly what was submitted, not the newer object draft.
+    saved = structuredClone(submitted);
+    metadata = {...metadata, association: structuredClone(result.association), revision: result.revision,
+      state: "VALID", draft_changes: result.draft_changes, interrupted_evidence: structuredClone(result.interrupted_evidence)};
     notify();
   };
   const acceptBounds = (submitted, result) => {
@@ -146,13 +155,31 @@ function mapModelCreate(changed, review) {
     candidate.terrain = structuredClone(submitted.terrain);
     history.push(window.ServerManMapWording.boundsAction, draft, candidate);
     draft = candidate;
-    // The saved snapshot remains exactly what was submitted, not the newer object draft.
-    saved = structuredClone(submitted);
-    metadata = {...metadata, association: structuredClone(result.association), revision: result.revision,
-      state: "VALID", draft_changes: result.draft_changes, interrupted_evidence: structuredClone(result.interrupted_evidence)};
-    notify();
+    adopt(submitted, result);
   };
-  return Object.freeze({load, snapshot, status, action, edit, move, acceptBounds,
+  const withdraw = (object) => {
+    // A refused new object leaves the draft and its history step only while no later entry edits it
+    const index = draft?.objects.findIndex((item) => item.id === object.id) ?? -1;
+    if (index < 0 || !history.withdraw(object.id)) return false;
+    draft.objects.splice(index, 1);
+    notify();
+    return true;
+  };
+  const setBackground = (label, background) => {
+    // The image reference and its calibration change as one undo action; objects and bounds stay.
+    if (!writable() || !draft || document.querySelector("dialog")) return false;
+    const candidate = snapshot();
+    candidate.background = structuredClone(background);
+    if (!history.push(label, draft, candidate)) return false;
+    draft = candidate;
+    notify();
+    return true;
+  };
+  return Object.freeze({load, snapshot, status, action, edit, move, acceptBounds, setBackground, adopt, withdraw,
+    // A placement enters at the top of the list (index 0); a load or close changes the epoch, only a load the loads
+    add: (label, object) => action(label, (plan) => plan.objects.unshift(structuredClone(object)), 1),
+    remove: (label, id) => action(label, (plan) => { plan.objects = plan.objects.filter((item) => item.id !== id); }, -1, id),
+    epoch: () => epoch, loads: () => loads,
     visible: (id) => flag(id, "visible"), lock: (id) => flag(id, "locked"),
     undo: () => traverse(-1), redo: () => traverse(1),
     enabled: (value) => { enabled = value; epoch += 1; notify(); },

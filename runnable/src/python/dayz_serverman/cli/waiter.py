@@ -15,6 +15,7 @@ from typing import Any
 
 from ..adapters.windows.console import is_terminal
 from ..application.activity_wording import KIND_FALLBACK, KIND_TEXTS, error_text, restart_apply_text
+from ..application.medical_features import NO_ZONE_CHANGE
 from ..application.phase_wording import cancelling_text, phase_text
 from .bridge_client import CliBridgeError
 from .interrupts import Interrupts
@@ -146,6 +147,10 @@ def end_line(record: Mapping[str, Any], kind: str) -> Line:
     special = (restart_apply_text(state, record.get("last_working_phase"), code, message)
                if kind == RESTART_APPLY_KIND and state != "SUCCEEDED" else None)
     if state == "SUCCEEDED":
+        # A medical toggle that changed no group says that no file was changed, as the window does
+        result = record.get("result") if isinstance(record.get("result"), Mapping) else {}
+        if kind == "APPLY_MEDICAL_FEATURE" and result.get("message") == NO_ZONE_CHANGE:
+            return sentence(NO_ZONE_CHANGE)
         # A mod operation words its success by its result, as the Mods page does
         line = success_line(record, kind, texts[1])
         if line is not None:

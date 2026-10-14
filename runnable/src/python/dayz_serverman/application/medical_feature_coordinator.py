@@ -42,7 +42,7 @@ class MedicalFeatureCoordinator:
         try:
             return self._service.load(parameters["profile_id"])
         except Exception as error:
-            raise _error(error) from error
+            raise _with_zone_baseline(error, _error(error)) from error
 
     def preview(self, parameters: Mapping[str, Any]) -> dict[str, Any]:
         """Validate a toggle and return the projected change without writing."""
@@ -97,6 +97,15 @@ def _args(parameters: Mapping[str, Any]) -> dict[str, Any]:
             "expected_profile_revision": parameters["expected_profile_revision"],
             "expected_settings_revision": parameters["expected_settings_revision"],
             "expected_digest": parameters["expected_digest"]}
+
+
+def _with_zone_baseline(error: Exception, call: ApplicationCallError) -> ApplicationCallError:
+    """Add the loot-zone classification that the zone refusal carries; code, message and retry flag stay (6.5)."""
+    baseline = getattr(error, "zone_baseline", None)
+    if baseline is None:
+        return call
+    return ApplicationCallError(call.code, call.safe_message, retryable=call.retryable,
+                                details={"zone_baseline": baseline})
 
 
 def _error(error: Exception) -> ApplicationCallError:

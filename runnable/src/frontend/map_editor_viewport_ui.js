@@ -8,10 +8,15 @@ const mapViewportUiState = {view: null, mode: "Both", cursor: null, enabled: fal
 function mapViewportUiDraw() {
   const state = mapViewportUiState;
   if (!state.view) return;
+  // Raster layers lie below the vector grid, bounds line and labels
+  window.ServerManMapRaster.draw(state.view);
   window.ServerManMapViewportRender.draw(state.view, state.mode);
+  // Zones and the outline draft lie above the grid
+  window.ServerManMapVector?.draw(state.view);
   const snapshot = state.view.snapshot();
   const measured = snapshot.bounds && snapshot.width > 0 && snapshot.height > 0;
   document.getElementById("map-fit").disabled = !state.enabled || !measured || !snapshot.scale || Boolean(snapshot.failure);
+  document.getElementById("map-zoom-selection").disabled = document.getElementById("map-fit").disabled;
   document.getElementById("map-coordinate-mode").disabled = !state.enabled || !measured;
   const point = state.cursor ? state.view.toNativeAxes(state.cursor) : null;
   const text = window.ServerManMapCoordinates.display(point, snapshot.bounds, snapshot.scale, state.mode);
@@ -68,4 +73,4 @@ function mapViewportUiLoad(value) {
 // Internal display integration stays separate from the editor's public host API surface.
 window.ServerManMapViewportUi = Object.freeze({init: mapViewportUiInit, load: mapViewportUiLoad,
   enabled: mapViewportUiEnabled, redraw: mapViewportUiDraw,
-  view: () => mapViewportUiState.view});
+  view: () => mapViewportUiState.view, mode: () => mapViewportUiState.mode});

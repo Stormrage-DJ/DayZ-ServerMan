@@ -94,6 +94,12 @@ function renderGroup(group, api) {
       control.value = String(Boolean(api.value(field.key, "enabled")));
       control.addEventListener("change", () => api.setValue(field.key, "enabled", control.value === "true"));
       row.append(copy, control); section.append(row);
+      // A toggle that cannot use its stored original keeps the read state, locked, with the reason and way out (6.5).
+      const refusal = window.ServerManOperationMessages.zoneBaseline(api.state.snapshots.get(field.key)?.zone_baseline);
+      if (!refusal) return;
+      control.disabled = true;
+      const notice = tweakNode("p", "notice notice-warning", refusal);
+      notice.setAttribute("role", "status"); section.append(notice);
     });
     return section;
   }

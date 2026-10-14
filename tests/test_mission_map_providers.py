@@ -167,7 +167,10 @@ class NativeProviderTests(ProviderFixture):
         """Provider metadata belongs only to load, and wolf/bear support is not introduced here."""
         self.seed_native()
         answer = self.save(self.draft())
-        self.assertEqual(set(answer), {"association", "revision", "draft_changes", "fingerprint", "interrupted_evidence"})
+        # Leaf 4.2 adds the planned evaluation field; provider metadata stays out of save
+        self.assertEqual(set(answer), {"association", "revision", "draft_changes", "fingerprint", "interrupted_evidence",
+                                       "evaluation"})
+        self.assertNotIn("encounter_providers", answer["evaluation"])
         self.assertEqual(set(self.providers()), {"native_infected", "ai_bandits"})
 
 

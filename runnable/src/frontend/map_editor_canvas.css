@@ -1,0 +1,96 @@
+/* Editor component tokens of the map rendering; the shared tokens stay unchanged. */
+:root {
+  --map-tier-1: #56B4E9;
+  --map-tier-2: #009E73;
+  --map-tier-3: #F0E442;
+  --map-tier-4: #E69F00;
+  --map-tier-5: #CC79A7;
+  --map-tier-other: #AEB9C6;
+}
+
+/* Legend rows name each tier beside its swatch and pattern. */
+#map-tiers-legend { display: grid; gap: var(--primitive-space-1); list-style: none; margin: var(--primitive-space-2) 0 0; padding: 0; }
+#map-tiers-legend li { display: flex; align-items: center; gap: var(--primitive-space-2); min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+.map-tier-swatch { flex: none; width: 18px; height: 18px; border: 1px solid var(--color-border); }
+#map-tiers-status, #map-background-status, #map-calibration-result, #map-calibration-warning { overflow-wrap: anywhere; }
+#map-background-choose, #map-calibrate { margin-top: var(--primitive-space-2); }
+
+/* Calibration points keep their fields usable at the minimum panel width. */
+#map-calibration { display: grid; gap: var(--primitive-space-2); min-width: 0; margin: var(--primitive-space-3) 0 0; }
+#map-calibration[hidden], #map-tiers-legend[hidden] { display: none; }
+.map-calibration-point { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--primitive-space-1); min-width: 0; }
+.map-calibration-point > p, .map-calibration-point > button { grid-column: 1 / -1; }
+.map-calibration-point > div { display: grid; min-width: 0; }
+.map-calibration-point input { width: 100%; min-width: 0; }
+.map-calibration-point p { font-variant-numeric: tabular-nums; }
+#map-calibration-warning:not(:empty) { color: var(--color-status-warning); }
+#map-calibration-actions { display: flex; flex-wrap: wrap; gap: var(--primitive-space-2); }
+
+/* Zones: a dark halo under a 2 px line; Inherit zones use a dashed text-colour line (Rendering). */
+.map-zone, .map-zone-halo, .map-outline-edge, .map-outline-halo { fill: none; stroke-linejoin: round; }
+.map-zone-halo, .map-outline-halo { stroke: var(--color-canvas); stroke-width: 4px; }
+.map-zone { stroke-width: 2px; }
+.map-zone-inherit { stroke: var(--color-text); stroke-dasharray: 6 4; }
+.map-zone-selected { stroke: var(--color-action); }
+.map-zone-problem, .map-outline-crossing { stroke: var(--color-status-error); }
+
+/* The outline draft: action-colour edges, a dashed implied closing edge and marked points. */
+.map-outline-edge:not(.map-outline-crossing) { stroke: var(--color-action); }
+.map-outline-edge { stroke-width: 2px; }
+.map-outline-closing { stroke-dasharray: 4 4; }
+.map-outline-edge.map-outline-crossing { stroke-width: 4px; }
+.map-outline-halo-crossing { stroke-width: 6px; }
+.map-outline-vertex { fill: var(--color-action); stroke: var(--color-canvas); stroke-width: 1px; }
+#map-viewport.map-drawing { cursor: crosshair; }
+/* The footer tool slot stays one line high while drawing; its title holds the full text. */
+#map-tool-status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The plan state and Draft changes stay one line high; Reload plan sits on the same line (QA-4.4-F8). */
+#map-plan-status { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto 24px; column-gap: var(--primitive-space-3); align-items: center; }
+#map-plan-status dt { grid-column: 1 / -1; }
+#map-status, #map-draft-changes { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#map-draft-changes.map-draft-updating { color: var(--color-text-subtle); }
+/* The full plan state on the map for a delay, a failure or a read-only reason; it never moves the layout. */
+#map-save-notice { position: absolute; inset: auto var(--primitive-space-3) var(--primitive-space-3) auto; max-width: min(52ch, 60%); margin: 0; padding: var(--primitive-space-2) var(--primitive-space-3); border: 1px solid var(--color-status-warning); border-left-width: 4px; border-radius: var(--radius-control); background: var(--panel-background); color: var(--color-text); font-size: 13px; overflow-wrap: anywhere; pointer-events: none; }
+#map-save-notice.map-save-error { border-color: var(--color-status-error); }
+/* A success, such as a set-aside plan, and link labels that never wrap the plan state line (UI-UX 5.3). */
+#map-save-notice.map-save-success { border-color: var(--color-status-success); }
+#map-plan-status .link-button { white-space: nowrap; }
+#map-save-notice:empty { display: none; }
+
+/* The tool reason on the map stays visible with the panel collapsed and never moves the layout. */
+#map-tool-notice { position: absolute; inset: var(--primitive-space-3) auto auto var(--primitive-space-3); max-width: min(60ch, calc(100% - 2 * var(--primitive-space-3))); margin: 0; padding: var(--primitive-space-2) var(--primitive-space-3); border: 1px solid var(--color-status-warning); border-left-width: 4px; border-radius: var(--radius-control); background: var(--panel-background); color: var(--color-text); font-size: 13px; overflow-wrap: anywhere; pointer-events: none; }
+#map-tool-notice:empty { display: none; }
+
+/* Tool controls stay usable at the minimum panel width. */
+#map-tool-buttons, #map-outline-actions { display: flex; flex-wrap: wrap; gap: var(--primitive-space-2); }
+#map-circle-radius { width: 100%; min-width: 0; }
+#map-tool-message { overflow-wrap: anywhere; }
+#map-tool-message:not(:empty) { color: var(--color-status-warning); }
+
+/* Square handles of the selected zone differ from the round outline-draft points (4.5). */
+.map-handle { fill: var(--color-canvas); stroke: var(--color-action); stroke-width: 2px; }
+#map-viewport.map-dragging { cursor: grabbing; }
+/* The selected item's properties stay usable at the minimum panel width. */
+#map-properties-fields, #map-properties-radius-row { display: grid; gap: var(--primitive-space-1); min-width: 0; }
+#map-properties-fields[hidden], #map-properties-radius-row[hidden], #map-properties-empty[hidden] { display: none; }
+#map-properties-fields input { width: 100%; min-width: 0; }
+#map-properties-delete { justify-self: start; }
+#map-properties-fields p { margin: 0; overflow-wrap: anywhere; }
+#map-properties-message:not(:empty) { color: var(--color-status-warning); }
+
+/* The tier control of the selected zone and its read stay usable at the minimum panel width (4.6). */
+#map-tier-row, #map-tier-read { display: grid; gap: var(--primitive-space-1); min-width: 0; }
+#map-tier-row[hidden], #map-tier-read[hidden], #map-tier-original[hidden], #map-tier-actions[hidden], #map-tier-capacity[hidden] { display: none; }
+#map-tier-select { width: 100%; min-width: 0; }
+#map-tier-actions, #map-inspect-actions { display: flex; flex-wrap: wrap; gap: var(--primitive-space-3); }
+#map-tier-message:not(:empty) { color: var(--color-status-warning); }
+#map-tier-capacity h3 { margin: var(--primitive-space-2) 0 0; font-size: 13px; }
+#map-tier-capacity-list { margin: var(--primitive-space-1) 0 0; padding-left: var(--primitive-space-4); font-size: 13px; overflow-wrap: anywhere; }
+/* The Inspect answer: each term above its value, with tabular numerals for coordinates. */
+#map-inspect-result { display: grid; gap: var(--primitive-space-1); margin: var(--primitive-space-2) 0 0; font-size: 13px; }
+#map-inspect-result[hidden], #map-inspect-capacity[hidden] { display: none; }
+#map-inspect-result dt { font-weight: 600; }
+#map-inspect-result dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+/* The Inspect marker: a ring and a cross over a dark halo, above every zone. */
+.map-inspect-halo { fill: none; stroke: var(--color-canvas); stroke-width: 5px; }
+.map-inspect-ring { fill: none; stroke: var(--color-action-strong); stroke-width: 2px; }

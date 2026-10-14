@@ -74,6 +74,11 @@ class ObserverReadTests(unittest.TestCase):
         self.assertEqual(editor["plan"]["objects"][0]["id"], "observer-loot")
         self.assertTrue(editor["draft_changes"])
         self.assertTrue(answers["inspect_backup_archive"]["backup_id"].startswith("selected-"))
+        # The fixture mission has no areaflags.map, so a point answer is the availability result
+        inspected = answers["inspect_mission_map"]
+        self.assertEqual((inspected["status"], inspected["result"]["tier_source"]), ("done", "unknown"))
+        self.assertEqual(answers["continue_mission_map_inspection"], "INVALID_REQUEST")
+        self.assertEqual(answers["cancel_mission_map_inspection"], "INVALID_REQUEST")
         self.assertNotIn("INTERNAL_FAILURE", {value for value in answers.values() if isinstance(value, str)})
 
     def test_an_owner_composition_on_the_same_root_still_writes_its_log(self) -> None:

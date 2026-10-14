@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-from ..application.activity_wording import error_text
+from ..application.activity_wording import error_text, zone_baseline_text
 from .output import Echo, Line, SentencePart, TypeText, Value, sentence
 
 # D2: another holder of the instance lock (3.1); the holder part is filled by `instance_active`
@@ -93,8 +93,21 @@ def way_out(text: str) -> Line:
 def bridge_error_line(error: Mapping[str, Any], kind: object = None) -> Line:
     """Word a bridge or operation error with the GUI catalogue and the CLI way out; a code is never printed."""
     details = error.get("details") if isinstance(error.get("details"), Mapping) else {}
+    # A medical loot-zone refusal names its way out and the stored original, as the window does (6.5)
+    zone = zone_baseline_line(details.get("zone_baseline"))
+    if zone is not None:
+        return zone
     text = error_text(error.get("code"), error.get("message"), owner=details.get("owner"), kind=kind)
     return way_out(text)
+
+
+def zone_baseline_line(baseline: object) -> Line | None:
+    """Word an unmappable loot-zone baseline with its way out; the stored original is data (6.5)."""
+    found = zone_baseline_text(baseline)
+    if found is None:
+        return None
+    text, path = found
+    return sentence(text, " Stored original: ", Value(path)) if path else sentence(text)
 
 
 def instance_active(holder: Any) -> Line:

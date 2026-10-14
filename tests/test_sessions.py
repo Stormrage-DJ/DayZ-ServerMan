@@ -33,6 +33,7 @@ from dayz_serverman.bridge_composition import (  # noqa: E402
     OBSERVER_READ_METHODS,
     OWNER_ONLY_METHODS,
     READER_EXEMPT_METHODS,
+    SLICED_READER_METHODS,
 )
 from dayz_serverman.composition import build_composition  # noqa: E402
 from dayz_serverman.host import gui_main  # noqa: E402
@@ -60,12 +61,19 @@ class MethodClassTests(unittest.TestCase):
         self.root = Path(temporary.name) / "Manager"
 
     def test_classes_cover_the_owner_allowlist_and_the_observer_facade_holds_only_reads(self) -> None:
-        """Disjoint classes whose union is the owner allowlist; 22 reads; exemptions are reads."""
+        """Disjoint classes whose union is the owner allowlist; 25 reads; exemptions and sliced reads are reads."""
         owner = build_composition(self.root)
         self.addCleanup(owner.operations.shutdown, 2)
-        self.assertEqual(len(OBSERVER_READ_METHODS), 22)
+        self.assertEqual(len(OBSERVER_READ_METHODS), 25)
+        self.assertLessEqual(SLICED_READER_METHODS, OBSERVER_READ_METHODS - READER_EXEMPT_METHODS)
+        # Exact members: only these two calls take the reader per slice, so sampling holds no reader (QA-4.2-2)
+        self.assertEqual(SLICED_READER_METHODS, {"inspect_mission_map", "continue_mission_map_inspection"})
         self.assertEqual(OBSERVER_READ_METHODS & OWNER_ONLY_METHODS, frozenset())
         self.assertEqual(OBSERVER_READ_METHODS | OWNER_ONLY_METHODS, owner.bridge.allowed_methods)
+        # A11: the two display reads of the map editor are owner methods (3.17)
+        self.assertLessEqual({"read_mission_map_tier_layer", "read_mission_map_background"}, OWNER_ONLY_METHODS)
+        # A11: the set aside of invalid saved plan data is an owner method (5.3)
+        self.assertIn("set_aside_mission_map_plan", OWNER_ONLY_METHODS)
         self.assertLessEqual(READER_EXEMPT_METHODS, OBSERVER_READ_METHODS)
         session = open_observer_session(self.root)
         self.addCleanup(session.close)

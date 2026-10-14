@@ -17,12 +17,17 @@ OBSERVER_READ_METHODS = frozenset((
     "read_profile", "preview_profile_command", "list_profile_missions", "get_ui_preferences",
     "load_configuration", "load_mission_configuration", "load_medical_features", "load_mission_map", "read_log",
     "validate_settings_path_selection", "select_legacy_root", "preview_legacy_import", "inspect_backup_archive",
+    "inspect_mission_map", "continue_mission_map_inspection", "cancel_mission_map_inspection",
 ))
 # Observer reads that open nothing inside a folder that an owner step renames or removes (3.4, QF-2)
 READER_EXEMPT_METHODS = frozenset((
     "read_log", "list_backups", "list_backup_catalog", "get_application_snapshot",
     "get_lifecycle_schedule", "get_ui_preferences", "list_profiles", "read_profile",
+    "cancel_mission_map_inspection",
 ))
+# Observer reads that take the reader side themselves, once per mission-read slice (A181); the session
+# wrapper does not hold the reader for the whole call
+SLICED_READER_METHODS = frozenset(("inspect_mission_map", "continue_mission_map_inspection"))
 # Every other method of the owner allowlist: lane operations, synchronous writes, mutex, SteamCMD, cache
 OWNER_ONLY_METHODS = frozenset((
     "get_operation", "read_operation_events", "request_operation_cancellation", "request_shutdown",
@@ -36,6 +41,10 @@ OWNER_ONLY_METHODS = frozenset((
     "save_lifecycle_schedule", "save_steam_settings", "authenticate_steamcmd", "update_workshop_items",
     "preview_mod_publication", "publish_mods_and_keys", "apply_mods_and_restart", "verify_mod_files",
     "request_update_check", "save_mission_map_plan",
+    # Set aside of invalid saved plan data (5.3, A11): an owner write, a confirming command in task 10
+    "set_aside_mission_map_plan",
+    # Display reads of the map editor (3.17, A11): owner methods, never observer reads
+    "read_mission_map_tier_layer", "read_mission_map_background",
 ))
 
 
@@ -65,6 +74,7 @@ def build_handler_table(
     mission_configuration_coordinator: HandlerSource,
     medical_feature_coordinator: HandlerSource,
     mission_map_coordinator: HandlerSource,
+    mission_map_display: HandlerSource,
     migration_coordinator: HandlerSource,
     legacy_backup_coordinator: HandlerSource,
     lifecycle_coordinator: HandlerSource,
@@ -92,6 +102,9 @@ def build_handler_table(
         **mission_configuration_coordinator.handlers(),
         **medical_feature_coordinator.handlers(),
         **mission_map_coordinator.handlers(),
+        # The tier-layer read (`tier`) and the background read (`selection_id`, `part`) of 3.15 and 3.16;
+        # both are permanent parity exclusions, and `over_budget` refusals carry `limit`, `size` and `unit`
+        **mission_map_display.handlers(),
         **migration_coordinator.handlers(),
         **legacy_backup_coordinator.handlers(),
         **lifecycle_coordinator.handlers(),

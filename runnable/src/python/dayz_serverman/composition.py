@@ -91,10 +91,7 @@ def build_composition(
     # An interrupted mod publication is recovered by the workshop composition, inside the write guard
     publication_journals = PublicationJournalRepository(paths.publication_journals)
     # Block mutations after an interrupted SteamCMD update; an observer only reports pending recoveries
-    child_probe = WindowsChildProbe()
-    # Keep unavailable borrowed-handle custody at the composition reporting boundary.
-    operations.child_probe_custody = child_probe
-    if not observer and inspect_workshop_recovery(paths.operations, child_probe)["blocked"]:
+    if not observer and inspect_workshop_recovery(paths.operations, WindowsChildProbe())["blocked"]:
         operations.block_for_recovery(
             "Mutations are blocked by an interrupted SteamCMD update with an unknown result."
         )
@@ -113,7 +110,7 @@ def build_composition(
     configuration_coordinator = ConfigurationCoordinator(configuration, operations)
     mission_configuration = MissionConfigurationService(profiles, settings)
     mission_configuration_coordinator = MissionConfigurationCoordinator(mission_configuration, operations)
-    medical_features = MedicalFeatureService(profiles, settings, paths.tweak_baselines)
+    medical_features = MedicalFeatureService(profiles, settings, paths.tweak_baselines, mission_map=paths.mission_map)
     medical_feature_coordinator = MedicalFeatureCoordinator(medical_features, operations)
     # Build migration services with legacy backup indexing; only an owner inspects an interrupted publication
     migration = build_migration(
@@ -193,6 +190,7 @@ def build_composition(
         mission_configuration_coordinator=mission_configuration_coordinator,
         medical_feature_coordinator=medical_feature_coordinator,
         mission_map_coordinator=mission_map.coordinator,
+        mission_map_display=mission_map.display,
         migration_coordinator=migration.migration_coordinator,
         legacy_backup_coordinator=migration.legacy_backup_coordinator,
         lifecycle_coordinator=lifecycle_coordinator,

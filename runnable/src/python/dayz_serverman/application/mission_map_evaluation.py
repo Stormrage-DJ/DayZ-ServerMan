@@ -28,11 +28,15 @@ class ObjectTierRead:
         self._sampled = False
         self._answer: dict[str, Any] | None = None
 
-    def advance(self) -> dict[str, Any]:
-        """Return running progress, a fresh final result, or stale without tier data."""
+    def advance(self, deadline: float | None = None) -> dict[str, Any]:
+        """Return running progress, a fresh final result, or stale without tier data.
+
+        Inspect passes the deadline of its whole call; otherwise one slice target from now applies.
+        """
         if self._answer is not None:
             return self._answer
-        deadline = self._clock() + SLICE_TARGET_SECONDS
+        if deadline is None:
+            deadline = self._clock() + SLICE_TARGET_SECONDS
         # Each unit bounds geometry work to one shape row or one value row.
         while self._clock() < deadline:
             if self._sampled:

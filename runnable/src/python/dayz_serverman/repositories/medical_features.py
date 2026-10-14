@@ -1,15 +1,17 @@
-"""Deterministic transformations for the two legacy medical loot features."""
+"""Deterministic transformations of the two medical loot features.
+
+Item spawns re-write `db/types.xml` as a whole. Loot zones patch only the medical children of
+`mapgroupproto.xml`; the earlier whole-file form of the zone transform stays so its files are recognized.
+"""
 
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 
+from ..domain.medical_zone_rule import MEDICAL_CATEGORIES, MEDICAL_MARKERS
 from .configuration_common import ConfigurationFileError
+from .medical_zone_fragments import patch_zones
 
-# Name fragments that mark a loot group as medical for restriction
-MEDICAL_MARKERS = ("medic", "medical", "healthcare", "hospital", "laboratory")
-# Container categories that stay allowed in restricted medical groups
-MEDICAL_CATEGORIES = {"tools", "containers"}
 # Target (nominal, minimum) loot counts for each boosted medical item
 MEDICAL_COUNTS = {
     "BandageDressing": (120, 60), "TetracyclineAntibiotics": (60, 30),
@@ -17,29 +19,67 @@ MEDICAL_COUNTS = {
     "PainkillerTablets": (50, 25), "DisinfectantSpray": (70, 35),
     "IodineTincture": (50, 25), "PurificationTablets": (100, 50),
 }
+# Start of every file that the earlier whole-file zone form wrote, so other files skip that comparison
+_WHOLE_FILE_START = ET.tostring(ET.Element("x"), encoding="utf-8", xml_declaration=True).split(b"<x")[0]
 
 
 def transform_medical_feature(feature: str, content: bytes) -> bytes:
-    """Apply one supported medical loot feature to an XML document."""
-    # Parse strictly so a malformed target is never partially rewritten
-    try:
-        root = ET.fromstring(content)
-    except ET.ParseError as error:
-        raise ConfigurationFileError("medical feature target is malformed XML") from error
-    # Dispatch on the selected feature and refuse unknown names
+    """Apply one supported medical loot feature to an XML document that is in its original state."""
+    # Loot zones change only the medical children, with every other byte kept
     if feature == "medical_loot_zones":
-        _restrict_medical_groups(root)
-    elif feature == "medical_item_spawns":
-        _boost_medical_items(root)
-    else:
+        return patch_zones(content, content, True)
+    if feature != "medical_item_spawns":
         raise ConfigurationFileError("medical feature is not supported")
-    # Re-serialize deterministically with the four-space server layout
+    return _whole_file(content, _boost_medical_items)
+
+
+def project_zones(current: bytes, original: bytes, enabled: bool) -> bytes:
+    """Return the loot-zone bytes that a toggle to `enabled` writes, from the current file and its original.
+
+    A file that earlier versions enabled as a whole returns to its exact original bytes. Otherwise only the
+    medical children change, and an off write keeps the line endings of the current file.
+    """
+    if not enabled and whole_file_off(current, original):
+        return original
+    return patch_zones(current, original, enabled)
+
+
+def whole_file_off(current: bytes, original: bytes) -> bool:
+    """Return whether an off toggle puts back the original bytes, because the file is the earlier whole-file form.
+
+    The toggle and the classification share this step (6.5). The original is parsed as that form needs, and
+    ConfigurationFileError is raised when it cannot be. Only a file that starts like that form is compared
+    with it, so other files skip the rewrite. The result is the same as a comparison of every file.
+    """
+    if not current.startswith(_WHOLE_FILE_START):
+        _parse(original)
+        return False
+    return current == legacy_zone_transform(original)
+
+
+def legacy_zone_transform(content: bytes) -> bytes:
+    """Return the whole-file loot-zone form that earlier versions wrote, to recognize their enabled files."""
+    return _whole_file(content, _restrict_medical_groups)
+
+
+def _whole_file(content: bytes, change) -> bytes:
+    """Parse a document strictly, change its tree, and write it again in the four-space server layout."""
+    root = _parse(content)
+    change(root)
     ET.indent(root, space="    ")
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
+def _parse(content: bytes) -> ET.Element:
+    """Parse a document strictly, so a malformed target is never partially rewritten."""
+    try:
+        return ET.fromstring(content)
+    except ET.ParseError as error:
+        raise ConfigurationFileError("medical feature target is malformed XML") from error
+
+
 def _restrict_medical_groups(root: ET.Element) -> None:
-    """Trim medical loot groups to the Medic usage and medical categories."""
+    """Trim medical loot groups to the Medic usage and medical categories, as earlier versions did."""
     # Visit every group and keep only Medic-marked candidates
     for group in root.findall(".//group"):
         name = group.get("name", "").lower()

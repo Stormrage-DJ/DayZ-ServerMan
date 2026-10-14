@@ -24,6 +24,8 @@ from .mission_map_layout import PLAN_FILE, PLAN_STAGING_GLOB, RETIRED_FILE, inte
 RETIRED_FIELDS = frozenset(("operation_id", "retired_at", "new_mission_key"))
 # UTC time of a retired marker, for example 2026-10-10T12:30:00Z
 UTC_TIME = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
+# Detail of a valid plan that names another association than its folder (Architect 2026-10-13 15:44:32)
+OTHER_ASSOCIATION_DETAIL = "The saved plan belongs to another profile or mission."
 
 
 class PlanState(str, Enum):
@@ -35,6 +37,8 @@ class PlanState(str, Enum):
     FUTURE_SCHEMA = "FUTURE_SCHEMA"
     NEWER_PLAN = "NEWER_PLAN"
     INVALID_PLAN = "INVALID_PLAN"
+    # A D1-valid plan that names another profile ID or mission key than the folder that holds it
+    OTHER_ASSOCIATION = "OTHER_ASSOCIATION"
 
 
 @dataclass(frozen=True)
@@ -62,12 +66,27 @@ class PlanRecordInvalid(RepositoryError):
         super().__init__(f"the saved plan is {inspection.state.value}: {inspection.detail or 'not valid'}")
 
 
+class PlanNotInvalid(RepositoryError):
+    """Raised when a set aside finds a valid or missing plan; only invalid saved data is set aside."""
+
+    def __init__(self, state: PlanState) -> None:
+        """Store the state that the set aside found."""
+        self.state = state
+        super().__init__(f"the saved plan is {state.value}; there is nothing to set aside")
+
+
 class MissionMapPlanStore:
     """Read and publish the plan record of one association folder through the versioned JSON envelope."""
 
-    def __init__(self, folder: Path, *, staging: StagingPolicy = StagingPolicy.OWNER) -> None:
-        """Bind the store to one association folder; observers ignore staging files and write nothing."""
+    def __init__(self, folder: Path, *, staging: StagingPolicy = StagingPolicy.OWNER,
+                 association: tuple[str, str] | None = None) -> None:
+        """Bind the store to one association folder; observers ignore staging files and write nothing.
+
+        `association` is the profile ID and mission key of the folder. With it, a valid plan that names
+        another association is invalid saved data, so load, save and set aside classify it alike.
+        """
         self.folder = folder
+        self.association = association
         self.path = folder / PLAN_FILE
         self.staging = staging
         self._record = VersionedJsonRepository(self.path, 1, staging=staging)
@@ -99,6 +118,11 @@ class MissionMapPlanStore:
         except PlanValidationError as error:
             return PlanInspection(PlanState.INVALID_PLAN, self.path, detail=str(error), problems=error.problems,
                                   **common)
+        # The plan stays as evidence, but only the folder's own association is a usable plan
+        named = (plan["association"]["profile_id"], plan["association"]["mission_key"])
+        if self.association is not None and named != self.association:
+            return PlanInspection(PlanState.OTHER_ASSOCIATION, self.path, plan=plan, detail=OTHER_ASSOCIATION_DETAIL,
+                                  **common)
         return PlanInspection(PlanState.VALID, self.path, plan=plan, **common)
 
     def save(
@@ -123,7 +147,7 @@ class MissionMapPlanStore:
         # Only invalid saved data is set aside; a valid plan changes only through a save
         inspection = self.inspect()
         if inspection.state in (PlanState.VALID, PlanState.MISSING):
-            raise RepositoryError(f"the saved plan is {inspection.state.value}; there is nothing to set aside")
+            raise PlanNotInvalid(inspection.state)
         target = self.folder / set_aside_name(moment)
         # Never replace earlier evidence; a second set aside in the same second waits for the next one
         if target.exists():

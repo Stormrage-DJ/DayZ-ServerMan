@@ -1,4 +1,4 @@
-"""Read-only coherent terrain snapshots and end-of-read digests through shared files."""
+"""Read-only terrain snapshots: whole-file reads with end digests, and snapshots from an Inspect read pass."""
 
 from __future__ import annotations
 
@@ -8,10 +8,13 @@ from pathlib import Path
 
 from ..adapters.windows.shared_files import read_bytes_shared
 from ..domain.mission_map_terrain import (
-    FIXED_HEADER, MISSION_FILE_UNREADABLE, VALUE_BITS_FIELD, TerrainCapabilities, TerrainDataError,
-    ValueRows, build_header, parse_fixed_header, terrain_family, value_bits_position, value_flags,
+    AREAFLAGS_MISSING, FIXED_HEADER, LIMITS_MISSING, MISSION_FILE_UNREADABLE, VALUE_BITS_FIELD,
+    TerrainCapabilities, TerrainDataError, ValueRows, build_header, parse_fixed_header, terrain_family,
+    value_bits_position, value_flags,
 )
 from .configuration_common import UTF8_BOM, ConfigurationFileError
+from .mission_map_read_pass import PassContent
+from .mission_map_terrain import parse_value_flags
 from .mission_xml import validate_xml
 
 
@@ -65,3 +68,63 @@ def _read(path: Path) -> bytes:
 def _digest(content: bytes) -> str:
     """Return the SHA-256 of the exact source bytes."""
     return hashlib.sha256(content).hexdigest()
+
+
+@dataclass(frozen=True)
+class PassSnapshot:
+    """Capabilities, value layer and full digests built from one completed capture pass (A181)."""
+
+    capabilities: TerrainCapabilities
+    # None without a valid header or without valid value flags
+    values: ValueRows | None
+    digests: tuple[str | None, ...]
+    header_error: TerrainDataError | None
+    limits_error: TerrainDataError | None
+
+    def require_tiers(self) -> ValueRows:
+        """Return the value layer of an object read, or raise the first header or limits failure.
+
+        A missing file keeps the 4.1 object-read reason mission_file_unreadable.
+        """
+        for error in (self.header_error, self.limits_error):
+            if error is None:
+                continue
+            if error.reason in (AREAFLAGS_MISSING, LIMITS_MISSING):
+                name = "areaflags.map" if error.reason == AREAFLAGS_MISSING else "cfglimitsdefinition.xml"
+                raise TerrainDataError(MISSION_FILE_UNREADABLE, f"{name} could not be read") from error
+            raise error
+        if self.values is None:
+            raise RuntimeError("a snapshot without errors has a value layer")
+        return self.values
+
+
+def snapshot_from_pass(mission_root: Path, content: PassContent, digests: tuple[str | None, ...]) -> PassSnapshot:
+    """Run the 3.5 header and size checks, then the limits checks, on the retained bytes of a pass.
+
+    The checks run outside the reader side, with the order, reasons and messages of the capability read.
+    """
+    header, header_error = None, None
+    if content.area_size is None:
+        header_error = TerrainDataError(AREAFLAGS_MISSING, "the mission has no areaflags.map")
+    else:
+        try:
+            header = build_header(parse_fixed_header(content.head), content.value_bits_field, content.area_size)
+        except TerrainDataError as error:
+            header_error = error
+    flags: tuple[str, ...] = ()
+    limits_error = None
+    if content.limits is None:
+        limits_error = TerrainDataError(LIMITS_MISSING, "the mission has no cfglimitsdefinition.xml")
+    else:
+        try:
+            flags = parse_value_flags(content.limits)
+        except TerrainDataError as error:
+            limits_error = error
+    capabilities = TerrainCapabilities(terrain_family(mission_root.name), header, flags,
+                                       None if header_error is None else header_error.reason,
+                                       None if limits_error is None else limits_error.reason)
+    # Original tier names need both the layer and the value flags
+    values = None
+    if header is not None and limits_error is None:
+        values = ValueRows(header, 0, header.rows, content.value_layer)
+    return PassSnapshot(capabilities, values, digests, header_error, limits_error)

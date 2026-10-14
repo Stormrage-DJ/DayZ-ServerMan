@@ -43,14 +43,21 @@ class MissionMapEditorStaticTests(unittest.TestCase):
 
     def test_assets_are_exactly_the_implemented_offline_inventory(self) -> None:
         """Asset order follows the accepted contract without future module placeholders."""
-        self.assertEqual(EDITOR_STYLES, ("tokens.css", "controls.css", "styles.css", "map_editor.css"))
+        self.assertEqual(EDITOR_STYLES, ("tokens.css", "controls.css", "styles.css", "map_editor.css",
+                                         "map_editor_canvas.css"))
         self.assertEqual(EDITOR_SCRIPTS, ("operation_labels.js", "diagnostic_labels.js",
                          "host_sentences.js", "operation_messages.js", "map_editor_dom.js",
                          "map_editor_wording.js", "map_editor_bridge.js", "map_editor_layout.js",
                          "map_editor_coordinates.js", "map_editor_viewport.js", "map_editor_viewport_render.js",
                          "map_editor_viewport_input.js", "map_editor_viewport_ui.js", "map_editor_bounds_plan.js",
-                         "map_editor_bounds_save.js", "map_editor_bounds.js", "map_editor_model.js", "map_editor_history.js",
-                         "map_editor_layers.js", "map_editor_keys.js", "map_editor_app.js"))
+                         "map_editor_bounds_save.js", "map_editor_bounds.js", "map_editor_raster.js",
+                         "map_editor_tiers.js", "map_editor_background_parts.js", "map_editor_calibration_math.js",
+                         "map_editor_background.js", "map_editor_calibration.js", "map_editor_model.js", "map_editor_history.js",
+                         "map_editor_layers.js", "map_editor_outline.js", "map_editor_vector.js",
+                         "map_editor_plan_save.js", "map_editor_autosave.js", "map_editor_tools.js", "map_editor_drag.js",
+                         "map_editor_properties.js", "map_editor_inspect_wording.js", "map_editor_inspect_read.js",
+                         "map_editor_tier_control.js", "map_editor_inspect.js", "map_editor_keys.js",
+                         "map_editor_set_aside.js", "map_editor_close_dialog.js", "map_editor_close.js", "map_editor_app.js"))
         composed = compose_editor_html(FRONTEND)
         self.assertNotIn(STYLE_MARKER, composed)
         self.assertNotIn(SCRIPT_MARKER, composed)
@@ -71,8 +78,22 @@ class MissionMapEditorStaticTests(unittest.TestCase):
                     "map_editor_viewport_input.js": "ServerManMapViewportInput", "map_editor_viewport_ui.js": "ServerManMapViewportUi",
                     "map_editor_bounds_plan.js": "ServerManMapBoundsPlan",
                     "map_editor_bounds_save.js": "ServerManMapBoundsSave", "map_editor_bounds.js": "ServerManMapBounds",
+                    "map_editor_raster.js": "ServerManMapRaster", "map_editor_tiers.js": "ServerManMapTiers",
+                    "map_editor_background_parts.js": "ServerManMapBackgroundParts",
+                    "map_editor_calibration_math.js": "ServerManMapCalibrationMath",
+                    "map_editor_background.js": "ServerManMapBackground",
+                    "map_editor_calibration.js": "ServerManMapCalibration",
                     "map_editor_model.js": "ServerManMapModel", "map_editor_history.js": "ServerManMapHistory",
-                    "map_editor_layers.js": "ServerManMapLayers", "map_editor_keys.js": "ServerManMapKeys",
+                    "map_editor_layers.js": "ServerManMapLayers", "map_editor_outline.js": "ServerManMapOutline",
+                    "map_editor_vector.js": "ServerManMapVector", "map_editor_plan_save.js": "ServerManMapPlanSave",
+                    "map_editor_autosave.js": "ServerManMapAutosave",
+                    "map_editor_tools.js": "ServerManMapTools", "map_editor_drag.js": "ServerManMapDrag",
+                    "map_editor_properties.js": "ServerManMapProperties", "map_editor_keys.js": "ServerManMapKeys",
+                    "map_editor_inspect_wording.js": "ServerManMapInspectWording",
+                    "map_editor_inspect_read.js": "ServerManMapInspectRead",
+                    "map_editor_tier_control.js": "ServerManMapTierControl", "map_editor_inspect.js": "ServerManMapInspect",
+                    "map_editor_set_aside.js": "ServerManMapSetAside",
+                    "map_editor_close_dialog.js": "ServerManMapCloseDialog", "map_editor_close.js": "ServerManMapClose",
                     "map_editor_app.js": "ServerManMapEditor"}
         names = []
         for filename, global_name in expected.items():

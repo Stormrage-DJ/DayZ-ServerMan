@@ -33,6 +33,16 @@ window.ServerManMapBridge = Object.freeze({
   },
   // Forward only the saved form and its accepted revision/image guards.
   save: (plan, revision, selection) => mapApiCall("save_plan", [plan, revision, selection]),
+  // Display reads name the loaded mission key; the host binds the profile and never takes a path.
+  readTierLayer: (missionKey, tier) => mapApiCall("read_tier_layer", [missionKey, tier]),
+  readBackground: (missionKey, selection, part) => mapApiCall("read_background", [missionKey, selection, part]),
+  selectBackground: (missionKey) => mapApiCall("select_background", [missionKey]),
+  // Inspect reads a point or an object of the draft (null: the saved plan); continue and cancel name the job (4.6).
+  inspect: (plan, target) => mapApiCall("inspect", [plan, target]),
+  continueInspection: (job) => mapApiCall("continue_inspection", [job]),
+  cancelInspection: (job) => mapApiCall("cancel_inspection", [job]),
+  // Set aside renames invalid saved data of the loaded mission; the window confirms first (5.3).
+  setAside: (missionKey) => mapApiCall("set_aside_plan", [missionKey]),
   // Full-screen affects only this document's native editor window.
   toggleFullScreen: () => mapApiCall("toggle_full_screen", []),
   // Stop a late load from replacing the closing state.

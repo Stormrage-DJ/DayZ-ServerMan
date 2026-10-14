@@ -18,6 +18,7 @@ class _SettleAttempt:
 
     done: threading.Event = field(default_factory=threading.Event)
     answer: str | None = None
+    reason: str = "editor"
 
 
 class EditorCloseController:
@@ -64,8 +65,12 @@ class EditorCloseController:
         with self._lock:
             owner = self._attempt is None
             if owner:
-                self._attempt = _SettleAttempt()
+                self._attempt = _SettleAttempt(reason=reason)
             attempt = self._attempt
+            # An application close that joins an editor settle changes the open dialog to its form (UI-UX 00:53:00)
+            joined = not owner and reason == "application" and attempt.reason != reason and not attempt.done.is_set()
+            if joined:
+                attempt.reason = reason
         assert attempt is not None
         if owner:
             self._state_changed("SETTLING")
@@ -78,6 +83,8 @@ class EditorCloseController:
                     if self._attempt is attempt:
                         self._attempt = None
         else:
+            if joined:
+                self._notify(reason)
             while not attempt.done.wait(0.05):
                 if self.closed.is_set():
                     return "close"
@@ -128,6 +135,24 @@ class EditorCloseController:
                 return "close"
         answer = result["answer"]
         return answer if answer in ("close", "cancel") else self._confirm("unknown_callback")
+
+    def _notify(self, reason: str) -> None:
+        """Pass the joining reason to the document; the answer of its shared settle ends both waits.
+
+        The join form only changes a running settle in the document and never starts one (QA-5.4-F7).
+        """
+        if self.closed.is_set() or not self.window.events.loaded.is_set():
+            return
+
+        def evaluate() -> None:
+            """Call the script bridge off-thread; a failure keeps the editor form of the dialog."""
+            try:
+                self.window.evaluate_js(f"window.ServerManMapEditor.settleForClose('{reason}', true)")
+            except Exception:
+                self._logger.emit("map_editor.settle_failed", level="WARNING",
+                                  fields={"profile_id": self.profile_id, "cause": "join_error"})
+
+        threading.Thread(target=evaluate, daemon=True, name="dayz-serverman-editor-join").start()
 
     def _confirm(self, cause: str) -> str:
         """Report the failed settle and ask on the editor's own native window."""

@@ -64,6 +64,11 @@ def read_value_flags(path: Path) -> tuple[str, ...]:
         raise TerrainDataError(LIMITS_MISSING, "the mission has no cfglimitsdefinition.xml") from error
     except OSError as error:
         raise TerrainDataError(MISSION_FILE_UNREADABLE, "cfglimitsdefinition.xml could not be read") from error
+    return parse_value_flags(content)
+
+
+def parse_value_flags(content: bytes) -> tuple[str, ...]:
+    """Return the value-flag names of exact cfglimitsdefinition.xml bytes in file order, or raise limits_invalid."""
     try:
         text = content.removeprefix(UTF8_BOM).decode("utf-8")
         root = validate_xml(text)

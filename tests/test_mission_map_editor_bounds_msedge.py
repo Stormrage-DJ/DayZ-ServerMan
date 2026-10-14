@@ -172,7 +172,7 @@ finish(success(5,true));await wait();check(document.getElementById("map-bounds-w
 manual();await wait();check(saved[1].revision===9,"new save uses the newer load revision");
 check(await window.ServerManMapEditor.settleForClose()==="close","accepted immediate close Promise retained");
 finish(success(10,true));await wait();check(document.getElementById("map-status").textContent==="Closing"&&fields().disabled,"late save cannot replace Closing");
-window.ServerManMapEditor.releaseClose();check(!fields().disabled&&document.getElementById("map-draft-changes").textContent==="No","release retains actual loaded comparison");
+window.ServerManMapEditor.releaseClose();check(!fields().disabled&&document.getElementById("map-draft-changes").textContent==="Yes"&&mapEditorState.model.status().revision===10,"release shows the answer committed during the close (QA-5.2-F5)");
 const reviewed=plan();reviewed.objects=[{id:"retained",name:"Retained",centre:{x:1,z:1}}];await load(value(reviewed));
 fill(bounds(0,0,1000,1000));manual();await wait();check(document.querySelector("dialog"),"review active");
 await load({...value(plan(bounds(0,0,3000,3000))),revision:12});

@@ -23,7 +23,8 @@ html, body { height: 100%; overflow: hidden; }
 #map-workspace { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--primitive-space-3); min-height: 0; }
 #map-viewport { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: var(--color-canvas); border: 1px solid var(--color-border); border-radius: var(--radius-control); }
 #map-viewport { line-height: 1.5; touch-action: none; }
-.map-terrain-bounds { fill: var(--color-surface-raised); stroke: var(--color-border); stroke-width: 2px; }
+/* The raster canvas fills the terrain surface below the image and tiers; this rectangle is the bounds line. */
+.map-terrain-bounds { fill: none; stroke: var(--color-border); stroke-width: 2px; }
 .map-grid-lines { fill: none; stroke: var(--color-border); stroke-width: 1px; }
 .map-grid-labels { fill: var(--color-text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 #map-vector { pointer-events: none; }
@@ -53,7 +54,6 @@ html, body { height: 100%; overflow: hidden; }
 #map-status-area dl > div { min-width: 0; }
 #map-status-area dd { overflow-wrap: anywhere; }
 #map-coordinates { font-variant-numeric: tabular-nums; width: 34ch; max-width: 100%; white-space: pre-line; min-height: 3em; }
-#map-plan-status { max-height: 5.5rem; overflow: auto; }
 #map-announcement { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* Manual bounds and review remain usable without a working map transform. */

@@ -68,7 +68,7 @@ class JournaledPublication:
                 self._fault_hook("BEFORE_CREATE_ANCESTOR", index)
                 path.mkdir()
                 self._fault_hook("AFTER_CREATE_ANCESTOR", index)
-        Path(group.staging_path).replace(group.target_path)
+        replace_file(group.staging_path, group.target_path)
         self._fault_hook("AFTER_PUBLISH", index)
         # Verify the published bytes before recording the group as published
         if not matches(Path(group.target_path), group.new_digest):
@@ -115,9 +115,9 @@ class JournaledPublication:
                     if not new_exists(group) and stage.is_file():
                         stage.unlink()
                     copy_verified(recovery, stage, group.old_digest)
-                    stage.replace(target)
+                    replace_file(stage, target)
                 else:
-                    target.replace(group.staging_path)
+                    replace_file(target, group.staging_path)
                 if not group_old_matches(group):
                     return False
                 group.state = "COMPENSATED"

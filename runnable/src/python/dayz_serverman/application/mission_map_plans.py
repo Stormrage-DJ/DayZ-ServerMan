@@ -11,7 +11,7 @@ from ..repositories.json_store import StagingPolicy
 from ..repositories.mission_map_layout import (
     TargetClass, association_folder, is_target_key, ordinal_spelling, profile_folder, target_key,
 )
-from ..repositories.mission_map_plans import MissionMapPlanStore, PlanInspection, retired_marker
+from ..repositories.mission_map_plans import MissionMapPlanStore, PlanInspection, PlanState, retired_marker
 from ..repositories.mission_map_records import record_mission_root
 from .mission_configuration import _contained, resolve_profile_mission
 from .mission_map_locks import AssociationLocks
@@ -27,6 +27,10 @@ class MissionPathChanged(RuntimeError):
         self.folders = folders
         self.reason = reason
         super().__init__("the mission path of this profile changed; adopt the earlier plan before saving")
+
+
+class ObserverWriteRefused(PermissionError):
+    """Raised when an observer session asks for a plan write; other PermissionErrors are storage failures."""
 
 
 class AssociationMismatch(ValueError):
@@ -63,14 +67,14 @@ class MissionMapPlanService:
         matches = self._path_change(association)
         # In the path-change state the active folder is not read or created; the admin sees the real plan
         if matches:
-            shown = association_folder(self._area, association["profile_id"], matches[0]["mission_key"])
-            inspection = MissionMapPlanStore(shown, staging=self._staging).inspect()
+            inspection = plan_store(self._area, association["profile_id"], matches[0]["mission_key"],
+                                    self._staging).inspect()
             change = {"shown_mission_key": matches[0]["mission_key"], "folders": matches}
             reason = self._change_reason(association)
             return _load_result(association, inspection, read_only=True, path_change=change, reason=reason)
         # Otherwise report the active record as it is, valid, missing or invalid
-        folder = association_folder(self._area, association["profile_id"], association["mission_key"])
-        inspection = MissionMapPlanStore(folder, staging=self._staging).inspect()
+        inspection = plan_store(self._area, association["profile_id"], association["mission_key"],
+                                self._staging).inspect()
         return _load_result(association, inspection, read_only=False, path_change=None)
 
     def save(self, profile_id: object, raw_plan: object, expected_revision: object, *,
@@ -95,22 +99,27 @@ class MissionMapPlanService:
             # A coordinator checks record identities here, after any commit releases the same lock
             if before_save is not None:
                 before_save(plan)
-            folder = association_folder(self._area, association["profile_id"], association["mission_key"])
-            revision, evidence = MissionMapPlanStore(folder).save(plan, expected_revision, self._clock())
+            store = plan_store(self._area, association["profile_id"], association["mission_key"])
+            revision, evidence = store.save(plan, expected_revision, self._clock())
         return {"association": plan["association"], "revision": revision, "plan": plan,
                 "interrupted_evidence": [path.name for path in evidence]}
 
-    def set_aside(self, profile_id: object) -> dict[str, Any]:
-        """Rename invalid saved data of the active association to a dated name; a new plan starts at revision 0."""
+    def set_aside(self, profile_id: object, mission_key: object = None) -> dict[str, Any]:
+        """Rename invalid saved data of the active association to a dated name; a new plan starts at revision 0.
+
+        A given mission key must name the active association, so a stale editor cannot set aside another plan.
+        """
         self._require_owner()
         association = self.active_association(profile_id)
+        if mission_key is not None and mission_key != association["mission_key"]:
+            raise AssociationMismatch("The map editor names another mission. Reload the plan.")
         with self._locks.hold(association["profile_id"], association["mission_key"]):
             # In the path-change state the records of an existing active folder stay unchanged
             matches = self._path_change(association)
             if matches:
                 raise MissionPathChanged(matches, self._change_reason(association))
-            folder = association_folder(self._area, association["profile_id"], association["mission_key"])
-            target = MissionMapPlanStore(folder).set_aside(self._clock())
+            store = plan_store(self._area, association["profile_id"], association["mission_key"])
+            target = store.set_aside(self._clock())
         return {"association": association, "set_aside": target.name}
 
     def _path_change(self, association: dict[str, Any]) -> list[dict[str, Any]]:
@@ -132,7 +141,7 @@ class MissionMapPlanService:
                 continue
             # Compare the mission root that the folder's plan names, also when that plan is invalid;
             # a folder without a readable plan falls back to its last-applied or baseline record
-            store = MissionMapPlanStore(child, staging=StagingPolicy.OBSERVER)
+            store = plan_store(self._area, association["profile_id"], child.name, StagingPolicy.OBSERVER)
             root = store.inspect().mission_root or record_mission_root(child)
             if root is not None and _root_spelling(root) == wanted:
                 matches.append({"mission_key": child.name, "mission_root": root, "plan_changed_ns": store.changed_ns()})
@@ -159,7 +168,14 @@ class MissionMapPlanService:
     def _require_owner(self) -> None:
         """Refuse a write in an observer session."""
         if self._staging is not StagingPolicy.OWNER:
-            raise PermissionError("observer sessions only read mission map plans")
+            raise ObserverWriteRefused("observer sessions only read mission map plans")
+
+
+def plan_store(area: Path, profile_id: str, mission_key: str,
+               staging: StagingPolicy = StagingPolicy.OWNER) -> MissionMapPlanStore:
+    """Return the plan store of one association folder, bound to that association for the D2 classification."""
+    return MissionMapPlanStore(association_folder(area, profile_id, mission_key), staging=staging,
+                               association=(profile_id, mission_key))
 
 
 def _check_association(stored: dict[str, Any], active: dict[str, Any], runtime: Callable[[], str]) -> None:
@@ -197,7 +213,8 @@ def _load_result(association: dict[str, Any], inspection: PlanInspection, *, rea
     """Return the load answer: state, revision, plan, invalid-data detail and the path-change report."""
     return {
         "association": association, "state": inspection.state.value, "revision": inspection.revision,
-        "plan": inspection.plan, "detail": inspection.detail, "read_only": read_only,
+        # Only a valid plan is shown; another association's plan stays evidence in its file
+        "plan": inspection.plan if inspection.state is PlanState.VALID else None, "detail": inspection.detail, "read_only": read_only,
         "interrupted_evidence": [path.name for path in inspection.leftovers], "path_change": path_change,
         "read_only_reason": reason,
         "problems": [{"object_id": problem.object_id, "rule": "invalid_document", "message": problem.message}
@@ -218,7 +235,7 @@ def _retired_successors(area: Path, association: dict[str, Any], staging: Stagin
         folder = association_folder(area, association["profile_id"], key)
         if not folder.is_dir():
             raise MissionPathChanged(successors, "returned_to_earlier_path")
-        store = MissionMapPlanStore(folder, staging=staging)
+        store = plan_store(area, association["profile_id"], key, staging)
         marker = retired_marker(folder)
         if key != association["mission_key"]:
             root = store.inspect().mission_root or record_mission_root(folder) or association["mission_root"]

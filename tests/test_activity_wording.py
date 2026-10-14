@@ -14,6 +14,7 @@ except ModuleNotFoundError:
     from ui_harness_support import FRONTEND, ROOT
 
 from dayz_serverman.application import activity_wording as wording
+from dayz_serverman.application.medical_features import NO_ZONE_CHANGE
 from dayz_serverman.application.log_activity import (
     EVENT_TEXTS, HIDDEN_EVENTS, METHOD_TEXTS, format_manager_record,
 )
@@ -256,6 +257,14 @@ class ActivityFormatterTests(unittest.TestCase):
         restart = messages.split("const operationRestartApplyTexts = Object.freeze({", 1)[1].split("});", 1)[0]
         self.assertEqual(dict(re.findall(r'^  (\w+): "([^"]+)",$', restart, re.MULTILINE)),
                          wording.RESTART_APPLY_TEXTS)
+        # The host sentences shown unchanged have the same openings in both catalogues
+        shown = messages.split("const operationShownHostTexts = Object.freeze([", 1)[1].split("]);", 1)[0]
+        self.assertEqual(tuple(re.findall(r'^  "([^"]+)",$', shown, re.MULTILINE)), wording.SHOWN_HOST_TEXTS)
+        # Such a sentence is shown as it is, also under a code that has its own text
+        text = f"{wording.SHOWN_HOST_TEXTS[0]}the file is not UTF-8. No file was changed."
+        self.assertEqual(wording.error_text("RECOVERY_REQUIRED", text), text)
+        # The window words a medical toggle without a change with the host's exact sentence
+        self.assertIn(f"const OPERATION_MEDICAL_UNCHANGED = {json.dumps(NO_ZONE_CHANGE)};", messages)
 
     def test_legacy_preview_names_settings_by_their_labels(self) -> None:
         """The import preview says "DayZ server folder", never the settings field name."""

@@ -13,6 +13,14 @@ function mapLayerSummary(item) {
   return `${type}${item.kind === "encounter" ? ` (${item.provider})` : ""}${summary ? `; ${summary}` : ""}`;
 }
 
+// The map and the list share one selection; the vector layer shows it.
+function mapLayersSelect(id) {
+  mapLayersSelected = id;
+  mapLayersRender();
+  window.ServerManMapProperties?.render();
+  window.ServerManMapViewportUi.redraw();
+}
+
 // All row content is text; listeners retain only stable IDs, never mutable object references.
 function mapLayersRender() {
   if (!mapLayersModel) return;
@@ -52,12 +60,12 @@ function mapLayersRender() {
       control.setAttribute("aria-label", `${label}: ${item.name}`);
       control.disabled = !model.editable();
       control.addEventListener("click", () => {
-        try { run(); } catch (error) { window.ServerManMapLayout.status(error.message); }
+        try { run(); } catch (error) { window.ServerManMapLayout.status(error.message, {notice: "error", announce: true}); }
       });
       row.append(control);
       return control;
     };
-    const select = button("select", item.name, () => { mapLayersSelected = item.id; mapLayersRender(); });
+    const select = button("select", item.name, () => mapLayersSelect(item.id));
     // Selection can target a hidden or locked item without changing its content.
     select.setAttribute("aria-label", `${words.selectObject}: ${item.name}`);
     select.disabled = !status.enabled;
@@ -90,13 +98,14 @@ window.ServerManMapLayers = Object.freeze({
     for (const [id, operation] of [["map-undo", "undo"], ["map-redo", "redo"]]) {
       document.getElementById(id).textContent = window.ServerManMapWording[operation];
       document.getElementById(id).addEventListener("click", () => {
-        model[operation]().catch((error) => window.ServerManMapLayout.status(error.message));
+        model[operation]().catch((error) => window.ServerManMapLayout.status(error.message, {notice: "error", announce: true}));
       });
     }
     mapLayersRender();
   },
   render: mapLayersRender,
-  reset: () => { mapLayersSelected = null; mapLayersRender(); },
+  reset: () => mapLayersSelect(null),
   selected: () => mapLayersSelected,
-  clear: () => { mapLayersSelected = null; mapLayersRender(); },
+  select: mapLayersSelect,
+  clear: () => mapLayersSelect(null),
 });
