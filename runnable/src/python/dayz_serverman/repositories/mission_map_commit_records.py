@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from ..adapters.windows.shared_files import replace_file
+from ..domain.mission_map_applied import content_items, record_version
 from ..domain.mission_map_ledger import parse_entry
 from ..domain.mission_map_records import parse_applied, parse_baseline, parse_original, sealed
 from ..domain.models import RepositoryError, RevisionConflict
@@ -87,9 +88,9 @@ class CommitRecords:
         for index, (update, record, entry, revision) in enumerate(prepared):
             journal.records.append(entry)
             store = ContentStore((self.paths.root / entry.target_path).parent)
-            entries = record.get("files_before", []) if update.kind == "applied" else record.get("files", [])
+            # The content of every stored item, also of Replace backups, is written before the journal (D4 step 2)
             if update.kind != "ledger":
-                for item in entries:
+                for item in content_items(update.kind, record):
                     if item["existed"]:
                         data = update.contents.get(item["sha256"])
                         if path_has_reparse(store.folder / item["sha256"]):
@@ -98,7 +99,8 @@ class CommitRecords:
                             raise ValueError("commit record content is missing or has a different digest")
             stage = self.paths.root / entry.staging_path
             stage.parent.mkdir(parents=True, exist_ok=True)
-            payload = {"schema_version": 1, "revision": revision, **record}
+            # The envelope version is the version of the record fields (8.7: version 2 of the last-applied record)
+            payload = {"schema_version": record_version(record), "revision": revision, **record}
             with stage.open("x", encoding="utf-8", newline="\n") as stream:
                 json.dump(payload, stream, ensure_ascii=False, sort_keys=True, allow_nan=False)
                 stream.flush()
@@ -159,9 +161,7 @@ class CommitRecords:
             for name, kind in (("original.json", "original"), ("baseline.json", "baseline"), ("applied.json", "applied")):
                 found = self._file(folder / name, kind).read()
                 if found is not None:
-                    record = found[0]
-                    files = record.get("files_before", []) if kind == "applied" else record["files"]
-                    keep.update(item["sha256"] for item in files if item["existed"])
+                    keep.update(item["sha256"] for item in content_items(kind, found[0]) if item["existed"])
             ContentStore(folder).sweep(keep)
 
     def _manifest(self, path: Path, kind: str) -> str | None:

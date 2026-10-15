@@ -166,8 +166,11 @@ async function reviewOrApplyTweakTarget(target) {
     if (generation !== tweaksState.generation || profileId !== tweaksState.profileId
         || !window.ServerManWorkspace.isActive(workspace)) return;
     if (!result.success) return showTweakError(result, "Changes could not be reviewed.");
-    // Remember the reviewed arguments and ask the operator to apply.
-    tweaksState.reviewed.set(target, { fingerprint, args });
+    // Remember the reviewed arguments and ask the operator to apply. A zone review of an editor-managed
+    // mission returns a fingerprint, and its Apply sends it back (8.13).
+    const reviewedFingerprint = result.value.preview_fingerprint;
+    tweaksState.reviewed.set(target, { fingerprint,
+      args: typeof reviewedFingerprint === "string" ? [...args, reviewedFingerprint] : args });
     // A medical toggle that changes no group says so instead of counting changes.
     const unchanged = window.ServerManOperationMessages.medicalUnchanged;
     showTweakFeedback(result.value.message === unchanged ? unchanged

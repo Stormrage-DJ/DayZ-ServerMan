@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..adapters.windows.shared_files import replace_file
+from ..domain.mission_map_applied import content_items
 from ..domain.profiles import validate_profile_id
 from .backup_verification import path_has_reparse
 from .json_store import StagingPolicy
@@ -68,8 +69,7 @@ def _clean_folder(folder: Path, root: Path, names: set[str] | None) -> None:
         _safe(target, root)
         found = RecordFile(target, lambda raw, kind=kind: parse_record(kind, raw), StagingPolicy.OBSERVER).read()
         if found is not None:
-            items = found[0].get("files_before", []) if kind == "applied" else found[0]["files"]
-            keep.update(item["sha256"] for item in items if item["existed"])
+            keep.update(item["sha256"] for item in content_items(kind, found[0]) if item["existed"])
     for stage in sorted(folder.glob("*.json.staged-*")):
         _safe(stage, root)
         if COMMIT_STAGE.fullmatch(stage.name) and (names is None or stage.name.split(".json.", 1)[0] in names):

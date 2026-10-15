@@ -5,10 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from ..domain.mission_map_applied import APPLIED_VERSION, content_items, record_version
 from ..domain.mission_map_records import (
     RecordShapeError, identity, parse_applied, parse_baseline, parse_original, sealed,
 )
-from ..domain.models import RecordState, RepositoryError
+from ..domain.models import RecordInspection, RecordState, RepositoryError
 from .json_store import StagingPolicy, VersionedJsonRepository
 from .mission_map_contents import ContentStore
 from .mission_map_layout import (
@@ -35,18 +36,23 @@ class RecordConflict(RepositoryError):
 
 
 class RecordFile:
-    """One versioned editor record file and the shape check of its kind."""
+    """One versioned editor record file and the shape check of its kind.
+
+    The envelope version of a record is the version of its fields: 2 for a
+    last-applied record with the realization of 8.7, else 1. Both stay
+    readable; a version that its fields do not give is corrupt.
+    """
 
     def __init__(self, path: Path, parse: Callable[[dict[str, Any]], dict[str, Any]],
                  staging: StagingPolicy = StagingPolicy.OWNER) -> None:
         """Bind the record path, its shape check and the staging-file rule."""
         self.path = path
         self._parse = parse
-        self._repository = VersionedJsonRepository(path, 1, staging=staging)
+        self._staging = staging
 
     def read(self) -> tuple[dict[str, Any], int] | None:
         """Return the published record and its revision, None when it was never written, or raise RecordCorrupt."""
-        inspection = self._repository.inspect()
+        inspection = self._inspect()
         document = inspection.document
         if document is None and inspection.state in (RecordState.MISSING, RecordState.INTERRUPTED_WRITE):
             return None
@@ -54,13 +60,29 @@ class RecordFile:
             raise RecordCorrupt(self.path, inspection.detail)
         # Check the shape and the manifest digest of the published record
         try:
-            return self._parse(dict(document.fields)), document.revision
+            record = self._parse(dict(document.fields))
         except RecordShapeError as error:
             raise RecordCorrupt(self.path, str(error)) from error
+        if record_version(record) != document.schema_version:
+            raise RecordCorrupt(self.path, "the record version differs from its fields")
+        return record, document.revision
 
     def save(self, record: dict[str, Any], expected_revision: int | None) -> int:
-        """Publish a checked record under the revision guard and return its revision."""
-        return self._repository.save(record, expected_revision).revision
+        """Publish a checked record under the revision guard and return its revision.
+
+        The current file must have the version of the new record; the commit step replaces a record across versions.
+        """
+        repository = VersionedJsonRepository(self.path, record_version(record), staging=self._staging)
+        return repository.save(record, expected_revision).revision
+
+    def _inspect(self) -> RecordInspection:
+        """Inspect the file at the newest version, and an older version as that version."""
+        inspection = VersionedJsonRepository(self.path, APPLIED_VERSION, staging=self._staging).inspect()
+        document = inspection.document
+        # A schema mismatch keeps the document; an older version is read by its own rule
+        if inspection.state is RecordState.CORRUPT and document is not None and document.schema_version < APPLIED_VERSION:
+            return VersionedJsonRepository(self.path, document.schema_version, staging=self._staging).inspect()
+        return inspection
 
 
 def _store_contents(store: ContentStore, entries: list[dict[str, Any]], contents: Mapping[str, bytes]) -> None:
@@ -146,8 +168,7 @@ class AssociationRecordStore:
         if (record["profile_id"], record["mission_key"]) != (self.profile_id, self.mission_key):
             raise ValueError("the record names another profile or mission")
         # Contents come first, so a published record never names missing content
-        stored = record["files"] if self.kind == "baseline" else record["files_before"]
-        _store_contents(self.contents, stored, contents)
+        _store_contents(self.contents, content_items(self.kind, record), contents)
         return self._file.save(record, expected_revision)
 
     def identity(self) -> dict[str, Any] | None:

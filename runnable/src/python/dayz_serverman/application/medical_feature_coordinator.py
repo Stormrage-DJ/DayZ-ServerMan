@@ -7,12 +7,18 @@ from typing import Any, Callable
 
 from ..bridge.contracts import ErrorCode
 from ..bridge.facade import ApplicationCallError
+from ..domain.lifecycle import LifecycleFailure
 from ..domain.models import RecordUnavailable, RevisionConflict
 from ..repositories.atomic_file import ContentChangedError
 from ..repositories.configuration_common import ConfigurationFileError
+from ..repositories.mission_map_journal import MissionMapJournalError
+from ..repositories.mission_map_publication import MissionMapPublicationError
 from ..repositories.profiles import ProfileNotFound, ProfileStorageError
+from ..repositories.restore_paths import RestorePathError
 from .medical_features import FEATURE_PATHS, MedicalFeatureService
 from .mission_configuration import MissionPathError
+from .mission_map_apply_coordinator import apply_error
+from .mission_map_recovery import EDITOR_KIND, RECOVERY_UNRESOLVED
 from .operations.manager import OperationManager
 from .operations.models import OperationFailure, QueueUnavailable
 from .settings import SettingsValidationError
@@ -20,6 +26,10 @@ from .settings import SettingsValidationError
 # Fields accepted by both the preview and apply handlers
 EDIT_FIELDS = {"profile_id", "feature", "enabled", "expected_profile_revision",
                "expected_settings_revision", "expected_digest"}
+# The reviewed zone fingerprint that a zone Apply on an editor-managed mission adds (8.13, customer decision 4)
+FINGERPRINT = "preview_fingerprint"
+# Failures of the D4 commit step of the coordinated zone toggle; they keep the codes of the map editor Apply
+EDITOR_ERRORS = (LifecycleFailure, MissionMapPublicationError, MissionMapJournalError, RestorePathError)
 
 
 class MedicalFeatureCoordinator:
@@ -55,16 +65,27 @@ class MedicalFeatureCoordinator:
 
     def apply(self, parameters: Mapping[str, Any]) -> dict[str, str]:
         """Queue a feature toggle and return its operation handle."""
-        # Validate the request and derive the service arguments
-        _exact(parameters, EDIT_FIELDS); arguments = _args(parameters)
+        # Validate the request and derive the service arguments; only a zone Apply may add its fingerprint
+        fingerprint = parameters.get(FINGERPRINT)
+        _exact(parameters, EDIT_FIELDS | ({FINGERPRINT} if FINGERPRINT in parameters else set()))
+        if FINGERPRINT in parameters and (parameters["feature"] != "medical_loot_zones" or not isinstance(fingerprint, str)):
+            raise ApplicationCallError(ErrorCode.INVALID_REQUEST, "medical feature parameters are invalid")
+        arguments = _args(parameters)
         def work(context: Any) -> dict[str, Any]:
-            """Apply the toggle inside the mutation lane."""
+            """Apply the toggle inside the mutation lane; a D4 failure that needs recovery blocks the editor kind."""
             try:
-                return self._service.apply(**arguments, checkpoint=context.checkpoint)
+                return self._service.apply(**arguments, checkpoint=context.checkpoint, preview_fingerprint=fingerprint,
+                                           operation_id=context.operation_id)
             except Exception as error:
                 call = _error(error)
-                raise OperationFailure(call.code.value, call.safe_message,
-                                       recovery_required=call.code == ErrorCode.RECOVERY_REQUIRED) from error
+                recovery = call.code == ErrorCode.RECOVERY_REQUIRED
+                # Only the 8.5 recovery resolves an editor journal, so its blocks belong to the editor kind. They
+                # carry the reason of a map editor Apply. An ordinary medical failure keeps the medical kind.
+                owner = EDITOR_KIND if recovery and isinstance(error, EDITOR_ERRORS) else None
+                if owner is not None:
+                    context.block_for_recovery(RECOVERY_UNRESOLVED, owner=owner)
+                raise OperationFailure(call.code.value, call.safe_message, recovery_required=recovery,
+                                       recovery_owner=owner) from error
         # Submit the toggle with its replay-safe checkpoint phases
         try:
             record = self._operations.submit("APPLY_MEDICAL_FEATURE", work,
@@ -110,6 +131,9 @@ def _with_zone_baseline(error: Exception, call: ApplicationCallError) -> Applica
 
 def _error(error: Exception) -> ApplicationCallError:
     """Map medical feature failures to stable bridge error codes."""
+    # The coordinated zone toggle keeps the Apply codes, also a running server's refusal (8.13)
+    if isinstance(error, EDITOR_ERRORS):
+        return apply_error(error)
     if isinstance(error, ValueError):
         return ApplicationCallError(ErrorCode.INVALID_REQUEST, str(error))
     if isinstance(error, (ProfileNotFound, MissionPathError)):

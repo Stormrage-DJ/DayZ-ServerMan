@@ -4,7 +4,8 @@ The editor owns one territory element between two reserved marker comments.
 The candidate is the working baseline with that element inserted before the
 root end tag, so every original byte stays as it is. The owned-value
 projection is the marked block. Preview caps come from the event `nominal`
-and `max` values in `db/events.xml` and `ZombieMaxCount` in `db/globals.xml`.
+and `max` values in `db/events.xml` and `ZombieMaxCount` and `ZoneSpawnDist`
+in `db/globals.xml`.
 This module reads and writes no file; the caller supplies the bytes.
 """
 
@@ -141,7 +142,11 @@ def build_territory_candidate(baseline: bytes | None, objects: Iterable[dict[str
 
 
 def infected_caps(events: bytes | None, globals_xml: bytes | None, names: Iterable[str]) -> dict[str, Any]:
-    """Return event `nominal` and `max` for each named event and `ZombieMaxCount`; unknown values are None."""
+    """Return event `nominal` and `max` for each named event, `ZombieMaxCount` and `ZoneSpawnDist`.
+
+    Both globals values follow one rule (Architect 2026-10-14 18:32:23). The root `variables` holds exactly
+    one `var` with the name, and its value is a plain non-negative integer. Any other state gives None.
+    """
     event_values: dict[str, dict[str, int | None]] = {}
     root = _optional_xml(events, "events")
     for name in sorted(set(names)):
@@ -149,12 +154,17 @@ def infected_caps(events: bytes | None, globals_xml: bytes | None, names: Iterab
         # A missing or duplicated event gives no trustworthy cap
         node = nodes[0] if len(nodes) == 1 else None
         event_values[name] = {key: None if node is None else _integer_child(node, key) for key in ("nominal", "max")}
-    limit = None
     root = _optional_xml(globals_xml, "variables")
-    if root is not None:
-        values = [node.get("value") for node in root.findall("var") if node.get("name") == "ZombieMaxCount"]
-        limit = _integer(values[0]) if len(values) == 1 else None
-    return {"events": event_values, "zombie_max_count": limit}
+    return {"events": event_values, "zombie_max_count": _global(root, "ZombieMaxCount"),
+            "zone_spawn_dist": _global(root, "ZoneSpawnDist")}
+
+
+def _global(root: Element | None, name: str) -> int | None:
+    """Return the value of exactly one named globals `var` as a plain non-negative integer, or None."""
+    if root is None:
+        return None
+    values = [node.get("value") for node in root.findall("var") if node.get("name") == name]
+    return _integer(values[0]) if len(values) == 1 else None
 
 
 def _insert_block(baseline: bytes, encounters: list[dict[str, Any]]) -> bytes:

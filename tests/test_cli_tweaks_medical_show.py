@@ -1,7 +1,8 @@
 """Leaf 6.5: `tweaks medical show` names an unmappable loot-zone baseline with its way out.
 
 Real compositions over the edit fixture. The read keeps its exit code. A zone refusal that stops the
-load still exits 3. A refusal that the load reads past exits 0, with a sentence after the table.
+load still exits 3. A refusal that the load reads past exits 0, with a sentence after the table. Since 8.13 an editor-managed
+mission reads as any other; its toggle refuses by its editor records.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from edit_cli_fixtures import PROFILE, EditRoot  # noqa: E402
 from lifecycle_cli_fixtures import saved_state  # noqa: E402
 
 from dayz_serverman.application.activity_wording import ZONE_ORIGINAL_WAY_OUT  # noqa: E402
+from dayz_serverman.domain.medical_editor_texts import NO_APPLIED_PLAN_TEXT  # noqa: E402
 
 SHOW = ["tweaks", "medical", "show", *PROFILE]
 # A medical group, and a stored original that lacks the second one
@@ -24,7 +26,6 @@ HOSPITAL = '<group name="Hospital_A"><usage name="Medic"/><usage name="Town"/></
 CLINIC = '<group name="Clinic_New"><usage name="Medic"/></group>'
 REASON = ("mapgroupproto.xml differs from its stored original: group Clinic_New is not in the stored original. "
           "No file was changed.")
-EDITOR = "Medical loot zones cannot change because the map editor manages this mission."
 
 
 class TweaksMedicalShowTests(EditRoot):
@@ -78,17 +79,20 @@ class TweaksMedicalShowTests(EditRoot):
                          "file declares an unknown encoding. No file was changed. Correct this in mapgroupproto.xml, "
                          "then try again.")
 
-    def test_editor_managed_mission_shows_the_state_and_the_refusal(self) -> None:
-        """The table keeps the read state; one sentence after it names the refusal; the read exits 0."""
+    def test_editor_managed_mission_shows_the_state_and_the_toggle_refuses_by_its_records(self) -> None:
+        """8.13: the read keeps the state without the 6.3 refusal; a toggle without editor records refuses (R17)."""
         editor = '<group name="ServerManMap_G_1"><usage name="Town"/></group>'
         self.files(HOSPITAL + editor, HOSPITAL)
         code, stdout, stderr = self.cli(*SHOW)
         self.assertEqual(code, 0, stderr)
         self.assertIn("Medical loot zones", stdout)
-        self.assertTrue(stdout.rstrip().endswith(EDITOR), stdout)
+        self.assertNotIn("cannot change", stdout + stderr)
         code, stdout, _stderr = self.cli(*SHOW, "--json")
         zones = json.loads(stdout)["value"]["features"]["medical_loot_zones"]
-        self.assertEqual((code, zones["enabled"], zones["zone_baseline"]["mappable"]), (0, False, False))
+        self.assertEqual((code, zones["enabled"], zones["zone_baseline"]["mappable"]), (0, False, True))
+        code, _stdout, stderr = self.cli("tweaks", "medical", "set", *PROFILE, "medical_loot_zones", "on", "--yes")
+        self.assertEqual(code, 2)
+        self.assertIn(NO_APPLIED_PLAN_TEXT, stderr)
 
     def test_other_line_endings_are_information_only(self) -> None:
         """A stored original with other line endings is mappable: no sentence follows the table."""

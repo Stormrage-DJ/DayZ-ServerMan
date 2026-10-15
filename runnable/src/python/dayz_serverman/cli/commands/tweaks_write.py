@@ -72,6 +72,9 @@ def medical_set(context: Any) -> CommandResult:
                "expected_settings_revision": loaded.get("settings_revision"), "expected_digest": state.get("digest")}
     preview = context.call("preview_medical_feature", **request)
     ask(context, [profile_line(context.profile), *medical_review(feature, enabled, state)], preview)
+    # On an editor-managed mission the zone review gives a fingerprint, and the Apply sends it back (8.13)
+    if isinstance(preview, Mapping) and isinstance(preview.get("preview_fingerprint"), str):
+        request["preview_fingerprint"] = preview["preview_fingerprint"]
     record = run_operation(context, "apply_medical_feature", "APPLY_MEDICAL_FEATURE", **request)
     return write_result(record, preview, [profile_line(context.profile)])
 

@@ -59,6 +59,11 @@ window.ServerManMapLayout = Object.freeze({
     mapLayoutText("map-mission", value.mission_name, true);
     mapLayoutText("map-terrain", value.plan?.terrain?.terrain_id || value.capabilities?.terrain_id || window.ServerManMapWording.unknownTerrain, true);
     document.title = `Map editor - ${value.profile.display_name}`;
+    // Only an explicit unverified family shows its backend reason; planning and saving stay available (6.11)
+    const family = value.capabilities?.family, reason = document.getElementById("map-family-reason");
+    const shown = family?.verified === false && typeof family.text === "string" ? family.text : "";
+    reason.textContent = shown;
+    reason.hidden = !shown;
   },
   status: mapLayoutStatus,
   // Announce the current plan state again, for example after a cancelled close

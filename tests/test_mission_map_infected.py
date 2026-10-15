@@ -168,7 +168,7 @@ class InfectedTerritoryCandidateTests(unittest.TestCase):
         caps = build(objects=self.plan()).caps
         self.assertEqual(caps, {"events": {"InfectedArmy": {"nominal": 20, "max": 40},
                                            "InfectedVillage": {"nominal": 50, "max": 100}},
-                                "zombie_max_count": 1000})
+                                "zombie_max_count": 1000, "zone_spawn_dist": None})
         duplicate = EVENTS.replace(b"</events>", b'<event name="InfectedArmy"><nominal>9</nominal></event></events>')
         caps = infected_caps(duplicate, None, ["InfectedArmy", "Missing", "InfectedVillage"])
         self.assertEqual(caps["events"]["InfectedArmy"], {"nominal": None, "max": None})

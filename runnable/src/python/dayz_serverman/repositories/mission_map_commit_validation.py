@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ..adapters.windows.shared_files import read_bytes_shared
+from ..domain.medical_editor_texts import MEDICAL_KIND
 from ..domain.mission_map_records import sealed
 from .json_store import StagingPolicy
 from .mission_map_commit_records import RecordUpdate, parse_record
@@ -35,7 +36,9 @@ def validate_record_links(
     revision = 0 if found is None else found[1] + (found[0]["manifest_sha256"] != baseline["manifest_sha256"])
     if (applied["baseline_revision"], applied["baseline_manifest_sha256"]) != (revision, baseline["manifest_sha256"]):
         raise ValueError("applied record baseline reference differs from the commit baseline")
-    if (applied["plan_id"], applied["plan_revision"], applied["configuration_fingerprint"]) != (
+    # A medical toggle keeps the plan of the current record; its journal names only the zone fingerprint (8.13)
+    if journal.operation_kind != MEDICAL_KIND and (
+            applied["plan_id"], applied["plan_revision"], applied["configuration_fingerprint"]) != (
             journal.plan_id, journal.plan_revision, journal.plan_fingerprint):
         raise ValueError("applied record plan identity differs from its journal")
     keys = [journal.mission_key] + ([journal.runtime_profile_key] if journal.runtime_profile_key else [])

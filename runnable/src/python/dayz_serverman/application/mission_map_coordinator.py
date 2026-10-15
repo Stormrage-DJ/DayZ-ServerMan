@@ -10,6 +10,7 @@ from typing import Any, Callable, Mapping
 from ..bridge.contracts import ErrorCode
 from ..bridge.facade import ApplicationCallError
 from ..domain.mission_map_evaluation import evaluate_plan
+from ..domain.mission_map_families import family_gate
 from ..domain.mission_map_plan import (
     PlanForm, bounds_of, configuration_fingerprint, has_draft_changes, new_identifier, parse_plan,
 )
@@ -98,8 +99,10 @@ class MissionMapCoordinator:
                 public_plan["background"]["path"] = None
             bounds = bounds_of(plan) if plan is not None else None
             confirmed = plan["terrain"]["bounds_confirmed"] if plan is not None else False
-            # Provider presence is independent of terrain editing and never enables unverified bandit placement
+            # Provider presence is independent of terrain editing and never enables unverified bandit placement.
+            # The family gate (6.11) refuses only Apply and Restore original; load and save never consult it
             snapshot = {**capabilities.to_dict(bounds, confirmed),
+                        "family": family_gate(capabilities.terrain_id).to_dict(),
                         "encounter_providers": read_encounter_providers(root, mission, profile, containment=_contained)}
             # Per-object results for the effective display; tier sets come from Inspect on demand
             evaluation = evaluate_plan(plan, capabilities, loaded["revision"]) if plan is not None else None

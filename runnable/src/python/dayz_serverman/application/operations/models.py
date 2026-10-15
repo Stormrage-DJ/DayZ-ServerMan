@@ -186,7 +186,12 @@ class OperationCancelled(RuntimeError):
 
 
 class OperationFailure(RuntimeError):
-    """Report a safe, categorized failure raised by operation work."""
+    """Report a safe, categorized failure raised by operation work.
+
+    recovery_owner names the operation kind whose recovery lifts the lane block of a recovery-required
+    failure. None keeps the kind of the failing operation (8.13; for example a medical toggle names the
+    map editor kind, because only the editor recovery resolves its journal).
+    """
     def __init__(
         self,
         code: str,
@@ -194,12 +199,14 @@ class OperationFailure(RuntimeError):
         *,
         retryable: bool = False,
         recovery_required: bool = False,
+        recovery_owner: str | None = None,
     ) -> None:
-        """Store the failure code, safe message, and retry or recovery flags."""
+        """Store the failure code, safe message, retry or recovery flags, and the recovery owner."""
         self.code = code
         self.safe_message = safe_message
         self.retryable = retryable
         self.recovery_required = recovery_required
+        self.recovery_owner = recovery_owner
         super().__init__(safe_message)
 
 

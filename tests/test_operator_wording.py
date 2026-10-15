@@ -18,10 +18,12 @@ from dayz_serverman.bridge.contracts import ErrorCode
 PACKAGE = ROOT / "runnable" / "src" / "python" / "dayz_serverman"
 # Modules that hold the wording catalogue; raw identifiers are keys there
 CATALOGUE = ("operation_labels.js", "operation_messages.js", "diagnostic_labels.js", "host_sentences.js")
-# Accepted journal kinds precede their operation submit registrations in task 8.9
+# Accepted journal kinds precede their operation submit registrations in task 8.9; the 8.13 medical toggle
+# runs in the medical feature's operation, so its journal kind has that kind's texts
 JOURNAL_OPERATION_KINDS = {"apply": EDITOR_KIND,
                            "restore_original": "RESTORE_MISSION_MAP_ORIGINAL",
-                           "restore_previous": "RESTORE_MISSION_MAP_PREVIOUS"}
+                           "restore_previous": "RESTORE_MISSION_MAP_PREVIOUS",
+                           "medical": "APPLY_MEDICAL_FEATURE"}
 # Phases that the lane itself sets
 WAITING_PHASES = ("accepted", "queued", "running")
 TERMINAL_PHASES = ("complete", "cancelled", "failed", "shutdown")
@@ -94,10 +96,11 @@ class WordingCatalogueTests(unittest.TestCase):
         """Each submitted or accepted journal kind has exactly four catalogue texts."""
         submitted = backend_kinds()
         self.assertEqual(len(submitted), 22, sorted(submitted))
-        self.assertEqual(APPLIED_KINDS, {"apply", "restore_original", "restore_previous"})
+        self.assertEqual(APPLIED_KINDS, {"apply", "restore_original", "restore_previous", "medical"})
         self.assertEqual(set(JOURNAL_OPERATION_KINDS), APPLIED_KINDS)
         journal_kinds = set(JOURNAL_OPERATION_KINDS.values())
-        self.assertEqual(journal_kinds, {"APPLY_MISSION_MAP", "RESTORE_MISSION_MAP_ORIGINAL", "RESTORE_MISSION_MAP_PREVIOUS"})
+        self.assertEqual(journal_kinds, {"APPLY_MISSION_MAP", "RESTORE_MISSION_MAP_ORIGINAL", "RESTORE_MISSION_MAP_PREVIOUS",
+                                         "APPLY_MEDICAL_FEATURE"})
         kinds = submitted | journal_kinds
         for kind in sorted(kinds):
             self.assertIn(kind, self.kinds, f"operation kind without a catalogue entry: {kind}")

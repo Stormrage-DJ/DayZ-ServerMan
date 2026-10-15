@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Sequence
 
+from .medical_editor_texts import MEDICAL_KIND
 from .mission_map_records import (
     UTC_TIME, RecordShapeError, checked_record, require_exact, require_key, require_match, require_profile,
     require_relative, require_text,
@@ -12,9 +13,10 @@ from .mission_map_records import (
 from .mission_map_values import IDENTIFIER, SHA256
 
 
-# Operation kinds that add ledger entries; only an apply and a profile restore record editor output
-ENTRY_KINDS = frozenset(("apply", "restore_original", "restore_previous", "profile_restore"))
-OUTPUT_KINDS = frozenset(("apply", "profile_restore"))
+# Operation kinds that add ledger entries; an apply, a profile restore and the 8.13 medical toggle (it
+# regenerates the generated groups) record editor output
+ENTRY_KINDS = frozenset(("apply", "restore_original", "restore_previous", "profile_restore", MEDICAL_KIND))
+OUTPUT_KINDS = frozenset(("apply", "profile_restore", MEDICAL_KIND))
 # Fields of one entry and of one changed file inside it
 ENTRY_FIELDS = frozenset(("operation_id", "operation_kind", "recorded_at", "profile_id", "target_class",
                           "target_key", "display_path", "mission_root", "output", "carried_operation_id", "files",
@@ -47,7 +49,7 @@ def parse_entry(raw: object, file_set: Sequence[str]) -> dict[str, Any]:
     require_relative(entry["mission_root"])
     # The output flag follows the kind; only a profile-restore entry names the carried record
     if entry["output"] is not (entry["operation_kind"] in OUTPUT_KINDS):
-        raise RecordShapeError("the output flag is true only for an apply and a profile restore")
+        raise RecordShapeError("the output flag is true only for an apply, a profile restore and a medical toggle")
     if entry["operation_kind"] == "profile_restore":
         require_match(entry["carried_operation_id"], IDENTIFIER, "carried_operation_id")
     elif entry["carried_operation_id"] is not None:

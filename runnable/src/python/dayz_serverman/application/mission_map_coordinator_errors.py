@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 from ..bridge.contracts import ErrorCode
 from ..bridge.facade import ApplicationCallError
+from ..domain.mission_map_families import FamilyNotVerified
 from ..domain.mission_map_values import PlanValidationError
 from ..domain.models import RecordUnavailable, RepositoryError, RevisionConflict
 from ..domain.profiles import ProfileValidationError
@@ -66,6 +67,10 @@ def translate(error: Exception) -> ApplicationCallError:
     if isinstance(error, (OSError, RepositoryError, ProfileStorageError)):
         return refusal(ErrorCode.STORAGE_FAILURE, "storage_failure", "The map editor data could not be stored or read.",
                        retryable=True)
+    # Apply or Restore original on an unverified family (6.11): the family is not supported; the plan stays usable
+    if isinstance(error, FamilyNotVerified):
+        return refusal(ErrorCode.UNSUPPORTED_SNAPSHOT_CONTENT, error.gate.reason, str(error),
+                       operation=error.operation, terrain_id=error.gate.terrain_id)
     if isinstance(error, (ValueError, ProfileValidationError)):
         return refusal(ErrorCode.INVALID_REQUEST, "invalid_document", str(error))
     raise error

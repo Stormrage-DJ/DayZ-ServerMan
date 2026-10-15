@@ -7,6 +7,11 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Callable, Sequence
 
+from .medical_editor_texts import MEDICAL_KIND
+from .mission_map_applied import (
+    APPLIED_VERSION, GROUPS_FIELD, REALIZATION_FIELDS, REPLACED_FILES, REPLACED_SOURCE, RealizationError,
+    check_realization, record_version,
+)
 from .mission_map_plan import canonical_json
 from .mission_map_values import IDENTIFIER, SHA256, TARGET_KEY, TERRAIN_ID, ObjectRuleError, exact_fields, integer
 from .profiles import ProfileValidationError, validate_profile_id, validate_relative_path
@@ -14,10 +19,11 @@ from .profiles import ProfileValidationError, validate_profile_id, validate_rela
 
 # UTC time of a record, for example 2026-10-10T12:30:00Z
 UTC_TIME = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
-# Kinds of an operation that writes a last-applied record (D4)
-APPLIED_KINDS = frozenset(("apply", "restore_original", "restore_previous"))
-# Sources of a working-baseline change: the first apply, adoption of external edits (R17), restores
-PROVENANCE_SOURCES = frozenset(("original", "adoption", "restore_original", "profile_restore"))
+# Kinds of an operation that writes a last-applied record (D4); `medical` is the 8.13 zone toggle
+APPLIED_KINDS = frozenset(("apply", "restore_original", "restore_previous", MEDICAL_KIND))
+# Sources of a working-baseline change: the first apply, adoption of external edits (R17), a Replace backup
+# (Architect 2026-10-15 01:18:47 in evidence 8.7), restores
+PROVENANCE_SOURCES = frozenset(("original", "adoption", REPLACED_SOURCE, "restore_original", "profile_restore"))
 # Newest provenance entries a baseline keeps
 MAX_PROVENANCE = 50
 # Largest file size and revision a record may state: the exact JSON integer range
@@ -104,19 +110,43 @@ def parse_baseline(raw: object) -> dict[str, Any]:
     if len(provenance) > MAX_PROVENANCE:
         raise RecordShapeError(f"baseline provenance holds at most {MAX_PROVENANCE} entries")
     for item in provenance:
-        require_exact(item, {"time", "source", "operation_id", "paths"}, "provenance item")
+        # A Replace backup also lists the stored file items of the versions it keeps, with content
+        backup = isinstance(item, dict) and item.get("source") == REPLACED_SOURCE
+        require_exact(item, {"time", "source", "operation_id", "paths"} | ({REPLACED_FILES} if backup else set()),
+                      "provenance item")
         require_match(item["time"], UTC_TIME, "time")
         if item["source"] not in PROVENANCE_SOURCES:
             raise RecordShapeError("provenance source is not known")
         require_match(item["operation_id"], IDENTIFIER, "operation_id")
         if not all(isinstance(path, str) and path for path in _list(item["paths"], "paths")):
             raise RecordShapeError("provenance paths must be relative path texts")
+        if backup:
+            for entry in _list(item[REPLACED_FILES], REPLACED_FILES):
+                _stored_file(entry, keys)
+            if [entry["path"] for entry in item[REPLACED_FILES]] != item["paths"]:
+                raise RecordShapeError("a replaced entry lists the paths of its files")
     return record
 
 
 def parse_applied(raw: object) -> dict[str, Any]:
-    """Return a last-applied record; plan identity and fingerprint are null after a restore."""
-    record = checked_record(raw, APPLIED_FIELDS, "applied")
+    """Return a last-applied record of version 1 or 2; plan identity and fingerprint are null after a restore.
+
+    Version 2 adds the applied plan and the realization (8.7); its fields decide the version.
+    """
+    version = record_version(raw)
+    record = checked_record(raw, APPLIED_FIELDS | (REALIZATION_FIELDS if version == APPLIED_VERSION else set()),
+                            "applied")
+    # A medical toggle keeps the plan of the record that it replaces, which is none after a restore (8.13)
+    medical = record["operation_kind"] == MEDICAL_KIND
+    planned = record["operation_kind"] == "apply" or (medical and record["plan_id"] is not None)
+    if version == APPLIED_VERSION:
+        try:
+            check_realization(record, apply=planned)
+        except RealizationError as error:
+            raise RecordShapeError(str(error)) from error
+    # The toggle needs a known realization, so its record always names one
+    if medical and (version != APPLIED_VERSION or record[GROUPS_FIELD] is None):
+        raise RecordShapeError("a medical toggle record names its generated groups")
     require_profile(record["profile_id"])
     require_key(record["mission_key"])
     require_relative(record["mission_root"])
@@ -126,7 +156,7 @@ def parse_applied(raw: object) -> dict[str, Any]:
     require_match(record["applied_at"], UTC_TIME, "applied_at")
     # An apply names its plan revision and fingerprint; a restore names none
     plan_fields = (record["plan_id"], record["plan_revision"], record["configuration_fingerprint"])
-    if record["operation_kind"] == "apply":
+    if planned:
         require_match(record["plan_id"], IDENTIFIER, "plan_id")
         _integer(record["plan_revision"], "plan_revision")
         require_match(record["configuration_fingerprint"], SHA256, "configuration_fingerprint")

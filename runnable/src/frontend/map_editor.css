@@ -12,12 +12,14 @@ html, body { height: 100%; overflow: hidden; }
 }
 
 /* Identity stays outside the collapsible controls and bounds long safe names. */
-#map-identity { display: flex; align-items: center; gap: var(--primitive-space-6); min-width: 0; }
+#map-identity { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--primitive-space-6); row-gap: var(--primitive-space-2); min-width: 0; }
 #map-title { flex: none; margin: 0; font-size: 20px; }
 #map-identity-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--primitive-space-4); flex: 1; margin: 0; min-width: 0; }
 #map-identity-fields dt, #map-status-area dt { color: var(--color-text-muted); font-size: 12px; margin-bottom: var(--primitive-space-1); }
 #map-identity-fields dd { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 #map-identity-fields dd, #map-status-area dd { margin: 0; }
+/* The unverified-family reason takes its own full-width line below the identity fields (6.11). */
+#map-family-reason { flex-basis: 100%; margin: 0; color: var(--color-status-warning); overflow-wrap: anywhere; }
 
 /* The map receives the remaining space; only the open panel content can scroll. */
 #map-workspace { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--primitive-space-3); min-height: 0; }

@@ -6,7 +6,6 @@ import hashlib
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-from ..adapters.windows.shared_files import read_bytes_shared
 from ..domain.models import RepositoryError
 from ..repositories.mission_map_commit_capture import check_capture
 from ..domain.mission_map_records import sealed
@@ -14,10 +13,11 @@ from ..repositories.backup_verification import path_has_reparse
 from ..repositories.mission_map_commit_records import CommitRecords, RecordUpdate, parse_record
 from ..repositories.mission_map_commit_staging import stage_groups
 from ..repositories.mission_map_commit_validation import validate_record_links
-from ..repositories.mission_map_journal import MapJournal, MissionMapJournalError
+from ..repositories.mission_map_journal import MapJournal, MapRecord, MissionMapJournalError, record_staging
 from ..repositories.mission_map_journal_paths import journal_paths_safe, record_targets
 from ..repositories.mission_map_journal_store import MissionMapJournalRepository, parse_journal
 from ..repositories.mission_map_layout import TargetClass, association_folder, original_folder, RETIRED_FILE
+from ..repositories.mission_map_owned import writable
 from ..repositories.mission_map_publication import MissionMapPublication, MissionMapPublicationError
 from ..repositories.paths import PortablePaths
 from ..repositories.publication_contracts import RecoveryHooks
@@ -63,7 +63,8 @@ class MissionMapCommit:
 
     def _preflight(self, journal: MapJournal, updates: list[RecordUpdate], candidates: Mapping[tuple[str, str], bytes]) -> None:
         """Refuse unsafe paths, reused operations, retired associations and missing record candidates."""
-        parse_journal(journal.to_dict(), journal.operation_id)
+        # Refuse a malformed journal before any write, also one without a DayZ-side group (Architect 01:18:47)
+        parse_journal(_probe(journal, updates), journal.operation_id)
         if journal.phase != "PREPARED" or not journal_paths_safe(journal, Path(journal.dayz_root), self.paths):
             raise MissionMapPublicationError("PATH_INVALID", "Mission map commit paths are unsafe.")
         if self.journals.path_for(journal.operation_id).exists() or self.journals.retired_path_for(journal.operation_id).exists():
@@ -71,7 +72,9 @@ class MissionMapCommit:
         folder = association_folder(self.paths.mission_map, journal.profile_id, journal.mission_key)
         if (folder / RETIRED_FILE).exists():
             raise MissionMapPublicationError("REVISION_CONFLICT", "Mission map association requires adoption.")
-        if not {"baseline", "applied", "ledger"} <= {update.kind for update in updates}:
+        # A ledger entry lists changed files only, so a commit without a DayZ-side group has none (8.7)
+        required = {"baseline", "applied"} | ({"ledger"} if journal.groups else set())
+        if not required <= {update.kind for update in updates}:
             raise ValueError("commit requires baseline, applied and ledger record candidates")
         # Candidate records must have safe derived paths before capture reads or staging writes
         allowed = record_targets(journal, self.paths)
@@ -90,8 +93,15 @@ class MissionMapCommit:
         for group in journal.groups:
             if group.new_exists and hashlib.sha256(candidates[(group.target_class, group.relative_path)]).hexdigest() != group.new_digest:
                 raise ValueError("commit candidate digest differs from its preview")
-            data = candidates[(group.target_class, group.relative_path)] if group.new_exists else read_bytes_shared(Path(group.target_path))
-            if self.owned_digest(TargetClass(group.target_class), group.relative_path, data) is None:
+            # The rule applies to the file and to the written state, never to the bytes that an absence removes.
+            # A writable file may lose a damaged owned block. A captured-only file is refused (Architect 07:07:28, 8.8).
+            target_class = TargetClass(group.target_class)
+            if group.new_exists:
+                written = candidates[(group.target_class, group.relative_path)]
+                projected = self.owned_digest(target_class, group.relative_path, written) is not None
+            else:
+                projected = writable(target_class, group.relative_path)
+            if not projected:
                 raise ValueError("commit refuses a write without an owned-value projection")
         validate_record_links(self.paths, journal, updates, candidates, self.owned_digest)
 
@@ -106,6 +116,8 @@ class MissionMapCommit:
             records.stage(journal, updates)
             if not journal_paths_safe(journal, Path(journal.dayz_root), self.paths):
                 raise MissionMapPublicationError("PATH_INVALID", "Mission map record paths are unsafe.")
+            # The journal round-trips through the 8.5 load parser before its durable save
+            parse_journal(journal.to_dict(), journal.operation_id)
             self.fault("AFTER_STAGE_RECORDS", -1)
             self.journals.save(journal)
             self.fault("AFTER_PREPARED", -1)
@@ -147,3 +159,17 @@ class MissionMapCommit:
                 conflict.details, conflict.retryable = {"reason": "target_changed"}, True
                 raise conflict from error
             raise
+
+
+def _probe(journal: MapJournal, updates: list[RecordUpdate]) -> dict[str, object]:
+    """Return the journal as the load parser sees it; without a group, with one entry of its first record.
+
+    A journal without a DayZ-side group names only records, and staging adds them. The probe entry lets the
+    parser check every other field before the first write. The real journal is parsed again before its save.
+    """
+    value = journal.to_dict()
+    if not journal.groups and not journal.records and updates:
+        target = updates[0].target_path
+        value["records"] = [MapRecord(updates[0].kind, target, record_staging(target, journal.operation_id),
+                                      False, None, "0" * 64).to_dict()]
+    return value

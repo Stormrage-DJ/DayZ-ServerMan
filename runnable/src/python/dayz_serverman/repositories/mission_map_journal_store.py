@@ -11,6 +11,7 @@ from dataclasses import fields
 from pathlib import Path, PureWindowsPath
 
 from ..adapters.windows.shared_files import read_text_shared, replace_file
+from ..domain.medical_editor_texts import MEDICAL_KIND
 from ..domain.mission_map_records import APPLIED_KINDS
 from ..domain.mission_map_values import IDENTIFIER, SHA256, TARGET_KEY
 from ..domain.profiles import validate_profile_id, validate_relative_path
@@ -172,9 +173,11 @@ def _parse(raw: object, filename_id: str) -> MapJournal:
 
 
 def _check_plan_identity(raw: dict[str, object]) -> None:
-    """Require the plan identity of an apply, and none for a restore."""
+    """Require the plan identity of an apply, none for a restore, and only the zone fingerprint for a medical toggle."""
     plan = (raw["plan_id"], raw["plan_revision"], raw["plan_fingerprint"], raw["preview_fingerprint"])
-    if raw["operation_kind"] != "apply":
+    if raw["operation_kind"] == MEDICAL_KIND:
+        valid = plan[:3] == (None, None, None) and _matches(plan[3], SHA256)
+    elif raw["operation_kind"] != "apply":
         valid = plan == (None, None, None, None)
     else:
         valid = (_matches(plan[0], IDENTIFIER) and _integer(plan[1])

@@ -134,11 +134,26 @@ KIND_ERROR_TEXTS: dict[str, dict[str, str]] = {
     "AUTHENTICATE_STEAMCMD": {
         "UPDATE_RESULT_UNKNOWN": "SteamCMD did not close cleanly after the Steam sign-in, so the sign-in cannot be confirmed. Changes are blocked.",
     },
+    # A stale review or a late file change of the map editor Apply (Product Owner 2026-10-15 01:16:10, evidence 8.7)
+    "APPLY_MISSION_MAP": {
+        "REVISION_CONFLICT": "The map plan, the profile, the settings or the mission files changed after the preview. Nothing was applied. Preview the changes again and check them before you apply.",
+    },
+}
+# Host sentences of one kind that are shown unchanged, by a fragment; never the general request text (8.7)
+KIND_SHOWN_TEXTS: dict[str, tuple[str, ...]] = {
+    "APPLY_MISSION_MAP": (
+        "Apply needs a choice for each mission file that changed outside the map editor",
+        "Apply cannot write an encounter that is not available on this mission",
+        "affects values that the map editor sets, so the map editor cannot keep this change",
+        "This mission has no saved map plan.",
+    ),
 }
 # Host sentences shown unchanged, by their opening text; each names its cause, its file and the outcome
 SHOWN_HOST_TEXTS: tuple[str, ...] = (
     "mapgroupproto.xml has a layout that this setting cannot change safely: ",
     "mapgroupproto.xml differs from its stored original: ",
+    # The 6.11 family gate of Apply and Restore original (8.7); never the general backup text of its code
+    "Apply and Restore original are not available for this mission. ",
 )
 # Way out of a loot-zone refusal where mapgroupproto.xml and its stored original do not match (6.5, PO 15:19:49)
 ZONE_ORIGINAL_WAY_OUT = ("DayZ-ServerMan does not guess the original loot of these groups. If mapgroupproto.xml "
@@ -245,6 +260,8 @@ def error_text(code: object, message: object, owner: object = None, kind: object
         return conflict_text(text, owner=owner)
     # A host sentence that already says what to do is shown as it is, whatever its code
     if text.startswith(SHOWN_HOST_TEXTS):
+        return text
+    if isinstance(kind, str) and any(fragment in text for fragment in KIND_SHOWN_TEXTS.get(kind, ())):
         return text
     own = KIND_ERROR_TEXTS.get(kind, {}) if isinstance(kind, str) else {}
     if code in own:

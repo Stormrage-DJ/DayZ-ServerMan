@@ -60,11 +60,21 @@ const operationKindErrorTexts = Object.freeze({
   AUTHENTICATE_STEAMCMD: Object.freeze({
     UPDATE_RESULT_UNKNOWN: "SteamCMD did not close cleanly after the Steam sign-in, so the sign-in cannot be confirmed. Changes are blocked.",
   }),
+  APPLY_MISSION_MAP: Object.freeze({
+    REVISION_CONFLICT: "The map plan, the profile, the settings or the mission files changed after the preview. Nothing was applied. Preview the changes again and check them before you apply.",
+  }),
 });
+// Host sentences of one kind that are shown unchanged, by a fragment; never the general request text (8.7).
+const operationKindShownTexts = Object.freeze({ APPLY_MISSION_MAP: Object.freeze([
+  "Apply needs a choice for each mission file that changed outside the map editor",
+  "Apply cannot write an encounter that is not available on this mission",
+  "affects values that the map editor sets, so the map editor cannot keep this change", "This mission has no saved map plan.",
+]) });
 // Host sentences shown unchanged, by their opening text; each names its cause, its file and the outcome.
 const operationShownHostTexts = Object.freeze([
   "mapgroupproto.xml has a layout that this setting cannot change safely: ",
   "mapgroupproto.xml differs from its stored original: ",
+  "Apply and Restore original are not available for this mission. ",
 ]);
 // Known host sentences of a rejected request, by a fragment of the host message.
 const operationRequestTexts = Object.freeze([
@@ -170,6 +180,7 @@ function operationErrorText(error, fallback = OPERATION_INTERNAL_TEXT, kind = nu
   if (code === "MUTATION_CONFLICT") return mutationConflictText(error.details?.reason, message, error.details?.owner);
   // A host sentence that already says what to do is shown as it is, whatever its code.
   if (operationShownHostTexts.some((opening) => message.startsWith(opening))) return message;
+  if (Object.hasOwn(operationKindShownTexts, kind) && operationKindShownTexts[kind].some((part) => message.includes(part))) return message;
   const own = typeof kind === "string" && Object.hasOwn(operationKindErrorTexts, kind) ? operationKindErrorTexts[kind] : {};
   if (Object.hasOwn(own, code)) return own[code];
   if (Object.hasOwn(operationErrorTexts, code)) return operationErrorTexts[code];

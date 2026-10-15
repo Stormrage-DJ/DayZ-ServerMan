@@ -18,8 +18,12 @@ class RecoveryBlocks:
 
     The owner is the kind of operation whose recovery lifts the block, for example
     RESTORE_BACKUP; a block without an owner is lifted only by a manager restart.
-    A failed operation that requires recovery blocks under its own kind, so its
-    recovery lifts that block too, while blocks of other recoveries stay (QF-039, QF-040).
+    A failed operation that requires recovery blocks under the recovery owner of its
+    failure, or else under its own kind. So that recovery lifts the block too.
+    Blocks of other recoveries stay (QF-039, QF-040). For example a failed map editor
+    restore or medical toggle names the map editor kind, whose recovery resolves the
+    editor journal (8.13 Architect finding F1).
+
     The cause is MISSING_DAYZ_ROOT only for the three startup paths that block
     because no DayZ server folder is set; every other block has no cause.
     """

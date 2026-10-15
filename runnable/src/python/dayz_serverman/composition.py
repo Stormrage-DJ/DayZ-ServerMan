@@ -18,6 +18,7 @@ from .application.lifecycle_coordinator import LifecycleCoordinator, for_running
 from .application.logs import LogQueryService
 from .application.mission_configuration import MissionConfigurationService
 from .application.mission_configuration_coordinator import MissionConfigurationCoordinator
+from .application.medical_editor_toggle import build_medical_editor
 from .application.medical_features import MedicalFeatureService
 from .application.medical_feature_coordinator import MedicalFeatureCoordinator
 from .application.operations.manager import OperationManager
@@ -132,6 +133,9 @@ def build_composition(
     # Editor recovery finishes before handlers, using the plan service's shared association lock set
     mission_map = build_mission_map(paths, profiles, settings, staging=staging, guard=installation_guard,
                                     folder_writer=folder_writer, operations=operations)
+    # The zone toggle of an editor-managed mission is a D4 operation on the same association locks (8.13)
+    medical_features.bind_editor(build_medical_editor(paths, mission_map.locks, installation_guard, folder_writer,
+                                                      create_root=not observer))
     profile_provisioning_coordinator = build_profile_provisioning(
         profiles, settings, operations, paths.operations, installation_guard, recover=not observer,
     )
