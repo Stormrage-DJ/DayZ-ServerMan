@@ -2,12 +2,15 @@
 
 A coordinated medical toggle that needs recovery blocks only under the map editor kind, so the 8.5
 recover handler lifts every block it set. An ordinary medical failure and a failure without an owner
-block under their own kind, as before.
+block under their own kind, as before. A failed toggle carries the code, the message and the retry flag
+of `_error` in the lane record. A cancellation at a safe point ends CANCELLED (Architect 2026-10-15
+15:02:04 in evidence 8.13).
 """
 
 from __future__ import annotations
 
 import hashlib
+import threading
 import time
 import unittest
 from types import SimpleNamespace
@@ -20,9 +23,12 @@ from dayz_serverman.application.mission_map_recovery_coordinator import MissionM
 from dayz_serverman.application.operations.manager import OperationManager
 from dayz_serverman.application.operations.models import OperationFailure, OperationState, QueueUnavailable
 from dayz_serverman.application.operations.store import OperationStore
-from tests.medical_editor_support import ZONES, ToggleFixture
+from dayz_serverman.domain.medical_editor_texts import FINGERPRINT_STALE_TEXT
+from tests.medical_editor_support import PROTO, ZONES, ToggleFixture
 
 KIND = "APPLY_MEDICAL_FEATURE"
+FIELDS = ("profile_id", "feature", "enabled", "expected_profile_revision", "expected_settings_revision",
+          "expected_digest")
 TERMINAL = (OperationState.SUCCEEDED, OperationState.FAILED, OperationState.CANCELLED, OperationState.RECOVERY_REQUIRED)
 
 
@@ -86,6 +92,7 @@ class ToggleOwnerTests(LaneFixture):
         self.fault = fail_publish
         record = self.finished(self.zone_apply(True))
         self.assertEqual(record.state, OperationState.RECOVERY_REQUIRED)
+        self.assertEqual((record.terminal_error.code, record.terminal_error.retryable), ("RECOVERY_REQUIRED", False))
         self.assertTrue(self.blocks())
         self.assertEqual({owner for _reason, owner in self.blocks()}, {EDITOR_KIND})
         with self.assertRaises(QueueUnavailable):
@@ -129,6 +136,95 @@ class OtherOwnerTests(LaneFixture):
         self.lane.clear_recovery_block("CREATE_BACKUP")
         self.finished(self.lane.submit("CREATE_BACKUP", failing("RESTORE_BACKUP")).operation_id)
         self.assertEqual(self.blocks(), [("Needs recovery.", "RESTORE_BACKUP")])
+
+
+class LaneFieldTests(LaneFixture):
+    """The lane record of a failed toggle has the code, the message and the retry flag of _error."""
+
+    def parameters(self, enabled: bool, fingerprint: bool = True) -> dict[str, Any]:
+        """Return the bridge parameters of a toggle, with the fingerprint of its review when one exists."""
+        request = self.request(enabled)
+        parameters: dict[str, Any] = dict(zip(FIELDS, request))
+        found = self.medical.preview(*request).get("preview_fingerprint") if fingerprint else None
+        if found is not None:
+            parameters["preview_fingerprint"] = found
+        return parameters
+
+    def failure(self, parameters: dict[str, Any]) -> tuple[Any, ...]:
+        """Submit the toggle and return its state, code, message and retry flag; no block stays."""
+        record = self.finished(self.coordinator.apply(parameters)["operation_id"])
+        self.assertEqual(self.blocks(), [])
+        error = record.terminal_error
+        return record.state, error.code, error.message, error.retryable
+
+    def outside_edit(self) -> None:
+        """Edit mapgroupproto.xml from outside."""
+        (self.mission / PROTO).write_bytes((self.mission / PROTO).read_bytes() + b"\n<!-- outside -->\n")
+
+    def test_stale_review_under_the_guard(self) -> None:
+        """An outside edit after the first check fails retryable with the stale text."""
+        self.applied_with_medical()
+
+        def edit(phase: str, _index: int) -> None:
+            """Edit the loot-zone file after the first check."""
+            if phase == "AFTER_REVALIDATE":
+                self.fault = None
+                self.outside_edit()
+        self.fault = edit
+        self.assertEqual(self.failure(self.parameters(True)),
+                         (OperationState.FAILED, "REVISION_CONFLICT", FINGERPRINT_STALE_TEXT, True))
+
+    def test_stale_review_before_the_guard(self) -> None:
+        """An outside edit after the review and before the Apply fails the same way (Product Owner 14:59:22)."""
+        self.applied_with_medical()
+        parameters = self.parameters(True)
+        self.outside_edit()
+        self.assertEqual(self.failure(parameters),
+                         (OperationState.FAILED, "REVISION_CONFLICT", FINGERPRINT_STALE_TEXT, True))
+
+    def test_value_error_before_the_guard(self) -> None:
+        """A ValueError before the guard on an editor-managed mission with a fingerprint stays INVALID_REQUEST."""
+        self.applied_with_medical()
+        parameters = self.parameters(True)
+        self.assertIn("preview_fingerprint", parameters)
+        self.settings.dayz_root = None
+        self.assertEqual(self.failure(parameters),
+                         (OperationState.FAILED, "INVALID_REQUEST", "DayZ root is not configured", False))
+
+    def test_ordinary_change_before_the_apply(self) -> None:
+        """On an ordinary mission a change between the preview and the Apply fails retryable."""
+        self.set_medical_baseline()
+        parameters = self.parameters(True)
+        self.assertNotIn("preview_fingerprint", parameters)
+        self.outside_edit()
+        self.assertEqual(self.failure(parameters), (OperationState.FAILED, "REVISION_CONFLICT",
+                                                    "medical feature target changed after it was loaded", True))
+
+    def test_ordinary_same_state(self) -> None:
+        """On an ordinary mission a same-state refusal fails without the retry flag."""
+        self.set_medical_baseline()
+        self.assertEqual(self.failure(self.parameters(False, fingerprint=False)), (
+            OperationState.FAILED, "INVALID_REQUEST", "medical feature already has the requested state", False))
+
+    def test_cancellation_at_the_loaded_safe_point(self) -> None:
+        """A cancellation requested before the safe point "loaded" ends CANCELLED, without error or block."""
+        self.set_medical_baseline()
+        parameters = self.parameters(True)
+        entered, release = threading.Event(), threading.Event()
+        validated = self.medical._validated_context
+
+        def held(*args: Any) -> Any:
+            """Hold the toggle before its first safe point until the test requested the cancellation."""
+            entered.set()
+            self.assertTrue(release.wait(10))
+            return validated(*args)
+        self.medical._validated_context = held  # type: ignore[method-assign]
+        operation_id = self.coordinator.apply(parameters)["operation_id"]
+        self.assertTrue(entered.wait(10))
+        self.lane.request_cancellation(operation_id)
+        release.set()
+        record = self.finished(operation_id)
+        self.assertEqual((record.state, record.terminal_error, self.blocks()), (OperationState.CANCELLED, None, []))
 
 
 if __name__ == "__main__":

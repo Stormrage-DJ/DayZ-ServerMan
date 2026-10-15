@@ -64,3 +64,23 @@ html, body { height: 100%; overflow: hidden; }
 #map-bounds-detection { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 #map-bounds-error { overflow-wrap: anywhere; }
 #map-dialog-title + p { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 45vh; overflow: auto; }
+
+/* Apply and Restore preview (8.10): title, scrolling body and a footer that stays visible (UI-UX 2026-10-15 15:58:12). */
+.map-preview { width: min(44rem, calc(100vw - 2rem)); max-width: none; max-height: calc(100vh - 2rem); padding: 0; overflow: hidden; color: var(--color-text); background: var(--color-surface-raised); border: 1px solid var(--panel-border); border-radius: var(--radius-panel); }
+.map-preview[open] { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+.map-preview::backdrop { background: rgb(0 0 0 / .65); }
+.map-preview h2 { margin: 0; padding: var(--primitive-space-4) var(--primitive-space-5) var(--primitive-space-2); font-size: 18px; }
+.map-preview h3 { margin: var(--primitive-space-4) 0 var(--primitive-space-2); font-size: 15px; }
+.map-preview-body { min-height: 0; overflow: auto; padding: 0 var(--primitive-space-5) var(--primitive-space-3); }
+.map-preview p, .map-preview li, .map-preview legend { overflow-wrap: anywhere; }
+.map-preview-body p { margin: var(--primitive-space-2) 0 0; }
+.map-preview-body .notice { padding: var(--primitive-space-3); }
+.map-preview-list ul { margin: var(--primitive-space-1) 0 0; padding-left: 1.25rem; }
+.map-preview fieldset { display: grid; gap: var(--primitive-space-1); min-width: 0; margin: var(--primitive-space-3) 0 0; }
+.map-preview-refusal, .map-preview-stale { color: var(--color-status-warning); }
+.map-preview-body .map-preview-reason, .map-preview-body .map-preview-refusal { margin-left: 1.5rem; font-size: 13px; }
+.map-preview-footer { padding: var(--primitive-space-3) var(--primitive-space-5) var(--primitive-space-4); border-top: 1px solid var(--color-border); }
+.map-preview-footer p { margin: 0 0 var(--primitive-space-2); }
+.map-preview-footer p:empty:not([role]) { display: none; }
+.map-preview-footer p:empty { margin: 0; }
+.map-preview-footer .action-row { margin-top: 0; justify-content: flex-end; }

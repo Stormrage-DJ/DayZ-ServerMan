@@ -6,6 +6,10 @@ generated groups. The preview compares the current plan with those objects
 by object ID. A missing ID is removed, a new ID is added, and a different
 configuration is changed. A record without these fields has no previous plan, so every current
 object is listed as added.
+
+The plan order sets zone precedence (R06). So the preview also reports a new
+relative order of the objects in both plans (Architect 2026-10-15 15:46:42 in
+evidence 8.10, ruling 1). The preview fingerprint binds it through the answer.
 """
 
 from __future__ import annotations
@@ -14,6 +18,7 @@ from typing import Any
 
 from .mission_map_applied import GLOBAL_FIELD, GROUPS_FIELD, OBJECTS_FIELD
 from .mission_map_plan import configuration_fingerprint
+from .mission_map_preview_texts import ORDER_CHANGED_TEXT
 
 # Fields of applied-record version 2, which leaf 8.7 writes (domain/mission_map_applied.py).
 # A version 1 record has none of them, so the preview reads them only when they are present.
@@ -48,14 +53,17 @@ def applied_group_names(record: dict[str, Any] | None) -> list[str]:
 
 
 def object_changes(objects: list[dict[str, Any]], previous: list[dict[str, Any]] | None) -> dict[str, Any]:
-    """Return the objects added, changed and removed since the last Apply, in plan order.
+    """Return the objects added, changed and removed since the last Apply, in plan order, and the order flag.
 
     The comparison uses the configuration of each object, as the configuration
     fingerprint does. A change of name, visibility or lock alone changes no
-    mission file, so it is no change here.
+    mission file, so it is no change here. `order_changed` is true when the IDs
+    that are in both plans have another relative order; added and removed
+    objects alone do not set it. Without a previous plan it is false.
     """
     if previous is None:
-        return {"previous": False, "added": [_entry(item) for item in objects], "changed": [], "removed": []}
+        return {"previous": False, "added": [_entry(item) for item in objects], "changed": [], "removed": [],
+                "order_changed": False, "order_text": None}
     before = {item["id"]: item for item in previous if isinstance(item, dict) and isinstance(item.get("id"), str)}
     current = {item["id"] for item in objects}
     added, changed = [], []
@@ -66,7 +74,10 @@ def object_changes(objects: list[dict[str, Any]], previous: list[dict[str, Any]]
         elif _configuration(old) != _configuration(item):
             changed.append(_entry(item))
     removed = [_entry(item) for identifier, item in before.items() if identifier not in current]
-    return {"previous": True, "added": added, "changed": changed, "removed": removed}
+    # Both orders keep only the IDs of both plans; the dict keeps the first position of each previous ID
+    order = [item["id"] for item in objects if item["id"] in before] != [key for key in before if key in current]
+    return {"previous": True, "added": added, "changed": changed, "removed": removed,
+            "order_changed": order, "order_text": ORDER_CHANGED_TEXT if order else None}
 
 
 def unavailable_encounters(objects: list[dict[str, Any]], providers: dict[str, Any]) -> list[dict[str, Any]]:

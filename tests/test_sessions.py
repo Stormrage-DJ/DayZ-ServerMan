@@ -74,6 +74,9 @@ class MethodClassTests(unittest.TestCase):
         self.assertLessEqual({"read_mission_map_tier_layer", "read_mission_map_background"}, OWNER_ONLY_METHODS)
         # A11: the set aside of invalid saved plan data is an owner method (5.3)
         self.assertIn("set_aside_mission_map_plan", OWNER_ONLY_METHODS)
+        # A11: both previews, Apply, the restores and the editor recovery are owner methods (8.9)
+        self.assertLessEqual({"preview_mission_map", "apply_mission_map", "preview_mission_map_restore",
+                              "restore_mission_map", "inspect_mission_map_recovery"}, OWNER_ONLY_METHODS)
         self.assertLessEqual(READER_EXEMPT_METHODS, OBSERVER_READ_METHODS)
         session = open_observer_session(self.root)
         self.addCleanup(session.close)

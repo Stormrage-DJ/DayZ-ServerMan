@@ -1,7 +1,7 @@
 """Queue the two restore lane operations of the map editor and word their failures (leaf 8.8).
 
-Leaf 8.9 registers `restore_mission_map` in the handler table. The lane kind
-follows the mode: `RESTORE_MISSION_MAP_ORIGINAL` or
+The handler table registers `restore_mission_map` through the publication
+coordinator (8.9). The lane kind follows the mode: `RESTORE_MISSION_MAP_ORIGINAL` or
 `RESTORE_MISSION_MAP_PREVIOUS`; their activity wording exists since 8.5.
 
 Failures use the Apply mapping (8.7): the 6.11 refusal of Restore original
@@ -19,7 +19,7 @@ from typing import Any
 
 from ..bridge.contracts import ErrorCode
 from ..bridge.facade import ApplicationCallError
-from ..domain.mission_map_restore_texts import LANE_KINDS
+from ..domain.mission_map_restore_texts import INVALID_MODE, INVALID_MODE_TEXT, LANE_KINDS
 from .mission_map_apply_coordinator import apply_error
 from .mission_map_coordinator_errors import refusal
 from .mission_map_recovery import EDITOR_KIND, RECOVERY_UNRESOLVED
@@ -40,10 +40,12 @@ class MissionMapRestoreCoordinator:
 
     def restore_mission_map(self, parameters: Mapping[str, Any]) -> dict[str, str]:
         """Queue one restore and return its operation handle; a malformed request is refused before the lane."""
-        if (set(parameters) != RESTORE_FIELDS or not isinstance(parameters["mode"], str)
-                or parameters["mode"] not in LANE_KINDS or not isinstance(parameters["preview_fingerprint"], str)):
+        if set(parameters) != RESTORE_FIELDS or not isinstance(parameters["preview_fingerprint"], str):
             raise refusal(ErrorCode.INVALID_REQUEST, "invalid_document", "The map editor parameters are invalid.")
         mode = parameters["mode"]
+        # An unknown mode gets the 8.8 text unchanged (Product Owner 2026-10-15 07:10:16)
+        if not isinstance(mode, str) or mode not in LANE_KINDS:
+            raise refusal(ErrorCode.INVALID_REQUEST, INVALID_MODE, INVALID_MODE_TEXT)
 
         def work(context: Any) -> dict[str, Any]:
             """Restore inside the lane; the editor recovery owns any recovery block."""

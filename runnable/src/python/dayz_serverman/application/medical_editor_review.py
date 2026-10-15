@@ -36,6 +36,7 @@ from ..adapters.windows.shared_files import read_bytes_shared
 from ..domain.medical_editor_texts import MISMATCH_TEXT, NO_APPLIED_PLAN_TEXT, ZoneToggleRefused
 from ..domain.mission_map_applied import GROUPS_FIELD
 from ..domain.mission_map_plan import canonical_json
+from ..domain.mission_map_values import SHA256
 from ..repositories.medical_features import project_zones
 from ..repositories.medical_zone_clones import CloneMismatch, regenerate_clones
 from ..repositories.medical_zone_fragments import has_zone_changes, zones_enabled
@@ -92,6 +93,14 @@ class ZoneReview:
         data = self.files[PROTO]
         assert data is not None
         return data
+
+
+def fingerprint_form(value: object) -> bool:
+    """Return whether a value has the form of a zone review fingerprint: 64 lowercase hexadecimal digits.
+
+    Another value counts as a missing fingerprint (Product Owner 2026-10-15 06:27:10 in evidence 8.13).
+    """
+    return isinstance(value, str) and SHA256.fullmatch(value) is not None
 
 
 def review_zone_toggle(area: Path, target: ZoneTarget) -> ZoneReview:

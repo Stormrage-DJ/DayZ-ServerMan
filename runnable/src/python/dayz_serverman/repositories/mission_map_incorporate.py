@@ -31,6 +31,10 @@ REVERSAL_FAILED = "reversal_failed"
 OWNED_VALUE_TEXT = ("The change to {path} affects values that the map editor sets, so the map editor cannot keep this "
                     "change. Use the map editor to change these values. You can still replace the file. "
                     "DayZ-ServerMan saves a copy of the current file before it replaces the file.")
+# The same text for an absent file: no copy exists, so it ends after the replace sentence (PO 07:10:16, evidence 8.8)
+OWNED_VALUE_ABSENT_TEXT = ("The change to {path} affects values that the map editor sets, so the map editor cannot "
+                           "keep this change. Use the map editor to change these values. You can still replace the "
+                           "file.")
 # Errors of a file whose owned values or layout cannot be read for the reversal
 READ_ERRORS = OWNED_ERRORS + (ReversalError, ValueError)
 
@@ -59,20 +63,21 @@ def incorporation(path: str, current: bytes | None, baseline: bytes | None, refe
     """
     owned, damaged = _owned(path, current)
     if damaged or owned != reference_owned:
-        return _refused(path, OWNED_VALUE_CHANGED)
+        return _refused(path, OWNED_VALUE_CHANGED, current)
     try:
         result = reverse(path, current, baseline, groups)
         same = _projection(path, result) == _projection(path, baseline)
     except READ_ERRORS:
-        return _refused(path, REVERSAL_FAILED)
+        return _refused(path, REVERSAL_FAILED, current)
     if not same:
-        return _refused(path, REVERSAL_FAILED)
+        return _refused(path, REVERSAL_FAILED, current)
     return Incorporation(path, True, data=result)
 
 
-def _refused(path: str, reason: str) -> Incorporation:
-    """Return a refused incorporation with its reason and the admin text."""
-    return Incorporation(path, False, reason=reason, message=OWNED_VALUE_TEXT.format(path=path))
+def _refused(path: str, reason: str, current: bytes | None) -> Incorporation:
+    """Return a refused incorporation with its reason and the admin text; an absent file has no copy to save."""
+    text = OWNED_VALUE_ABSENT_TEXT if current is None else OWNED_VALUE_TEXT
+    return Incorporation(path, False, reason=reason, message=text.format(path=path))
 
 
 def _owned(path: str, data: bytes | None) -> tuple[str | None, bool]:

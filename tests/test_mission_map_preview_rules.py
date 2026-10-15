@@ -70,7 +70,8 @@ class ObjectChangeTests(unittest.TestCase):
         self.assertEqual(applied_global(record), 25)
         self.assertEqual(applied_group_names(record), ["ServerManMap_G_a", "ServerManMap_G_b"])
         self.assertEqual(object_changes([], applied_objects({"plan_objects": []})),
-                         {"previous": True, "added": [], "changed": [], "removed": []})
+                         {"previous": True, "added": [], "changed": [], "removed": [], "order_changed": False,
+                          "order_text": None})
 
 
 class EncounterChoiceTests(unittest.TestCase):

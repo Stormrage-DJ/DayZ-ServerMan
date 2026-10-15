@@ -203,10 +203,16 @@ the Inspect methods `inspect_mission_map`, `continue_mission_map_inspection`
 and `cancel_mission_map_inspection` (observer reads), and
 `set_aside_mission_map_plan` (owner method). Set aside renames invalid saved
 plan data to its dated name and deletes nothing.
-`tests/test_bridge_contracts.py` pins 68 bridge methods. The main-window host
-API remains pinned separately in `tests/test_readonly_host_api.py`. These six
-editor methods have pending task 10 entries for `map show`, `map save`,
-`map inspect` and `map set-aside`.
+The owner methods `preview_mission_map`, `apply_mission_map`,
+`preview_mission_map_restore`, `restore_mission_map` and
+`inspect_mission_map_recovery` preview and apply a plan, preview and restore
+the original or the previous state, and run the editor recovery. Apply and
+the restores are operations of the lane.
+`tests/test_bridge_contracts.py` pins 73 bridge methods. The main-window host
+API remains pinned separately in `tests/test_readonly_host_api.py`. These
+eleven editor methods have pending task 10 entries for `map show`,
+`map save`, `map inspect`, `map set-aside`, `map preview`, `map apply`,
+`map restore` and `map recover`.
 The display reads `read_mission_map_tier_layer` and
 `read_mission_map_background` are owner methods and permanent command-line
 exclusions: they carry only display-only rendering data.

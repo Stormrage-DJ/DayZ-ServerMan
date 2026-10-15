@@ -6,7 +6,7 @@ import unittest
 
 from dayz_serverman.application.mission_map_apply_records import realization
 from dayz_serverman.repositories.mission_map_incorporate import (
-    OWNED_VALUE_CHANGED, OWNED_VALUE_TEXT, REVERSAL_FAILED, incorporation,
+    OWNED_VALUE_ABSENT_TEXT, OWNED_VALUE_CHANGED, OWNED_VALUE_TEXT, REVERSAL_FAILED, incorporation,
 )
 from dayz_serverman.repositories.mission_map_infected import MARKER_BEGIN
 from dayz_serverman.repositories.mission_map_layout import TargetClass
@@ -110,6 +110,50 @@ class IncorporationRuleTests(unittest.TestCase):
         self.assertEqual(incorporation(PROTO, None, PROTOTYPE, owned, groups).reason, OWNED_VALUE_CHANGED)
         self.assertEqual(incorporation(PROTO, output[PROTO], BASELINE[PROTO].replace(b"Land_Shed", b"Land_X"),
                                        owned, groups).reason, REVERSAL_FAILED)
+
+
+class AbsentFileTextTests(unittest.TestCase):
+    """A deleted file has no copy to save, so its text ends after the replace sentence (PO 07:10:16, evidence 8.8)."""
+
+    def test_a_deleted_file_gets_the_text_without_the_copy_sentence(self) -> None:
+        """Both refusal reasons of an absent file give the short text; a present file keeps the full text."""
+        self.assertEqual(OWNED_VALUE_ABSENT_TEXT.format(path=DIRT), (
+            "The change to mapgroupdirt.xml affects values that the map editor sets, so the map editor cannot keep "
+            "this change. Use the map editor to change these values. You can still replace the file."))
+        self.assertEqual(OWNED_VALUE_TEXT, OWNED_VALUE_ABSENT_TEXT + " DayZ-ServerMan saves a copy of the current "
+                         "file before it replaces the file.")
+        output, groups = applied(plan(50))
+        owned = owned_digest(TargetClass.MISSION, PROTO, output[PROTO])
+        # The owned digest changed (null against the reference), or the reversal of nothing misses the baseline
+        for reference, reason in ((owned, OWNED_VALUE_CHANGED), (None, REVERSAL_FAILED)):
+            with self.subTest(reason=reason):
+                refused = incorporation(PROTO, None, PROTOTYPE, reference, groups)
+                self.assertEqual((refused.available, refused.reason, refused.message),
+                                 (False, reason, OWNED_VALUE_ABSENT_TEXT.format(path=PROTO)))
+        present = incorporation(PROTO, output[PROTO], BASELINE[PROTO].replace(b"Land_Shed", b"Land_X"), owned, groups)
+        self.assertEqual((present.reason, present.message), (REVERSAL_FAILED, OWNED_VALUE_TEXT.format(path=PROTO)))
+
+    def test_an_existing_empty_file_keeps_the_copy_sentence(self) -> None:
+        """Empty bytes are a file that Replace copies first; only an absent file (None) gets the short text."""
+        for path in (PROTO, DIRT, TERRITORY):
+            with self.subTest(path=path):
+                empty = incorporation(path, b"", BASELINE.get(path, TERRITORIES), "f" * 64, [])
+                absent = incorporation(path, None, BASELINE.get(path, TERRITORIES), "f" * 64, [])
+                self.assertEqual((empty.reason, empty.message), (OWNED_VALUE_CHANGED, OWNED_VALUE_TEXT.format(path=path)))
+                self.assertEqual((absent.reason, absent.message),
+                                 (OWNED_VALUE_CHANGED, OWNED_VALUE_ABSENT_TEXT.format(path=path)))
+
+    def test_an_absent_file_over_an_unreadable_baseline(self) -> None:
+        """The reversal-error path: a baseline whose owned block cannot be read refuses with the short text."""
+        territory = build_territory(objects=[encounter("e1")]).content
+        damaged = territory.replace(b"mission-map end", b"mission-map stop")
+        absent = incorporation(TERRITORY, None, damaged, None, [])
+        self.assertEqual((absent.available, absent.reason, absent.message),
+                         (False, REVERSAL_FAILED, OWNED_VALUE_ABSENT_TEXT.format(path=TERRITORY)))
+        # The same baseline under a present file without the marker block keeps the copy sentence
+        present = incorporation(TERRITORY, TERRITORIES, damaged, owned_digest(TargetClass.MISSION, TERRITORY,
+                                                                            TERRITORIES), [])
+        self.assertEqual((present.reason, present.message), (REVERSAL_FAILED, OWNED_VALUE_TEXT.format(path=TERRITORY)))
 
 
 class NoProjectionTests(unittest.TestCase):

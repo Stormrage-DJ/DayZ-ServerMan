@@ -71,7 +71,14 @@ EXPECTED_PENDING_TASK_10: dict[str, str] = {
     "continue_mission_map_inspection": "pending task 10: map inspect",
     "cancel_mission_map_inspection": "pending task 10: map inspect",
     "set_aside_mission_map_plan": "pending task 10: map set-aside",
+    "preview_mission_map": "pending task 10: map preview",
+    "apply_mission_map": "pending task 10: map apply",
+    "preview_mission_map_restore": "pending task 10: map restore",
+    "restore_mission_map": "pending task 10: map restore",
+    "inspect_mission_map_recovery": "pending task 10: map recover",
 }
+# The four pending commands of leaf 8.9, named explicitly; the restore preview joins "map restore"
+LEAF_8_9_COMMANDS = ("map preview", "map apply", "map restore", "map recover")
 # Display reads of the map editor (3.17): permanent exclusions with the Product Owner reason of RQ1
 DISPLAY_REASON = "display-only rendering data; Inspect and the capability read give the same facts as text"
 DISPLAY_READS = frozenset(("read_mission_map_tier_layer", "read_mission_map_background"))
@@ -92,8 +99,8 @@ class ParityMatrixTests(unittest.TestCase):
                 composition.shutdown.wait_for_close(5)
 
     def test_every_owner_method_is_used_internal_excluded_or_pending(self) -> None:
-        """Each of the 68 methods is in a command, or internal, excluded or pending (53 + 4 + 5 + pending)."""
-        self.assertEqual(len(self.allowlist), 68)
+        """Each of the 73 methods is in a command, or internal, excluded or pending (53 + 4 + 5 + pending)."""
+        self.assertEqual(len(self.allowlist), 73)
         used = set().union(*(command.bridge_methods for command in COMMANDS))
         pending = set(PENDING_TASK_10)
         self.assertEqual(self.allowlist - used - INTERNAL_METHODS - EXCLUDED_METHODS - pending, set())
@@ -122,6 +129,18 @@ class ParityMatrixTests(unittest.TestCase):
         """The pending methods and their planned commands are exactly the expected ones."""
         self.assertEqual(PENDING_PREFIX, "pending task 10: ")
         self.assertEqual(dict(PENDING_TASK_10), EXPECTED_PENDING_TASK_10)
+
+    def test_leaf_8_9_adds_the_four_pending_commands(self) -> None:
+        """Preview, Apply, both restore methods and recovery wait for map preview, apply, restore and recover."""
+        added = {method: PENDING_TASK_10[method] for method in (
+            "preview_mission_map", "apply_mission_map", "preview_mission_map_restore", "restore_mission_map",
+            "inspect_mission_map_recovery")}
+        self.assertEqual(sorted({planned[len(PENDING_PREFIX):] for planned in added.values()}),
+                         sorted(LEAF_8_9_COMMANDS))
+        self.assertLessEqual(set(added), self.allowlist)
+        # None of them is a built command yet, and each is pending, never an exclusion
+        used = set().union(*(command.bridge_methods for command in COMMANDS))
+        self.assertEqual(set(added) & (used | INTERNAL_METHODS | EXCLUDED_METHODS), set())
 
     def test_display_reads_are_permanent_exclusions(self) -> None:
         """Both display reads are registered and excluded with the RQ1 reason; neither is ever pending (3.17)."""

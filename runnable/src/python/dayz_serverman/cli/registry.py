@@ -117,6 +117,12 @@ PENDING_TASK_10: MappingProxyType[str, str] = MappingProxyType({
     "cancel_mission_map_inspection": "pending task 10: map inspect",
     # A confirming owner command (Product Owner Q1): a CLI-only admin must be able to leave invalid saved data
     "set_aside_mission_map_plan": "pending task 10: map set-aside",
+    # Preview and Apply, the restore preview and restore of both modes, and recovery (8.9); commands of 10.5
+    "preview_mission_map": "pending task 10: map preview",
+    "apply_mission_map": "pending task 10: map apply",
+    "preview_mission_map_restore": "pending task 10: map restore",
+    "restore_mission_map": "pending task 10: map restore",
+    "inspect_mission_map_recovery": "pending task 10: map recover",
 })
 # Command words that are not leaf commands of the table
 HELP_WORD = "help"

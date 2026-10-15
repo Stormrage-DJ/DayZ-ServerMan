@@ -49,6 +49,7 @@ from .profile_provisioning_composition import build_profile_provisioning
 from .lifecycle_composition import build_lifecycle
 from .migration_composition import build_migration
 from .mission_map_composition import build_mission_map
+from .mission_map_publication_composition import build_mission_map_publication
 from .profile_restore_composition import build_profile_restore, build_settings_repair
 from .update_check_composition import (
     build_server_build, build_update_check, build_update_check_scheduler, build_update_status,
@@ -136,6 +137,10 @@ def build_composition(
     # The zone toggle of an editor-managed mission is a D4 operation on the same association locks (8.13)
     medical_features.bind_editor(build_medical_editor(paths, mission_map.locks, installation_guard, folder_writer,
                                                       create_root=not observer))
+    # Preview, Apply, restore and recover are owner methods over one commit step on the same locks (8.9, A11)
+    mission_map_publication = build_mission_map_publication(
+        paths, profiles, mission_map, installation_guard, folder_writer, operations,
+        medical_baseline=medical_features.zone_baseline_path, create_root=not observer)
     profile_provisioning_coordinator = build_profile_provisioning(
         profiles, settings, operations, paths.operations, installation_guard, recover=not observer,
     )
@@ -195,6 +200,7 @@ def build_composition(
         medical_feature_coordinator=medical_feature_coordinator,
         mission_map_coordinator=mission_map.coordinator,
         mission_map_display=mission_map.display,
+        mission_map_publication=mission_map_publication,
         migration_coordinator=migration.migration_coordinator,
         legacy_backup_coordinator=migration.legacy_backup_coordinator,
         lifecycle_coordinator=lifecycle_coordinator,

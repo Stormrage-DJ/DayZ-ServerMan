@@ -25,7 +25,8 @@ class MissionMapEditorApiTests(unittest.TestCase):
                    if not name.startswith("_")}
         self.assertEqual(methods, {"load_plan", "save_plan", "toggle_full_screen", "read_tier_layer",
                                    "read_background", "select_background", "set_aside_plan", "inspect",
-                                   "continue_inspection", "cancel_inspection"})
+                                   "continue_inspection", "cancel_inspection", "preview_plan", "apply_plan",
+                                   "preview_restore", "restore_mission"})
         self.assertEqual(tuple(inspect.signature(MissionMapEditorApi.save_plan).parameters),
                          ("self", "plan", "expected_revision", "background_selection_id"))
         # The display reads name the mission key; none takes a profile ID or a path
@@ -42,9 +43,16 @@ class MissionMapEditorApiTests(unittest.TestCase):
         self.assertEqual(tuple(inspect.signature(MissionMapEditorApi.inspect).parameters), ("self", "plan", "target"))
         for name in ("continue_inspection", "cancel_inspection"):
             self.assertEqual(tuple(inspect.signature(getattr(MissionMapEditorApi, name)).parameters), ("self", "job_id"))
+        # Preview and Apply name the reviewed fingerprint and the choices; the restores name the mode (8.9)
+        for name, parameters in (("preview_plan", ("self",)), ("apply_plan", ("self", "preview_fingerprint", "choices")),
+                                 ("preview_restore", ("self", "mode")),
+                                 ("restore_mission", ("self", "mode", "preview_fingerprint"))):
+            self.assertEqual(tuple(inspect.signature(getattr(MissionMapEditorApi, name)).parameters), parameters)
         api = MissionMapEditorApi(Mock(), "alpha", None)
         with self.assertRaises(TypeError):
             api.load_plan("bravo")
+        with self.assertRaises(TypeError):
+            api.preview_plan(profile_id="bravo")
         with self.assertRaises(TypeError):
             api.save_plan({}, None, None, profile_id="bravo")
 
@@ -65,20 +73,34 @@ class MissionMapEditorApiTests(unittest.TestCase):
         api.continue_inspection("job")
         api.cancel_inspection("job")
         self.assertEqual(bridge.dispatch.call_args_list[-1].args[0]["parameters"], {"job_id": "job", "profile_id": "alpha"})
+        # The publication calls of 8.9 forward their arguments unchanged with the bound profile
+        choices = {"external_changes": {}, "unavailable_encounters": {}}
+        for call, parameters in ((lambda: api.preview_plan(), {}),
+                                 (lambda: api.apply_plan("f" * 64, choices),
+                                  {"preview_fingerprint": "f" * 64, "choices": choices}),
+                                 (lambda: api.preview_restore("original"), {"mode": "original"}),
+                                 (lambda: api.restore_mission("previous", "e" * 64),
+                                  {"mode": "previous", "preview_fingerprint": "e" * 64})):
+            call()
+            self.assertEqual(bridge.dispatch.call_args_list[-1].args[0]["parameters"],
+                             {**parameters, "profile_id": "alpha"})
         called = [call.args[0]["method"] for call in bridge.dispatch.call_args_list]
         self.assertEqual(called, ["load_mission_map", "save_mission_map_plan", "read_mission_map_tier_layer",
                                   "read_mission_map_background", "set_aside_mission_map_plan", "inspect_mission_map",
-                                  "continue_mission_map_inspection", "cancel_mission_map_inspection"])
+                                  "continue_mission_map_inspection", "cancel_mission_map_inspection",
+                                  "preview_mission_map", "apply_mission_map", "preview_mission_map_restore",
+                                  "restore_mission_map"])
         with tempfile.TemporaryDirectory(prefix="serverman_editor_api_") as temporary:
             composition = build_composition(Path(temporary) / "Manager")
             try:
                 self.assertLessEqual(set(called), composition.bridge.allowed_methods)
             finally:
                 composition.operations.shutdown(2)
-        # Load and the three Inspect calls are observer reads; save, both display reads and set aside are owner methods
+        # Load and the three Inspect calls are observer reads; save, both display reads, set aside, both previews,
+        # Apply and the restore are owner methods (A11)
         self.assertEqual([name in OBSERVER_READ_METHODS for name in called],
-                         [True, False, False, False, False, True, True, True])
-        self.assertLessEqual(set(called[1:5]), OWNER_ONLY_METHODS)
+                         [True, False, False, False, False, True, True, True, False, False, False, False])
+        self.assertLessEqual(set(called[1:5]) | set(called[8:]), OWNER_ONLY_METHODS)
 
     def test_load_and_save_bind_profile_and_preserve_parameters(self) -> None:
         """Host binding stays alpha even when a draft contains another association."""

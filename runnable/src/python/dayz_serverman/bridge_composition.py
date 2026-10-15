@@ -45,6 +45,9 @@ OWNER_ONLY_METHODS = frozenset((
     "set_aside_mission_map_plan",
     # Display reads of the map editor (3.17, A11): owner methods, never observer reads
     "read_mission_map_tier_layer", "read_mission_map_background",
+    # Both previews, Apply, the restores and the editor recovery (8.9, A11): owner methods, never observer reads
+    "preview_mission_map", "apply_mission_map", "preview_mission_map_restore", "restore_mission_map",
+    "inspect_mission_map_recovery",
 ))
 
 
@@ -75,6 +78,7 @@ def build_handler_table(
     medical_feature_coordinator: HandlerSource,
     mission_map_coordinator: HandlerSource,
     mission_map_display: HandlerSource,
+    mission_map_publication: HandlerSource,
     migration_coordinator: HandlerSource,
     legacy_backup_coordinator: HandlerSource,
     lifecycle_coordinator: HandlerSource,
@@ -105,6 +109,8 @@ def build_handler_table(
         # The tier-layer read (`tier`) and the background read (`selection_id`, `part`) of 3.15 and 3.16;
         # both are permanent parity exclusions, and `over_budget` refusals carry `limit`, `size` and `unit`
         **mission_map_display.handlers(),
+        # Apply preview and Apply, restore preview and restore, and the on-demand editor recovery (8.9)
+        **mission_map_publication.handlers(),
         **migration_coordinator.handlers(),
         **legacy_backup_coordinator.handlers(),
         **lifecycle_coordinator.handlers(),

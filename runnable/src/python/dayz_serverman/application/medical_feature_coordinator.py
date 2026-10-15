@@ -20,7 +20,7 @@ from .mission_configuration import MissionPathError
 from .mission_map_apply_coordinator import apply_error
 from .mission_map_recovery import EDITOR_KIND, RECOVERY_UNRESOLVED
 from .operations.manager import OperationManager
-from .operations.models import OperationFailure, QueueUnavailable
+from .operations.models import OperationCancelled, OperationFailure, QueueUnavailable
 from .settings import SettingsValidationError
 
 # Fields accepted by both the preview and apply handlers
@@ -76,6 +76,9 @@ class MedicalFeatureCoordinator:
             try:
                 return self._service.apply(**arguments, checkpoint=context.checkpoint, preview_fingerprint=fingerprint,
                                            operation_id=context.operation_id)
+            except OperationCancelled:
+                # A cancellation at a safe point ends CANCELLED, as in every other lane coordinator
+                raise
             except Exception as error:
                 call = _error(error)
                 recovery = call.code == ErrorCode.RECOVERY_REQUIRED
@@ -84,8 +87,9 @@ class MedicalFeatureCoordinator:
                 owner = EDITOR_KIND if recovery and isinstance(error, EDITOR_ERRORS) else None
                 if owner is not None:
                     context.block_for_recovery(RECOVERY_UNRESOLVED, owner=owner)
-                raise OperationFailure(call.code.value, call.safe_message, recovery_required=recovery,
-                                       recovery_owner=owner) from error
+                # The lane record carries the code, the message and the retry flag of the one mapping, _error
+                raise OperationFailure(call.code.value, call.safe_message, retryable=call.retryable,
+                                       recovery_required=recovery, recovery_owner=owner) from error
         # Submit the toggle with its replay-safe checkpoint phases
         try:
             record = self._operations.submit("APPLY_MEDICAL_FEATURE", work,

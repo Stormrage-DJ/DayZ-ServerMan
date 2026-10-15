@@ -27,9 +27,17 @@ PREVIEW_STALE_TEXT = ("The map plan, the profile, the settings or the mission fi
                       "Nothing was applied. Preview the changes again and check them before you apply.")
 NO_SAVED_PLAN_TEXT = "This mission has no saved map plan. Make a plan in the map editor, then preview it."
 
-# Residual risk of the capture check (detailed-design D2, T2.1-M3): the preview states what the check can see
-CAPTURE_RISK_TEXT = ("The original capture check uses only the editor's own records and recognizes only unchanged "
-                     "editor output.")
+# Residual risk of the capture check (detailed-design D2, T2.1-M3). Product Owner text of 2026-10-15 15:57:10 in
+# evidence 8.10, decision 2; it replaces the 8.6 text
+CAPTURE_RISK_TEXT = ("Before the first Apply on this mission folder, DayZ-ServerMan saves the current mission files as "
+                     "the original. It does not save map editor output as the original, but it recognizes only "
+                     "unchanged map editor output that this DayZ-ServerMan wrote. If these files contain other map "
+                     "editor output, Restore original writes that output back.")
+# A new relative order of the objects of the last Apply (R06 precedence). Product Owner text of 2026-10-15 15:57:10
+# in evidence 8.10, decision 1
+ORDER_CHANGED_TEXT = ("The order of zones or encounters in the Layers list changed since the last Apply. Where zones "
+                      "overlap, the zone that is higher in the list wins. So this Apply can change the mission files "
+                      "in ways that no listed change explains.")
 
 
 def infected_section(caps: dict[str, Any], written: bool) -> dict[str, Any]:

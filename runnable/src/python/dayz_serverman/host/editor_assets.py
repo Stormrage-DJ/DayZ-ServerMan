@@ -24,7 +24,9 @@ EDITOR_SCRIPTS = (
     "map_editor_encounter_wording.js", "map_editor_encounters.js", "map_editor_linked_loot.js", "map_editor_encounter_draw.js",
     "map_editor_encounter_tool.js", "map_editor_drag.js", "map_editor_properties.js", "map_editor_encounter_properties.js", "map_editor_linked_loot_properties.js", "map_editor_inspect_wording.js", "map_editor_inspect_read.js",
     "map_editor_tier_control.js", "map_editor_inspect.js", "map_editor_abundance.js", "map_editor_keys.js",
-    "map_editor_set_aside.js", "map_editor_close_dialog.js", "map_editor_close.js", "map_editor_app.js",
+    "map_editor_set_aside.js", "map_editor_close_dialog.js", "map_editor_close.js",
+    "map_editor_preview_words.js", "map_editor_preview_dialog.js", "map_editor_preview_apply.js",
+    "map_editor_preview_restore.js", "map_editor_app.js",
 )
 
 

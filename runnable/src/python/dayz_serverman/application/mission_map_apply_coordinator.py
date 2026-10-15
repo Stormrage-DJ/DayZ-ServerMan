@@ -1,7 +1,8 @@
 """Queue the `APPLY_MISSION_MAP` lane operation and word its failures (8.7).
 
-Leaf 8.9 registers `apply_mission_map` in the handler table. A failure
-becomes an operation failure with an existing error code.
+The handler table registers `apply_mission_map` through the publication
+coordinator (8.9). A failure becomes an operation failure with an existing
+error code.
 
 The family gate keeps the 6.11 refusal: `UNSUPPORTED_SNAPSHOT_CONTENT` with
 the gate text, which the activity view shows unchanged through
@@ -25,6 +26,7 @@ from ..repositories.restore_paths import RestorePathError
 from .mission_map_apply import MissionMapApply
 from .mission_map_apply_choices import ApplyRefused
 from .mission_map_coordinator_errors import refusal, translate
+from .mission_map_preview import NoSavedPlan
 from .mission_map_recovery import EDITOR_KIND, RECOVERY_UNRESOLVED
 from .operations.manager import OperationManager
 from .operations.models import OperationCancelled, OperationFailure, QueueUnavailable
@@ -83,12 +85,15 @@ def apply_error(error: Exception) -> ApplicationCallError:
         return ApplicationCallError(code, error.safe_message, retryable=error.retryable)
     if isinstance(error, ApplyRefused):
         return refusal(ErrorCode.INVALID_REQUEST, error.reason, str(error), path=error.path)
+    if isinstance(error, NoSavedPlan):
+        # The Product Owner text (evidence 8.7), never the request text or a problem list of an invalid document
+        return refusal(ErrorCode.INVALID_REQUEST, "no_saved_plan", str(error))
     if isinstance(error, MissionMapPublicationError):
         return _publication_error(error)
     if isinstance(error, (MissionMapJournalError, RestorePathError)):
         return refusal(ErrorCode.RECOVERY_REQUIRED, "recovery_required", "The mission map apply requires recovery.")
     if isinstance(error, RevisionConflict):
-        # A stale preview: review the preview again (retryable)
+        # A stale preview: review the preview again (retryable); the message is the Apply or the restore stale text
         return refusal(ErrorCode.REVISION_CONFLICT, "preview_stale", str(error), retryable=True)
     return translate(error)
 

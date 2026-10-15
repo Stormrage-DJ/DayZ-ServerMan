@@ -49,6 +49,22 @@ class MissionMapEditorApi:
         """Set aside the invalid saved plan of the loaded mission; the window confirms first and then loads again."""
         return self._invoke("set_aside_mission_map_plan", {"mission_key": mission_key})
 
+    def preview_plan(self) -> dict[str, Any]:
+        """Review the saved plan of the bound profile's active mission for Apply (8.9); nothing is written."""
+        return self._invoke("preview_mission_map", {})
+
+    def apply_plan(self, preview_fingerprint: object, choices: object) -> dict[str, Any]:
+        """Queue Apply of the reviewed preview with the admin's choices; the answer is an operation handle."""
+        return self._invoke("apply_mission_map", {"preview_fingerprint": preview_fingerprint, "choices": choices})
+
+    def preview_restore(self, mode: object) -> dict[str, Any]:
+        """Review Restore original ("original") or Restore previous state ("previous"); nothing is written."""
+        return self._invoke("preview_mission_map_restore", {"mode": mode})
+
+    def restore_mission(self, mode: object, preview_fingerprint: object) -> dict[str, Any]:
+        """Queue the reviewed restore of the mission files; the answer is an operation handle."""
+        return self._invoke("restore_mission_map", {"mode": mode, "preview_fingerprint": preview_fingerprint})
+
     def inspect(self, plan: object, target: object) -> dict[str, Any]:
         """Start an Inspect read of a point or an object; plan is the draft, or None for the saved plan (4.6)."""
         return self._invoke("inspect_mission_map", {"plan": plan, "target": target})

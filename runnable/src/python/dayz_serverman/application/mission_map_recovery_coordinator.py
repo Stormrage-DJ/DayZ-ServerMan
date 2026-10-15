@@ -1,4 +1,4 @@
-"""Set editor recovery blocks at startup and build the future on-demand recovery handler."""
+"""Set editor recovery blocks at startup and serve the on-demand recovery handler (8.5, registered in 8.9)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from .operations.manager import OperationManager
 
 
 class MissionMapRecoveryCoordinator:
-    """Own only editor recovery blocks; handler registration belongs to task 8.9."""
+    """Own only editor recovery blocks; the publication coordinator registers the handler (8.9)."""
 
     def __init__(self, service: MissionMapRecovery, operations: OperationManager) -> None:
         """Keep the recovery service and the authoritative operation lane."""

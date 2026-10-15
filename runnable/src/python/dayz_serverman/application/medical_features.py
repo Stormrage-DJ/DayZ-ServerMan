@@ -17,9 +17,9 @@ from ..repositories.medical_zone_classification import (
     LEGACY, MANAGER, ZoneBaselineClass, ZoneReading, read_zones, zone_class,
 )
 from ..repositories.medical_zone_fragments import has_zone_changes, zones_enabled
-from .medical_editor_review import ZoneTarget
+from .medical_editor_review import ZoneTarget, fingerprint_form
 from .medical_feature_paths import FEATURE_PATHS, MedicalFeaturePaths
-from .mission_configuration import _contained, _digest, _revision, resolve_profile_mission
+from .mission_configuration import DIGEST, _contained, _digest, _revision, resolve_profile_mission
 from .profiles import ProfileService
 from .settings import SettingsService, SettingsValidationError
 
@@ -150,7 +150,14 @@ class MedicalFeatureService(MedicalFeaturePaths):
         """Toggle a feature, preserving its original bytes for reversal; an editor-managed mission uses D4 (8.13)."""
         # Validate the request and resolve the target context
         request = (profile_id, feature, enabled, expected_profile_revision, expected_settings_revision, expected_digest)
-        context, target = self._validated_context(*request)
+        try:
+            context, target = self._validated_context(*request)
+        except (ContentChangedError, RevisionConflict) as error:
+            # A change after the zone review is a stale review also before the guard (Product Owner 14:59:22).
+            # A malformed fingerprint counts as missing, so its refusal stays.
+            if fingerprint_form(preview_fingerprint) and self._changed_after_review(request):
+                raise ZoneReviewStale(FINGERPRINT_STALE_TEXT) from error
+            raise
         if target is not None and self._editor is not None:
             return self._editor.apply(target, preview_fingerprint, checkpoint, operation_id=operation_id or uuid4().hex,
                                       reread=lambda: self._reread(request),
@@ -183,6 +190,26 @@ class MedicalFeatureService(MedicalFeaturePaths):
             return self._validated_context(*request)[1]  # type: ignore[arg-type]
         except (ContentChangedError, RevisionConflict, ValueError) as error:
             raise ZoneReviewStale(FINGERPRINT_STALE_TEXT) from error
+
+    def _changed_after_review(self, request: tuple[object, ...]) -> bool:
+        """Return whether a refused zone request is well formed and the current mission is editor-managed.
+
+        A malformed revision or digest is a request error, not a change after the review. The mission class
+        comes from the current profile and files, never from the request; when it cannot be read, the
+        refusal keeps its own error.
+        """
+        profile_id, feature, _enabled, profile_revision, settings_revision, digest = request
+        revisions = (profile_revision, settings_revision)
+        well_formed = (all(isinstance(value, int) and not isinstance(value, bool) for value in revisions)
+                       and isinstance(digest, str) and DIGEST.fullmatch(digest) is not None)
+        if self._editor is None or feature != "medical_loot_zones" or not well_formed:
+            return False
+        # Classify the mission that the profile names now
+        try:
+            mission = self._context(profile_id)[4]
+            return self._editor_managed(mission, _contained(mission, mission / FEATURE_PATHS[feature], directory=False))
+        except Exception:
+            return False
 
     def _validated_context(self, profile_id: object, feature: str, enabled: object,
                            profile_revision: object, settings_revision: object,

@@ -60,7 +60,9 @@ class MissionMapEditorStaticTests(unittest.TestCase):
                          "map_editor_properties.js", "map_editor_encounter_properties.js", "map_editor_linked_loot_properties.js",
                          "map_editor_inspect_wording.js", "map_editor_inspect_read.js",
                          "map_editor_tier_control.js", "map_editor_inspect.js", "map_editor_abundance.js", "map_editor_keys.js",
-                         "map_editor_set_aside.js", "map_editor_close_dialog.js", "map_editor_close.js", "map_editor_app.js"))
+                         "map_editor_set_aside.js", "map_editor_close_dialog.js", "map_editor_close.js",
+                         "map_editor_preview_words.js", "map_editor_preview_dialog.js", "map_editor_preview_apply.js",
+                         "map_editor_preview_restore.js", "map_editor_app.js"))
         composed = compose_editor_html(FRONTEND)
         self.assertNotIn(STYLE_MARKER, composed)
         self.assertNotIn(SCRIPT_MARKER, composed)
@@ -105,6 +107,10 @@ class MissionMapEditorStaticTests(unittest.TestCase):
                     "map_editor_abundance.js": "ServerManMapAbundance",
                     "map_editor_set_aside.js": "ServerManMapSetAside",
                     "map_editor_close_dialog.js": "ServerManMapCloseDialog", "map_editor_close.js": "ServerManMapClose",
+                    "map_editor_preview_words.js": "ServerManMapPreviewWords",
+                    "map_editor_preview_dialog.js": "ServerManMapPreviewDialog",
+                    "map_editor_preview_apply.js": "ServerManMapPreviewApply",
+                    "map_editor_preview_restore.js": "ServerManMapPreviewRestore",
                     "map_editor_app.js": "ServerManMapEditor"}
         names = []
         for filename, global_name in expected.items():

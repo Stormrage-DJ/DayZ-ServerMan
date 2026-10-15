@@ -43,6 +43,9 @@ window.ServerManMapBridge = Object.freeze({
   cancelInspection: (job) => mapApiCall("cancel_inspection", [job]),
   // Set aside renames invalid saved data of the loaded mission; the window confirms first (5.3).
   setAside: (missionKey) => mapApiCall("set_aside_plan", [missionKey]),
+  // The Apply and restore previews read and write nothing; the host binds the profile (8.9, 8.10)
+  previewApply: () => mapApiCall("preview_plan", []),
+  previewRestore: (mode) => mapApiCall("preview_restore", [mode]),
   // Full-screen affects only this document's native editor window.
   toggleFullScreen: () => mapApiCall("toggle_full_screen", []),
   // Stop a late load from replacing the closing state.

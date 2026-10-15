@@ -29,14 +29,13 @@ from ..domain.medical_editor_texts import (
     FINGERPRINT_MISSING_TEXT, FINGERPRINT_STALE_TEXT, ZoneReviewStale, ZoneToggleRefused,
 )
 from ..domain.mission_map_records import utc_text
-from ..domain.mission_map_values import SHA256
 from ..repositories.mission_map_journal_store import MissionMapJournalRepository, journal_folder
 from ..repositories.mission_map_owned import check_reserved
 from ..repositories.paths import PortablePaths
 from .installation_guard import InstallationGuard
 from .lifecycle_ports import ServerFolderWriterPort
 from .medical_editor_records import build_toggle
-from .medical_editor_review import ZoneReview, ZoneTarget, review_zone_toggle
+from .medical_editor_review import ZoneReview, ZoneTarget, fingerprint_form, review_zone_toggle
 from .medical_features import NO_ZONE_CHANGE
 from .mission_map_apply_records import owned_or_none
 from .mission_map_commit import MissionMapCommit
@@ -75,7 +74,7 @@ class MedicalEditorToggle:
         reread validates the request again and returns its target, or None when the mission is no
         longer editor-managed. write_baseline stores the whole-file baseline of a first Enable.
         """
-        if not isinstance(fingerprint, str) or SHA256.fullmatch(fingerprint) is None:
+        if not fingerprint_form(fingerprint):
             raise ZoneToggleRefused("fingerprint_missing", FINGERPRINT_MISSING_TEXT)
         review = self.review(target)
         if review.fingerprint != fingerprint:
