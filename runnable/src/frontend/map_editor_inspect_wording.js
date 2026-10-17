@@ -40,6 +40,11 @@ function mapInspectContainers(containers) {
   return `Containers: ${shown}${containers.length > 4 ? `, and ${containers.length - 4} more.` : "."}`;
 }
 
+// The group capacity sentence of one building group (4.6); the Apply preview loot rows use it too (8.10)
+function mapInspectGroupCapacity(group) {
+  return `Group capacity: ${group.baseline} now, ${group.realized} with this plan.`;
+}
+
 // The reason of an entry without capacity; an ambiguous container is named when the answer names it
 function mapInspectCapacityReason(entry) {
   if (entry.reason === "container_ambiguous" && entry.field) {
@@ -58,7 +63,7 @@ function mapInspectCapacityEntry(entry) {
   if (!entry.capacity) return `${head} ${mapInspectCapacityReason(entry)}`;
   // Capacity is a native upper limit, not a live item count (R08)
   const capacity = entry.capacity, group = capacity.group, containers = capacity.containers ?? [];
-  const parts = [head, `Group capacity: ${group.baseline} now, ${group.realized} with this plan.`];
+  const parts = [head, mapInspectGroupCapacity(group)];
   if (containers.length) parts.push(mapInspectContainers(containers));
   // The window names each point-limited container in place of the generic backend point text
   for (const item of containers.filter((container) => container.point_limited)) {
@@ -113,7 +118,7 @@ window.ServerManMapInspectWording = Object.freeze({
   readAgain: "Read again", inspectPoint: "Inspect a point",
   inspectHint: (name) => `Click a point inside ${name} to see its tier.`,
   capacityTitle: "Building capacity", capacityNone: "This zone covers no buildings.",
-  capacityEntry: mapInspectCapacityEntry, failure: mapInspectFailure, signed: mapInspectSigned, tiers: mapInspectTiers,
+  capacityEntry: mapInspectCapacityEntry, groupCapacity: mapInspectGroupCapacity, failure: mapInspectFailure, signed: mapInspectSigned, tiers: mapInspectTiers,
   // The Inspect panel: a point answer as terms and descriptions; progress shows only in the tier line (T1)
   inspectTitle: "Inspect", inspectTool: "Inspect", pointReading: "Reading tiers",
   pointStale: "The mission files changed. Reading tiers again",

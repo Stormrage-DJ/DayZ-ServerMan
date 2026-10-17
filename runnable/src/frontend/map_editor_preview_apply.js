@@ -44,7 +44,7 @@ function mapPreviewApplyFile(change, noteId) {
       {id: `${name}-refusal`, class: "map-preview-refusal"});
     fieldset.append(message);
     fieldset.setAttribute("aria-describedby", message.id);
-  } else if (change.exists_now !== false && noteId) {
+  } else if (change.exists_now === true && noteId) {
     // The Replace the file note applies only to a file that exists now (Product Owner 15:57:10, decision 10)
     fieldset.setAttribute("aria-describedby", noteId);
   }
@@ -91,23 +91,35 @@ function mapPreviewApplyEncounters(answer, encounters, objectOf, collapsed) {
     ...encounters.map((item) => item.box)];
 }
 
-// The loot report: its own texts first, then the rows, always collapsed (UI-UX section 3)
+// One report text, then a collapsed list without a label that the text names; the list needs rows (PO-2)
+function mapPreviewApplyMechanism(text, rows) {
+  if (!text) return [];
+  const dom = window.ServerManMapDom, line = dom.element("p", text, {id: window.ServerManMapPreviewDialog.id("map-preview-text")});
+  return [line, window.ServerManMapPreviewDialog.list(null, rows, true, line.id)];
+}
+
+// The loot report (UI-UX 2026-10-15 17:59:02, change 4; Product Owner 18:04:08). First the explanation. Then each
+// mechanism text with its groups or categories, and then three labelled lists. Every list is always collapsed.
 function mapPreviewApplyLoot(loot) {
-  const dom = window.ServerManMapDom, mechanisms = loot?.mechanisms ?? {};
+  const dialog = window.ServerManMapPreviewDialog, words = window.ServerManMapPreviewWords, dom = window.ServerManMapDom;
   if (!loot) return [];
-  const texts = [loot.explanation,
-    mechanisms.fixed_dispatch?.groups?.length ? mechanisms.fixed_dispatch.text : null,
-    mechanisms.shared_category_capacity?.groups?.length ? mechanisms.shared_category_capacity.text : null,
-    mechanisms.missing_supply && (mechanisms.missing_supply.categories === null ||
-      Object.keys(mechanisms.missing_supply.categories ?? {}).length) ? mechanisms.missing_supply.text : null,
-    ...(mechanisms.uncontrolled_placements ?? []).map((item) => item.text)];
-  // Rows: unavailable loot objects with their backend reason; changed groups with the 4.6 capacity sentence
-  const rows = [...(loot.unavailable ?? []).map((item) => `${item.name ?? item.id}: ${item.text}`),
-    ...(loot.capacity ?? []).filter((entry) => entry.class === "changed").map((entry) =>
-      [`${entry.source}: Group capacity: ${entry.group.baseline} now, ${entry.group.realized} with this plan.`,
-        entry.bound_text].filter(Boolean).join(" "))];
-  return [...texts.filter(Boolean).map((text) => dom.element("p", text)),
-    window.ServerManMapPreviewDialog.list(null, rows, true)];
+  const mechanisms = loot.mechanisms ?? {}, fixed = mechanisms.fixed_dispatch?.groups ?? [];
+  const shared = mechanisms.shared_category_capacity?.groups ?? [], supply = mechanisms.missing_supply;
+  const missing = Object.keys(supply?.categories ?? {});
+  // Each pair of name and reason once, in answer order; the kept texts show only in these rows
+  const kept = new Map((loot.kept ?? []).map((item) => [JSON.stringify([item.name, item.reason]), `${item.name}: ${item.text}`]));
+  return [loot.explanation ? dom.element("p", loot.explanation) : null,
+    fixed.length ? mapPreviewApplyMechanism(mechanisms.fixed_dispatch.text, fixed) : [],
+    shared.length ? mapPreviewApplyMechanism(mechanisms.shared_category_capacity.text,
+      shared.map((item) => `${item.source}: ${(item.categories ?? []).join(", ")}`)) : [],
+    // Unknown supply (categories null) has its own text and no list
+    supply && supply.categories === null ? dom.element("p", supply.text) : [],
+    missing.length ? mapPreviewApplyMechanism(supply.text, missing) : [],
+    dialog.list(words.lootUnavailable, (loot.unavailable ?? []).map((item) => `${item.name ?? item.id}: ${item.text}`), true),
+    dialog.list(words.lootCapacity, (loot.capacity ?? []).filter((entry) => entry.class === "changed").map((entry) =>
+      [`${entry.source}: ${window.ServerManMapInspectWording.groupCapacity(entry.group)}`, entry.bound_text]
+        .filter(Boolean).join(" ")), true),
+    dialog.list(words.lootKept, [...kept.values()], true)];
 }
 
 // Open the Apply preview of one answer. options: {opener, objectOf(id) (the saved plan object), outline (an
@@ -135,7 +147,8 @@ function mapPreviewApplyOpen(answer, options = {}) {
     dialog.section(words.headings.encounters, [
       ...(answer.infected?.notices ?? []).map((notice) => dialog.notice(notice.text, "warning")),
       list(words.written, (answer.encounters?.written ?? []).map(name)),
-      list(words.excluded, names((answer.encounters?.unavailable ?? []).filter((item) => item.excluded)))]),
+      // The members and names come from the answer alone (Architect 2026-10-15 18:04:57, A-1)
+      list(words.excluded, names(answer.encounters?.excluded))]),
     dialog.section(words.headings.loot, mapPreviewApplyLoot(answer.loot)),
     dialog.section(words.headings.files, [dialog.notice(answer.capture?.text ?? null),
       list(words.affected, (answer.affected_files ?? []).map((item) => item.path)),
@@ -143,8 +156,9 @@ function mapPreviewApplyOpen(answer, options = {}) {
   ];
   const open = () => [...files.filter((item) => !item.inputs.some((input) => input.checked)).map((item) =>
     item.inputs.find((input) => !input.disabled)), ...encounters.filter((item) => !item.input.checked).map((item) => item.input)];
+  // A refused answer with `capture.adoption` offers the adoption preview as a second button (UI-UX 14:21:59, section 3)
   return dialog.open({kind: "apply", title: words.titles.apply, sections, refused, confirm: words.confirm.apply,
-    opener: options.opener, count: () => open().length, first: () => open()[0] ?? null,
+    second: refused && answer.capture?.adoption ? words.adopt : null, opener: options.opener, count: () => open().length, first: () => open()[0] ?? null,
     value: () => ({fingerprint: answer.fingerprint, choices: {
       external_changes: Object.fromEntries(files.map((item) => [item.path, item.inputs.find((input) => input.checked).value])),
       unavailable_encounters: Object.fromEntries(encounters.map((item) => [item.id, "exclude"]))}})});

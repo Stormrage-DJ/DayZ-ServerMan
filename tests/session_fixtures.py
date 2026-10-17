@@ -107,6 +107,7 @@ def read_calls(dayz: Path, archive: Path | None, legacy: Path) -> list[tuple[str
         ("inspect_mission_map", {**profile, "plan": None, "target": {"point": {"x": 100.0, "z": 100.0}}}),
         ("continue_mission_map_inspection", {**profile, "job_id": "unknown"}),
         ("cancel_mission_map_inspection", {**profile, "job_id": "unknown"}),
+        ("export_mission_map_plan", profile),
         ("read_log", {"source": "manager", "maximum_lines": 50}),
         ("read_log", {"source": "manager_diagnostics", "maximum_lines": 50}),
         ("read_log", {"source": "server", "maximum_lines": 50}),

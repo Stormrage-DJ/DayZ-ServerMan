@@ -10,6 +10,8 @@ object is listed as added.
 The plan order sets zone precedence (R06). So the preview also reports a new
 relative order of the objects in both plans (Architect 2026-10-15 15:46:42 in
 evidence 8.10, ruling 1). The preview fingerprint binds it through the answer.
+The answer also lists every encounter that the plan excludes (Architect
+2026-10-15 18:04:57 in evidence 8.10, ruling A-1).
 """
 
 from __future__ import annotations
@@ -92,16 +94,35 @@ def unavailable_encounters(objects: list[dict[str, Any]], providers: dict[str, A
     for item in objects:
         if item["kind"] != "encounter":
             continue
-        provider = providers.get(item["provider"]) or {}
-        reason = None if provider.get("available") else provider.get("reason") or "provider_unavailable"
-        event = item["properties"].get("event_name")
-        if reason is None and item["provider"] == "native_infected" and event not in provider.get("event_names", ()):
-            reason = "event_not_offered"
+        reason = encounter_unavailable_reason(item, providers)
         if reason is not None:
             result.append(dict(_entry(item), reason=reason, excluded=item["excluded"],
                                choice_required=not item["excluded"],
                                linked_loot=bool(item["linked_loot"]["enabled"])))
     return result
+
+
+def encounter_unavailable_reason(item: dict[str, Any], providers: dict[str, Any]) -> str | None:
+    """Return why the provider of one encounter cannot write it now, or None; Apply and import share this rule.
+
+    The reason is the provider's own reason, or `event_not_offered` for a native infected event that the
+    mission does not offer. Wolves and bears are always unavailable providers (7.9).
+    """
+    provider = providers.get(item["provider"]) or {}
+    reason = None if provider.get("available") else provider.get("reason") or "provider_unavailable"
+    event = item["properties"].get("event_name")
+    if reason is None and item["provider"] == "native_infected" and event not in provider.get("event_names", ()):
+        reason = "event_not_offered"
+    return reason
+
+
+def excluded_encounters(objects: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return each encounter that the saved plan excludes, available or not, in plan order (A-1).
+
+    An unavailable encounter that the admin excludes only for one Apply is not
+    a plan exclusion, so it is not listed here.
+    """
+    return [_entry(item) for item in objects if item["kind"] == "encounter" and item["excluded"] is True]
 
 
 def _configuration(item: dict[str, Any]) -> str:

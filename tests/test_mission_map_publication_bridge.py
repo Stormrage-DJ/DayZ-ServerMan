@@ -97,18 +97,18 @@ class ApplyBridgeTests(PublicationBridgeFixture):
     def test_apply_on_an_unverified_family_returns_the_6_11_envelope_unchanged(self) -> None:
         """The preview lists the gate refusal; Apply fails with the gate code, text and retry flag; nothing changes."""
         self.save(PLAN, 25, identifier="other")
-        text = NOT_VERIFIED_TEXT.format(family="enoch")
+        text = NOT_VERIFIED_TEXT.format(family="deerisle")
         preview = self.value("preview_mission_map", "other")
         self.assertIn(("family_not_verified", text), [(item["reason"], item["message"]) for item in preview["refusals"]])
         before = self.stores()
         record = self.apply_bridge(profile="other", fingerprint=preview["fingerprint"])
-        gate = translate(FamilyNotVerified(family_gate("enoch"), "apply"))
+        gate = translate(FamilyNotVerified(family_gate("deerisle"), "apply"))
         self.assertEqual(record["terminal_error"], {"code": gate.code.value, "message": gate.safe_message,
                                                     "retryable": gate.retryable})
         self.assertEqual((record["state"], record["kind"], record["terminal_error"]),
                          ("FAILED", EDITOR_KIND, {"code": "UNSUPPORTED_SNAPSHOT_CONTENT", "message": text,
                                                   "retryable": False}))
-        self.assertEqual(gate.details, {"reason": "family_not_verified", "operation": "apply", "terrain_id": "enoch"})
+        self.assertEqual(gate.details, {"reason": "family_not_verified", "operation": "apply", "terrain_id": "deerisle"})
         self.assertEqual((self.stores(), self.blocks()), (before, []))
         # The activity view shows the gate text, never the general backup text of the code
         shown = error_text(record["terminal_error"]["code"], record["terminal_error"]["message"], kind=EDITOR_KIND)

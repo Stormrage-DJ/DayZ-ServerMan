@@ -9,7 +9,7 @@ async function mapApiCall(method, args) {
   const api = window.pywebview?.api;
   if (!api || typeof api[method] !== "function") throw new Error("The map editor is not connected.");
   const answer = await api[method](...args);
-  if (!answer || typeof answer.success !== "boolean") throw new Error("The map editor received an invalid answer.");
+  if (!answer || typeof answer.success !== "boolean") throw new Error(window.ServerManMapWording.invalidAnswer);
   if (!answer.success) {
     const error = new Error(window.ServerManMapWording.error(answer));
     error.result = answer;
@@ -46,6 +46,21 @@ window.ServerManMapBridge = Object.freeze({
   // The Apply and restore previews read and write nothing; the host binds the profile (8.9, 8.10)
   previewApply: () => mapApiCall("preview_plan", []),
   previewRestore: (mode) => mapApiCall("preview_restore", [mode]),
+  // Apply and the restores submit the reviewed fingerprint; the answer is an operation handle (8.9, 8.18)
+  apply: (fingerprint, choices) => mapApiCall("apply_plan", [fingerprint, choices]),
+  restore: (mode, fingerprint) => mapApiCall("restore_mission", [mode, fingerprint]),
+  // The adoption preview reads and writes nothing; the adopt call submits the reviewed fingerprint (10.16)
+  previewAdoption: () => mapApiCall("preview_adoption", []),
+  adopt: (fingerprint) => mapApiCall("adopt_mission", [fingerprint]),
+  // The lane reads and the recovery check name no profile (Architect 2026-10-15 15:46:42, ruling 4)
+  operationEvents: (after) => mapApiCall("operation_events", [after]),
+  operation: (id) => mapApiCall("operation", [id]),
+  checkRecovery: () => mapApiCall("check_recovery", []),
+  // The refresh read after an operation: a newer load or a close makes it stale, and it makes no load stale
+  reload: async () => {
+    const generation = mapLoadGeneration, value = await mapApiCall("load_plan", []);
+    return generation === mapLoadGeneration ? {stale: false, value} : {stale: true};
+  },
   // Full-screen affects only this document's native editor window.
   toggleFullScreen: () => mapApiCall("toggle_full_screen", []),
   // Stop a late load from replacing the closing state.

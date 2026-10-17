@@ -72,7 +72,7 @@ class RestoreRefusalTests(RestoreFixture):
     def test_unverified_family_refuses_restore_original_only(self) -> None:
         """Restore original raises the 6.11 refusal without a guard; Restore previous state never reads the gate."""
         reads: list[str] = []
-        self.with_terrain("enoch", reads)
+        self.with_terrain("deerisle", reads)
         review = self.restore_review("original")
         self.assertEqual([item["reason"] for item in review.answer["refusals"]], ["family_not_verified"])
         self.assertEqual(review.answer["family"]["refused"], ["apply", "restore_original"])
@@ -81,7 +81,7 @@ class RestoreRefusalTests(RestoreFixture):
         with self.assertRaises(FamilyNotVerified) as refused:
             self.run_restore("original", review.fingerprint)
         self.assertEqual((refused.exception.operation, str(refused.exception)),
-                         ("restore_original", NOT_VERIFIED_TEXT.format(family="enoch")))
+                         ("restore_original", NOT_VERIFIED_TEXT.format(family="deerisle")))
         self.assertEqual(self.events, [])
         self.assert_nothing_written(before)
         reads.clear()

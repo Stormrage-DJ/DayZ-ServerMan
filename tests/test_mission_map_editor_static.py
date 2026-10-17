@@ -46,7 +46,8 @@ class MissionMapEditorStaticTests(unittest.TestCase):
         self.assertEqual(EDITOR_STYLES, ("tokens.css", "controls.css", "styles.css", "map_editor.css",
                                          "map_editor_canvas.css"))
         self.assertEqual(EDITOR_SCRIPTS, ("operation_labels.js", "diagnostic_labels.js",
-                         "host_sentences.js", "operation_messages.js", "map_editor_dom.js",
+                         "host_sentences.js", "operation_messages.js", "operation_results.js",
+                         "operation_failures.js", "busy_controls.js", "map_editor_dom.js",
                          "map_editor_wording.js", "map_editor_bridge.js", "map_editor_layout.js",
                          "map_editor_coordinates.js", "map_editor_viewport.js", "map_editor_viewport_render.js",
                          "map_editor_viewport_input.js", "map_editor_viewport_ui.js", "map_editor_bounds_plan.js",
@@ -62,7 +63,9 @@ class MissionMapEditorStaticTests(unittest.TestCase):
                          "map_editor_tier_control.js", "map_editor_inspect.js", "map_editor_abundance.js", "map_editor_keys.js",
                          "map_editor_set_aside.js", "map_editor_close_dialog.js", "map_editor_close.js",
                          "map_editor_preview_words.js", "map_editor_preview_dialog.js", "map_editor_preview_apply.js",
-                         "map_editor_preview_restore.js", "map_editor_app.js"))
+                         "map_editor_preview_restore.js", "map_editor_preview_adopt.js", "map_editor_publish_words.js",
+                         "map_editor_publish_status.js", "map_editor_follow.js", "map_editor_refresh.js",
+                         "map_editor_adopt.js", "map_editor_publish.js", "map_editor_app.js"))
         composed = compose_editor_html(FRONTEND)
         self.assertNotIn(STYLE_MARKER, composed)
         self.assertNotIn(SCRIPT_MARKER, composed)
@@ -111,6 +114,12 @@ class MissionMapEditorStaticTests(unittest.TestCase):
                     "map_editor_preview_dialog.js": "ServerManMapPreviewDialog",
                     "map_editor_preview_apply.js": "ServerManMapPreviewApply",
                     "map_editor_preview_restore.js": "ServerManMapPreviewRestore",
+                    "map_editor_preview_adopt.js": "ServerManMapPreviewAdopt",
+                    "map_editor_adopt.js": "ServerManMapAdopt",
+                    "map_editor_publish_words.js": "ServerManMapPublishWords",
+                    "map_editor_publish_status.js": "ServerManMapPublishStatus",
+                    "map_editor_follow.js": "ServerManMapFollow", "map_editor_refresh.js": "ServerManMapRefresh",
+                    "map_editor_publish.js": "ServerManMapPublish",
                     "map_editor_app.js": "ServerManMapEditor"}
         names = []
         for filename, global_name in expected.items():

@@ -118,6 +118,8 @@ class MissionMapJournalRepository:
         return destination
 
 
+# Operation kinds of a journal: the kinds that write a last-applied record, and the adoption (AR-3, leaf 10.35)
+JOURNAL_KINDS = APPLIED_KINDS | {"adopt"}
 # Exact key sets of the persisted objects
 JOURNAL_FIELDS = frozenset(field.name for field in fields(MapJournal))
 GROUP_FIELDS = frozenset(field.name for field in fields(MapGroup))
@@ -145,7 +147,7 @@ def _parse(raw: object, filename_id: str) -> MapJournal:
     # The operation identifier names the file and every staging path, so it must be one safe name
     if not _matches(raw["operation_id"], IDENTIFIER) or raw["operation_id"] != filename_id:
         raise MissionMapJournalError("mission map journal operation is invalid")
-    if raw["operation_kind"] not in APPLIED_KINDS:
+    if raw["operation_kind"] not in JOURNAL_KINDS:
         raise MissionMapJournalError("mission map journal operation kind is invalid")
     validate_profile_id(raw["profile_id"])
     validate_relative_path(raw["mission_root"], "mission_root")

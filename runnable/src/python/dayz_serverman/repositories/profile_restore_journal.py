@@ -10,10 +10,13 @@ from ..adapters.windows.shared_files import read_text_shared, replace_file
 from ..domain.backups import SHA256
 from ..domain.profiles import validate_relative_path
 from ..domain.profiles import ProfileInput, validate_profile_id
+from .profile_restore_editor_shapes import validate_group
 from .profile_restore_inventory import safe_exists
 
 PHASES = {"PLANNED", "PREPARING", "PREPARED", "PUBLISHING", "FILES_PUBLISHED",
           "PROFILE_PUBLISHING", "PROFILE_PUBLISHED", "COMMITTED", "COMPENSATING", "ROLLED_BACK", "RECOVERY_REQUIRED"}
+# Group count of each journal version: version 2 adds the editor group of the restored profile (A10)
+GROUP_COUNTS = {1: 3, 2: 4}
 
 
 class ProfileRestoreJournal:
@@ -57,11 +60,11 @@ class ProfileRestoreJournal:
 def validate_record(record: object) -> None:
     """Reject unknown versions, fields and malformed group roles or paths."""
     fields = {"type", "version", "operation_id", "phase", "dayz_root", "profile_root", "profile_id", "groups", "result", "cleanup_complete"}
-    if not isinstance(record, dict) or set(record) != fields or record["type"] != "DIRECT_PROFILE_RESTORE" or type(record["version"]) is not int or record["version"] != 1:
+    if not isinstance(record, dict) or set(record) != fields or record["type"] != "DIRECT_PROFILE_RESTORE" or type(record["version"]) is not int or record["version"] not in GROUP_COUNTS:
         raise ValueError("Unsupported direct restore journal.")
     if not isinstance(record["operation_id"], str) or re.fullmatch(r"[a-zA-Z0-9-]{1,64}", record["operation_id"]) is None or record["phase"] not in PHASES:
         raise ValueError("Invalid restore journal identity or phase.")
-    if not isinstance(record["groups"], list) or len(record["groups"]) != 3:
+    if not isinstance(record["groups"], list) or len(record["groups"]) != GROUP_COUNTS[record["version"]]:
         raise ValueError("Invalid restore publication groups.")
     identifier = validate_profile_id(record["profile_id"])
     if type(record["cleanup_complete"]) is not bool or not isinstance(record["result"], dict):
@@ -93,6 +96,9 @@ def validate_record(record: object) -> None:
             raise ValueError("Restore journal attempts to replace an unowned target.")
         for snapshot in (group["before"], group["after"]):
             validate_inventory(snapshot)
+    # The editor group may hold only records of the restored profile; a version 1 journal has none
+    if record["version"] == 2:
+        validate_group(record["groups"][3], identifier)
 
 
 def validate_inventory(value: object) -> None:

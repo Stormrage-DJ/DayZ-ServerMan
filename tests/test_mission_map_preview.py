@@ -48,7 +48,7 @@ class PreviewAnswerTests(PreviewFixture):
         self.assertEqual((answer["refused"], answer["refusals"], answer["base"]), (False, [], "current"))
         self.assertEqual(answer["plan"]["revision"], 0)
         self.assertEqual(answer["mission"]["mission_name"], VERIFIED)
-        self.assertEqual(answer["encounters"], {"written": ["e1"], "unavailable": []})
+        self.assertEqual(answer["encounters"], {"written": ["e1"], "unavailable": [], "excluded": []})
         self.assertEqual([zone_["id"] for zone_ in answer["loot"]["zones"]], ["zone"])
         self.assertEqual(answer["other_profiles"], [{"profile_id": "second", "display_name": "Second"}])
         self.assertEqual((answer["capture"]["required"], answer["capture"]["result"], answer["capture"]["text"]),
@@ -78,15 +78,15 @@ class FamilyGateTests(PreviewFixture):
     """The gate comes from a fresh capability read of the target mission and never raises in the preview (6.11)."""
 
     def test_unverified_family_reports_the_refusal(self) -> None:
-        """enoch: the answer carries the gate and the refusal text; the plan terrain ID does not matter."""
+        """deerisle: the answer carries the gate and the refusal text; the plan terrain ID does not matter."""
         self.save([zone("rich")], identifier="other", terrain_id="chernarusplus")
         answer = self.preview.preview("other")
-        self.assertEqual(answer["capabilities"]["family"], family_gate("enoch").to_dict())
+        self.assertEqual(answer["capabilities"]["family"], family_gate("deerisle").to_dict())
         refusal = next(item for item in answer["refusals"] if item["reason"] == "family_not_verified")
-        self.assertEqual(refusal["message"], family_gate("enoch").text)
+        self.assertEqual(refusal["message"], family_gate("deerisle").text)
         self.assertTrue(answer["refused"])
         # The verified mission stays verified for a plan that names an unverified terrain
-        self.save([zone("rich")], terrain_id="enoch")
+        self.save([zone("rich")], terrain_id="deerisle")
         main = self.preview.preview("main")
         self.assertTrue(main["capabilities"]["family"]["verified"])
         self.assertFalse(main["refused"])

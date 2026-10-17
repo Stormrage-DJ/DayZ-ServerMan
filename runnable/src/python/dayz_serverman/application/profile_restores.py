@@ -10,14 +10,17 @@ from ..domain.models import RevisionConflict
 from ..domain.models import ManagerSettings
 from ..domain.backups import BackupManifest
 from ..domain.profiles import ProfileInput
+from ..domain.restore_editor_texts import REMNANT_MOVED, REMNANT_NOTE
 from ..repositories.backup_archives import read_archive_manifest
 from ..repositories.backup_verification import sha256_file
 from ..repositories.backups import BackupStorageError, BackupStorage
+from ..repositories.profile_restore_editor_shapes import EditorFile
 from ..repositories.profile_restore_storage import ProfileRestoreStorage
 from .profiles import ProfileService
 from .settings import SettingsService
 from .folder_writer_scope import WriterScope
 from .lifecycle_ports import InstallationMutexPort, ServerFolderWriterPort
+from .profile_restore_editor_plan import ProfileEditorPlanner
 from .profile_restore_preview import build_preview
 from ..repositories.selected_backup import SelectedBackups
 
@@ -30,8 +33,12 @@ class ProfileRestoreService:
     def __init__(self, profiles: ProfileService, settings: SettingsService, backups: BackupStorage,
                  storage: ProfileRestoreStorage, lifecycle: Any, mutex: InstallationMutexPort,
                  udp_inventory: Callable[[], frozenset[int]], *,
-                 folder_writer: ServerFolderWriterPort | None = None) -> None:
-        """Bind shared service boundaries, a fail-closed UDP endpoint probe and the A13 writer side."""
+                 folder_writer: ServerFolderWriterPort | None = None, editor: ProfileEditorPlanner | None = None) -> None:
+        """Bind shared service boundaries, a fail-closed UDP endpoint probe, the A13 writer side and the editor plan.
+
+        Without `editor`, the restore of a schema 4 archive writes no editor record.
+        """
+        self.editor = editor
         self.profiles, self.settings, self.backups = profiles, settings, backups
         self.storage, self.lifecycle, self.mutex = storage, lifecycle, mutex
         self.udp_inventory = udp_inventory
@@ -48,14 +55,31 @@ class ProfileRestoreService:
                 return self.plan(directory, verified, root, settings, backup_root, request)[0]
 
     def plan(self, directory: Path, manifest: BackupManifest, root: Path, settings: ManagerSettings,
-             backup_root: Path, request: Mapping[str, Any]) -> tuple[dict, ProfileInput, bytes, dict, dict | None]:
-        """Bind the archive's actual bytes to the full destination fingerprint."""
-        result = build_preview(directory, manifest, root, settings.revision, self.profiles.list(),
-                               self.storage.profile_root, request, self.udp_inventory())
-        preview = result[0]
+             backup_root: Path, request: Mapping[str, Any], operation_id: str = "preview",
+             ) -> tuple[dict, ProfileInput, bytes, dict, dict | None, tuple[EditorFile, ...]]:
+        """Bind the archive's actual bytes and the editor part to the full destination fingerprint.
+
+        The editor part follows the D5 rules of the destination policy (10.37); its files are the fourth journal
+        group. The preview names no operation, so only the apply passes its operation ID.
+        """
+        records = self.profiles.list()
+        preview, profile, config, mapping, before = build_preview(
+            directory, manifest, root, settings.revision, records, self.storage.profile_root, request,
+            self.udp_inventory())
+        part = None if self.editor is None else self.editor.plan(directory, manifest, root, preview, records,
+                                                                 operation_id)
+        notes = [] if part is None else part.notes
+        # Editor records that an interrupted deletion left for this profile ID are named first; they move away
+        group = self.storage.editor_group
+        if group is not None and group.remnant(profile.profile_id):
+            notes = [REMNANT_NOTE, *notes]
+        if notes:
+            preview["editor_notes"] = notes
+        # The fingerprint binds the editor sentences and inputs, so a changed editor state makes the preview stale
+        bound = {**({"editor_notes": notes} if notes else {}), **({"editor": part.summary} if part else {})}
         preview["preview_fingerprint"] = manifest_digest({"mapping": preview["preview_fingerprint"],
-            "archive_sha256": sha256_file(self.archive_path(backup_root, manifest, request["backup_id"]))})
-        return result
+            "archive_sha256": sha256_file(self.archive_path(backup_root, manifest, request["backup_id"])), **bound})
+        return preview, profile, config, mapping, before, () if part is None else part.files
 
     def apply(self, parameters: Mapping[str, Any], operation_id: str, checkpoint: Callable[[str, int], None]) -> dict[str, Any]:
         """Recompute reviewed facts under the lane/mutex before any publication."""
@@ -76,7 +100,8 @@ class ProfileRestoreService:
                         self.storage.verify_committed(prior, root)
                     return result
             with self.open_archive(backup_root, manifest, request["backup_id"]) as (directory, verified):
-                preview, profile, config, mapping, before = self.plan(directory, verified, root, settings, backup_root, request)
+                preview, profile, config, mapping, before, editor = self.plan(
+                    directory, verified, root, settings, backup_root, request, operation_id)
                 if verified.manifest_digest != parameters["expected_manifest_digest"] or preview["preview_fingerprint"] != parameters["preview_fingerprint"]:
                     raise RevisionConflict("Restore preview changed. Review the current destinations again.")
                 confirmation = parameters["overwrite_confirmation"]
@@ -85,11 +110,17 @@ class ProfileRestoreService:
                     raise ValueError("Storage overwrite confirmation is missing or differs from the preview.")
                 if self.settings.load() != settings:
                     raise RevisionConflict("Restore settings changed before publication.")
+                # The reviewed remnant moves into the deleted folder before the journal starts; a failure refuses
+                group = self.storage.editor_group
+                moved = group is not None and group.move_remnant(profile.profile_id)
                 # A13 (R-5): the writer side is held from before staging, which may create serverman, to the end
                 with WriterScope(self.folder_writer).held_for():
                     checkpoint("VERIFYING_BACKUP", 10)
-                    result = self.storage.restore(root, operation_id, directory, verified, preview, config, mapping, before, checkpoint)
+                    result = self.storage.restore(root, operation_id, directory, verified, preview, config, mapping, before,
+                                                  checkpoint, editor=editor)
                 self.profiles.read(profile.profile_id)
+                if moved:
+                    result["editor_remnant_notice"] = REMNANT_MOVED
                 return result
 
     def context(self, backup_id: object) -> tuple[ManagerSettings, Path, Path, BackupManifest]:
@@ -107,7 +138,8 @@ class ProfileRestoreService:
         else:
             candidate = read_archive_manifest(backup_root / (backup_id + ".zip"), backup_id)
             manifest = self.backups.verified_manifest(backup_root, backup_id, candidate.profile_id)
-        if manifest.schema_version != 3:
+        # Schema 4 has every schema 3 field and the editor records, so its profile definition is complete
+        if manifest.schema_version not in (3, 4):
             raise BackupStorageError("INVALID_REQUEST", "This older backup lacks complete profile metadata. Create a new full backup first.")
         return settings, root, backup_root, manifest
 

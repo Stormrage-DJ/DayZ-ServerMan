@@ -50,7 +50,8 @@ APPLY = {
         {**item("e2", "Bandit camp", "encounter"), "provider": "ai_bandits", "reason": "Bandit text.",
          "excluded": False, "choice_required": True, "linked_loot": False},
         {**item("x1", "Old camp", "encounter"), "provider": "ai_bandits", "reason": "Bandit text.",
-         "excluded": True, "choice_required": False, "linked_loot": False}]},
+         "excluded": True, "choice_required": False, "linked_loot": False}],
+        "excluded": [{**item("x1", "Old camp", "encounter"), "provider": "ai_bandits"}]},
     "objects": {"previous": True, "added": [item(f"a{n}", f"Zone {n}") for n in range(7)], "changed": [],
                 "removed": [item("r", "Gone")], "order_changed": True, "order_text": ORDER_CHANGED_TEXT,
                 "global": {"current": 25, "applied": -25}},
@@ -83,6 +84,17 @@ const visible=(element)=>!element.closest("[hidden]")&&element.getBoundingClient
 const key=(target,name,shiftKey=false)=>{const event=new KeyboardEvent("keydown",{key:name,shiftKey,bubbles:true,cancelable:true});
   target.dispatchEvent(event);return event.defaultPrevented};
 const texts=(root)=>[...root.querySelectorAll("p, li, legend, label")].map(element=>element.textContent);
+'''
+
+# The minimum window of the UI-UX design is an inner 936 x 508. The headless window size is the outer size: the
+# outer 960 x 600 gives that inner size, and the harness measures it (QA-8.16-F2).
+NARROW = "960,600"
+# Put first in a body with NARROW. It checks the inner size and adds inview(). inview() is true when an element
+# is drawn inside the viewport and inside the dialog box.
+NARROW_VIEW = r'''
+check(innerWidth===936&&innerHeight===508,`the inner window is 936 x 508, not ${innerWidth} x ${innerHeight}`);
+const inview=(element)=>{const r=element.getBoundingClientRect(),d=shown().getBoundingClientRect();
+  return r.height>0&&r.top>=0&&r.left>=0&&r.bottom<=innerHeight&&r.right<=innerWidth&&r.top>=d.top-1&&r.bottom<=d.bottom+1;};
 '''
 
 
@@ -150,8 +162,8 @@ const list=document.getElementById(toggle.getAttribute("aria-controls"));
 check(toggle.textContent==="7 entries"&&toggle.getAttribute("aria-expanded")==="false"&&list.hidden,"Added is collapsed with its count");
 toggle.click();check(!list.hidden&&toggle.getAttribute("aria-expanded")==="true"&&toggle.textContent==="7 entries","it opens; the label stays");
 check(changes.querySelectorAll(".link-button").length===1&&visible([...changes.querySelectorAll("li")].find(li=>li.textContent==="Gone")),"one row stays open");
-const loot=section("Loot report").querySelector(".link-button");
-check(loot.textContent==="1 entry"&&document.getElementById(loot.getAttribute("aria-controls")).hidden,"loot rows are always collapsed");
+const loot=[...section("Loot report").querySelectorAll(".link-button")];
+check(loot.length===2&&loot.every(toggle=>toggle.textContent==="1 entry"&&document.getElementById(toggle.getAttribute("aria-controls")).hidden),"loot rows are always collapsed");
 check(visible(section("Loot report").querySelector("p")),"the report texts stay visible");
 check(radios().every(visible)&&boxes().every(visible),"required choices are never collapsed");
 check([...shown().querySelectorAll(".notice")].every(visible),"notices are never collapsed");
@@ -183,12 +195,19 @@ replace.click();check(!confirm.hasAttribute("aria-disabled"),"chosen");
 apply.open(answer,{});await settle();
 check(!texts(shown()).includes(words.replaceNote)&&!shown().querySelector("fieldset").hasAttribute("aria-describedby"),"no note for a deleted file");
 check(texts(shown()).includes(words.externalIntro),"the section intro stays");
+action("Cancel").click();await settle();
+// A choice path without an external_changes entry refers to no note (UI-UX 17:59:02, change 7)
+const mixed={...answer,choices:{external_changes:["mapgroupproto.xml","mapgroupdirt.xml"],unavailable_encounters:[]},
+  external_changes:[{path:"mapgroupproto.xml",exists_now:true,incorporate:{available:true,reason:null,message:null}}]};
+apply.open(mixed,{});await settle();const sets=[...shown().querySelectorAll("fieldset")];
+const note=[...shown().querySelectorAll("p")].find(p=>p.textContent===words.replaceNote);
+check(note&&sets[0].getAttribute("aria-describedby")===note.id&&!sets[1].hasAttribute("aria-describedby"),"the note describes only the file that exists now");
 ''', answer), "PASS")
 
     def test_a_refused_answer_offers_only_close(self) -> None:
         """Refusals first, the family text once, plain collapsed lists, no control, and Close resolves null."""
         answer = copy.deepcopy(APPLY)
-        gate = family_gate("enoch").to_dict()
+        gate = family_gate("deerisle").to_dict()
         answer.update(refused=True, refusals=[{"reason": "family_unverified", "message": gate["text"]},
                                               {"reason": "records_stale", "message": "Records text."}])
         answer["capabilities"]["family"] = gate
@@ -206,6 +225,12 @@ check(lists.length>=6&&lists.every(list=>list.hidden),"every list is collapsed")
 check(actions().map(button=>button.textContent).join()==="Close","only Close");
 check(!shown().querySelector(".map-preview-footer").textContent.includes("choice"),"no remaining-choices line");
 action("Close").click();check(await pending===null&&document.activeElement===opener,"Close resolves null");
+// Stale on a refused answer: Preview again follows Close; the focus does not move (UI-UX 17:59:02, change 3)
+const again=apply.open(answer,{opener});await settle();action("Close").focus();frame.stale();
+check(shown().querySelector('[role="status"]').textContent===words.stale.apply,"the stale line");
+check(actions().map(button=>button.textContent).join()==="Close,Preview again"&&action("Preview again").classList.contains("button-primary"),"Close, then Preview again");
+check(document.activeElement===action("Close"),"the focus stays on Close");
+action("Preview again").click();check(JSON.stringify(await again)==='{"again":true}',"Preview again asks for a new answer");
 ''', answer), "PASS")
 
 

@@ -35,10 +35,10 @@ class FamilyGateLoadTests(InspectionFixture):
     """Missions of an unverified family, and custom missions of the two verified families."""
 
     def setUp(self) -> None:
-        """Add valid enoch and custom Pripyat missions and a custom chernarusplus mission with a bad header."""
+        """Add valid deerisle and custom Pripyat missions and a custom chernarusplus mission with a bad header."""
         super().setUp()
         # "chernarusplus" has no dot, so it has no family (QA-6.11-F1)
-        for identifier, folder in (("enoch", "dayzOffline.enoch"), ("custom", "serverman-test.chernarusplus"),
+        for identifier, folder in (("deerisle", "dayzOffline.deerisle"), ("custom", "serverman-test.chernarusplus"),
                                    ("planner", "plannerProbe.Pripyat"), ("nofamily", "chernarusplus")):
             mission = self.root / "mpmissions" / folder
             mission.mkdir()
@@ -49,36 +49,36 @@ class FamilyGateLoadTests(InspectionFixture):
             areaflags_bytes(8, 8, 1000, 1000, 16, 4) + b"\0")
 
     def test_unverified_family_keeps_planning_saving_inspect_import_and_export(self) -> None:
-        """enoch: the snapshot gives the reason; load, save, Inspect, export and import all work."""
+        """deerisle: the snapshot gives the reason; load, save, Inspect, export and import all work."""
         game_files = tree(self.root)
-        loaded = self.load("enoch")
+        loaded = self.load("deerisle")
         ensure_json_value(loaded)
-        self.assertEqual(loaded["capabilities"]["family"], family_gate("enoch").to_dict())
+        self.assertEqual(loaded["capabilities"]["family"], family_gate("deerisle").to_dict())
         self.assertEqual(loaded["capabilities"]["family"]["reason"], "family_not_verified")
-        self.assertIn(" The terrain family enoch is not one of them. ", loaded["capabilities"]["family"]["text"])
+        self.assertIn(" The terrain family deerisle is not one of them. ", loaded["capabilities"]["family"]["text"])
         self.assertFalse(loaded["read_only"])
         self.assertTrue(loaded["capabilities"]["tier_writes"]["reason"] == "bounds_not_confirmed")
         # Save
-        saved = self.save(self.draft("enoch", [circle("c1", x=500.0, z=500.0, radius=600.0)]), identifier="enoch")
+        saved = self.save(self.draft("deerisle", [circle("c1", x=500.0, z=500.0, radius=600.0)]), identifier="deerisle")
         self.assertEqual(saved["revision"], 0)
-        again = self.load("enoch")
+        again = self.load("deerisle")
         self.assertEqual((again["state"], again["read_only"]), ("VALID", False))
         # The family comes from the mission folder, not from the plan terrain ID of the saved plan (QA-6.11-F1)
-        self.assertNotEqual(again["plan"]["terrain"]["terrain_id"], "enoch")
-        self.assertEqual(again["capabilities"]["family"], family_gate("enoch").to_dict())
+        self.assertNotEqual(again["plan"]["terrain"]["terrain_id"], "deerisle")
+        self.assertEqual(again["capabilities"]["family"], family_gate("deerisle").to_dict())
         # Inspect of the saved plan
-        answer = self.inspection.inspect_mission_map({"profile_id": "enoch", "plan": None,
+        answer = self.inspection.inspect_mission_map({"profile_id": "deerisle", "plan": None,
                                                       "target": {"point": {"x": 500.0, "z": 500.0}}})
         for _ in range(100):
             if answer["status"] != "running":
                 break
-            answer = self.inspection.continue_mission_map_inspection({"profile_id": "enoch",
+            answer = self.inspection.continue_mission_map_inspection({"profile_id": "deerisle",
                                                                       "job_id": answer["job"]["id"]})
         self.assertEqual((answer["status"], answer["result"]["winner"]["id"]), ("done", "c1"))
         # Export and import
         transfer = MissionMapTransferService(self.service)
-        text = transfer.export_text("enoch")
-        imported = transfer.import_plan("enoch", text, "replace", 0)
+        text = transfer.export_text("deerisle")
+        imported = transfer.import_plan("deerisle", text, "replace", 0)
         self.assertEqual(imported["revision"], 1)
         self.assertEqual(tree(self.root), game_files)
 
@@ -108,22 +108,22 @@ class FamilyGateLoadTests(InspectionFixture):
         self.assertEqual(after["capabilities"]["family"], expected)
 
     def test_set_aside_of_an_invalid_plan_on_an_unverified_family(self) -> None:
-        """enoch: set aside works and changes no mission file; it never consults the gate (QA-6.11-F2)."""
-        self.save(self.draft("enoch", [circle("e1")]), identifier="enoch")
-        key = self.service.active_association("enoch")["mission_key"]
-        (association_folder(self.area, "enoch", key) / "plan.json").write_bytes(b"{bad JSON")
-        loaded = self.load("enoch")
+        """deerisle: set aside works and changes no mission file; it never consults the gate (QA-6.11-F2)."""
+        self.save(self.draft("deerisle", [circle("e1")]), identifier="deerisle")
+        key = self.service.active_association("deerisle")["mission_key"]
+        (association_folder(self.area, "deerisle", key) / "plan.json").write_bytes(b"{bad JSON")
+        loaded = self.load("deerisle")
         self.assertEqual((loaded["read_only_reason"], loaded["capabilities"]["family"]["verified"]),
                          ("invalid_saved_data", False))
         game_files = tree(self.root)
-        result = self.coordinator.set_aside_mission_map_plan({"profile_id": "enoch", "mission_key": key})
+        result = self.coordinator.set_aside_mission_map_plan({"profile_id": "deerisle", "mission_key": key})
         self.assertEqual(result["association"]["mission_key"], key)
         self.assertRegex(result["set_aside"], r"\Aplan\.invalid-\d{8}T\d{6}Z\.json\Z")
-        self.assertTrue((association_folder(self.area, "enoch", key) / result["set_aside"]).is_file())
+        self.assertTrue((association_folder(self.area, "deerisle", key) / result["set_aside"]).is_file())
         self.assertEqual(tree(self.root), game_files)
-        fresh = self.load("enoch")
+        fresh = self.load("deerisle")
         self.assertEqual((fresh["state"], fresh["read_only"]), ("MISSING", False))
-        self.assertEqual(fresh["capabilities"]["family"], family_gate("enoch").to_dict())
+        self.assertEqual(fresh["capabilities"]["family"], family_gate("deerisle").to_dict())
 
     def test_the_fixture_mission_of_other_tests_is_unverified(self) -> None:
         """dayzOffline.test has the family "test", so every existing load and save test runs unverified."""

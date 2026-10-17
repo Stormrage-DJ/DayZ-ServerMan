@@ -1,9 +1,10 @@
 """Pin the window texts of the preview dialog to the Product Owner texts in composed Edge (8.10).
 
-Sources: Product Owner 2026-10-15 15:57:10 (decisions 3, 4, 5 and 10) and
-16:03:40 (the slots and the unfinished outline) in evidence 8.10, copied
-word for word. The reused 8.7 choice names and the 7.4 linked-loot line are
-pinned too.
+The texts are copied word for word from evidence 8.10. Sources:
+- Product Owner 2026-10-15 15:57:10, decisions 3, 4, 5 and 10;
+- Product Owner 16:03:40, the slots and the unfinished outline;
+- Product Owner 18:04:08, the loot report list labels.
+The reused 8.7 choice names and the 7.4 linked-loot line are pinned too.
 """
 
 from __future__ import annotations
@@ -48,6 +49,9 @@ FIXED = {
     "added": "Added", "changed": "Changed", "removed": "Removed",
     "written": "Infected encounters that Apply writes",
     "excluded": "Excluded in the plan. Apply does not write these encounters.",
+    "lootUnavailable": "Zones and encounters with a loot tier that Apply cannot write",
+    "lootCapacity": "Building groups with a capacity that Apply changes",
+    "lootKept": "Buildings that do not get the capacity of this plan",
     "affected": "Files that Apply changes",
     "coordinated": "Changes made by other DayZ-ServerMan settings, for example medical loot zones. Apply keeps them.",
     "restoreAffected": "Files that the restore changes",

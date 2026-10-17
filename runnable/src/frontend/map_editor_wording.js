@@ -4,8 +4,11 @@
 // The stored reason is a key; operators see an action they can take.
 const mapReadOnlyReasons = Object.freeze({
   invalid_saved_data: "Read only: the saved map plan is not valid. Set aside invalid plan keeps it under a dated name and starts a new, empty plan.",
-  mission_path_changed: "Read only: the mission path changed. Reload the active mission before editing.",
-  returned_to_earlier_path: "Read only: this mission returned to an earlier path. Adoption is required.",
+  // ADOPT-4, ADOPT-5 and ADOPT-6 (Product Owner 2026-10-16 14:26:38 and 14:35:24 in evidence 10.1); the plan of ADOPT-6
+  // stays editable, so its text begins "Apply is not possible"
+  mission_path_changed: "Read only: the mission path changed. The map plan shown belongs to an earlier path. Adopt the mission to use its map editor records for the new path.",
+  returned_to_earlier_path: "Read only: this mission returned to an earlier path. Adopt the mission to use its map editor records again.",
+  adoption_required: "Apply is not possible: a restore removed the last Apply record of this profile for this mission. Adopt the mission to continue.",
   // The profile settings name another mission folder or runtime profile folder than the saved plan (D2 23:12:53)
   association_mismatch: "Read only: the saved map plan does not match the mission folder or runtime profile folder of this profile. Correct the profile settings, then load the plan again.",
 });
@@ -14,7 +17,10 @@ const mapReadOnlyReasons = Object.freeze({
 const mapContextReasons = Object.freeze({
   association_mismatch: "This profile now uses a different mission from the one in this map editor.",
   mission_path_changed: "The mission path of this profile changed.",
-  returned_to_earlier_path: "This mission returned to an earlier path.", other: "The profile or its mission changed.",
+  returned_to_earlier_path: "This mission returned to an earlier path.",
+  // The ADOPT-6 Apply refusal (Product Owner 2026-10-16 14:26:38 in evidence 10.1)
+  adoption_required: "A restore removed the last Apply record of this profile for this mission. Adopt the mission before you apply.",
+  other: "The profile or its mission changed.",
 });
 // Plan states with editor wording; the backend detail of the same state has the same text (Architect 15:44:32)
 const mapPlanDetails = Object.freeze({OTHER_ASSOCIATION: "The saved plan belongs to another profile or mission."});
@@ -65,17 +71,21 @@ function mapDisplayReason(kind, details) {
 
 // A refused display read uses its closed reason, else the shared bridge wording.
 function mapDisplayError(kind, error) {
-  return mapDisplayReason(kind, error?.result?.error?.details) ?? error?.message ?? "The map editor received an invalid answer.";
+  return mapDisplayReason(kind, error?.result?.error?.details) ?? error?.message ?? mapInvalidAnswer;
 }
 
+// The one text of an answer that the editor cannot read (bridge, display reads, Apply and Restore)
+const mapInvalidAnswer = "The map editor received an invalid answer.";
 // Tool names of the panel and the footer; no tool shows "No tool active"
 const mapToolNames = Object.freeze({select: "Select", circle: "Circle", polygon: "Polygon", encounter: "Encounter", inspect: "Inspect"});
 
 // Public editor wording is independent of the main shell's page state.
 window.ServerManMapWording = Object.freeze({
+  // Status of the case copy with an editable plan (Product Owner 2026-10-17 13:41:00 in evidence 10.31)
+  adoptCopy: "Adoption is needed: this mission is a copy of another mission path. Adopt the mission to continue.",
   loading: "Loading map plan", loaded: "Map plan loaded", unsaved: "Not saved yet",
   boundsRequired: "No map plan yet. Enter and confirm the mission bounds before editing.",
-  failed: "The map plan could not be loaded.", closing: "Closing", unknownTerrain: "Unknown terrain",
+  failed: "The map plan could not be loaded.", closing: "Closing", unknownTerrain: "Unknown terrain", invalidAnswer: mapInvalidAnswer,
   unavailable: "Not available", noTool: "No tool active", yes: "Yes", no: "No",
   propertiesUnavailable: "Property editing is not available yet.",
   layersUnavailable: "Map layers are not available yet.",

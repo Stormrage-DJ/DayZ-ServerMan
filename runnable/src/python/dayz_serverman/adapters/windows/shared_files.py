@@ -184,6 +184,48 @@ def rename_directory(source: str | os.PathLike[str], target: str | os.PathLike[s
             sleep(RENAME_RETRY_SECONDS)
 
 
+def rename_file(source: str | os.PathLike[str], target: str | os.PathLike[str]) -> None:
+    """Rename a file to a name that does not exist yet; a present target refuses, and nothing is replaced.
+
+    The adoption of the restore case closes an invalidated record this way (Architect 2026-10-17 00:21:00 in
+    evidence 10.34). Sharing conflicts are tried again for a bounded time, as for a folder rename.
+    """
+    if not os.path.isfile(source) or os.path.lexists(target):
+        raise FileExistsError(f"cannot rename {os.fspath(source)!r} to an existing or from a missing name")
+    rename_directory(source, target)
+
+
+def stage_bytes(folder: Path, name: str, payload: bytes, temporary_suffix: str = ".tmp") -> Path:
+    """Write bytes to a new staging file in an existing folder and return its path; no folder is created."""
+    temporary = folder / f".{name}.{uuid.uuid4().hex}{temporary_suffix}"
+    try:
+        # Write, flush, and fsync before any rename makes the bytes visible under the final name
+        with open(temporary, "xb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+    return temporary
+
+
+def rename_new_file(source: str | os.PathLike[str], target: str | os.PathLike[str]) -> None:
+    """Give a closed file a name that must not exist yet; an existing target raises FileExistsError."""
+    if os.name == "nt":
+        # MoveFileExW without the replace flag refuses an existing target
+        os.rename(source, target)
+        return
+    # POSIX rename replaces a target, so a hard link takes the new name and refuses an existing one
+    os.link(source, target)
+    os.unlink(source)
+
+
+def remove_file(path: str | os.PathLike[str]) -> None:
+    """Remove one file when it is there; a missing file is not an error."""
+    Path(path).unlink(missing_ok=True)
+
+
 def write_bytes_atomically(path: Path, payload: bytes, temporary_suffix: str = ".tmp") -> None:
     """Write bytes through a staging file beside the target and one atomic replace."""
     # Ensure the destination folder exists before staging

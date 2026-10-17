@@ -18,6 +18,8 @@ OBSERVER_READ_METHODS = frozenset((
     "load_configuration", "load_mission_configuration", "load_medical_features", "load_mission_map", "read_log",
     "validate_settings_path_selection", "select_legacy_root", "preview_legacy_import", "inspect_backup_archive",
     "inspect_mission_map", "continue_mission_map_inspection", "cancel_mission_map_inspection",
+    # The export of the saved map plan returns text and takes no path (D16, DC-7); the CLI writes the file
+    "export_mission_map_plan",
 ))
 # Observer reads that open nothing inside a folder that an owner step renames or removes (3.4, QF-2)
 READER_EXEMPT_METHODS = frozenset((
@@ -48,6 +50,12 @@ OWNER_ONLY_METHODS = frozenset((
     # Both previews, Apply, the restores and the editor recovery (8.9, A11): owner methods, never observer reads
     "preview_mission_map", "apply_mission_map", "preview_mission_map_restore", "restore_mission_map",
     "inspect_mission_map_recovery",
+    # The import preview and the import (10.33, AR-1): owner methods, the review step and the save of map import
+    "preview_mission_map_import", "import_mission_map_plan",
+    # The copy preview and the copy (10.7): owner methods of map copy, as import
+    "preview_mission_map_copy", "copy_mission_map_plan",
+    # The adoption preview (10.13, AR-1) and the adopt step in the lane (10.35): owner methods of map adopt
+    "preview_mission_map_adoption", "adopt_mission_map",
 ))
 
 
@@ -79,6 +87,7 @@ def build_handler_table(
     mission_map_coordinator: HandlerSource,
     mission_map_display: HandlerSource,
     mission_map_publication: HandlerSource,
+    mission_map_transfer: HandlerSource,
     migration_coordinator: HandlerSource,
     legacy_backup_coordinator: HandlerSource,
     lifecycle_coordinator: HandlerSource,
@@ -111,6 +120,9 @@ def build_handler_table(
         **mission_map_display.handlers(),
         # Apply preview and Apply, restore preview and restore, and the on-demand editor recovery (8.9)
         **mission_map_publication.handlers(),
+        # The transfer methods of task 10: export (10.6), import (10.33) and copy (10.7), then the adoption
+        # preview (10.13)
+        **mission_map_transfer.handlers(),
         **migration_coordinator.handlers(),
         **legacy_backup_coordinator.handlers(),
         **lifecycle_coordinator.handlers(),

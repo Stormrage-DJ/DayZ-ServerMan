@@ -41,10 +41,10 @@ class OrphanCleanupTests(RecoveryFixture):
         self.assertFalse(any(self.paths.mission_map.rglob("original.json")))
 
     def test_cleanup_preserves_unknown_staging_names(self):
-        """Only baseline and applied commit staging belongs to an association folder."""
+        """Only commit staging of a record kind belongs to an association folder (10.34: also plan, retired)."""
         folder = association_folder(self.paths.mission_map, "main", self.mission_key())
         folder.mkdir(parents=True)
-        unknown = folder / "plan.json.staged-operation"
+        unknown = folder / "notes.json.staged-operation"
         unknown.write_bytes(b"other record")
         self.assertFalse(self.recovery().inspect()["blocked"])
         self.assertEqual(unknown.read_bytes(), b"other record")

@@ -10,9 +10,12 @@ from .assets import SCRIPT_MARKER, STYLE_MARKER
 
 # Include implemented editor styles in accepted order; the canvas styles hold the editor tier tokens
 EDITOR_STYLES = ("tokens.css", "controls.css", "styles.css", "map_editor.css", "map_editor_canvas.css")
-# Shared wording has no shell lifecycle dependency; editor modules use unique globals
+# Shared wording has no shell lifecycle dependency; editor modules use unique globals. The operation
+# results and failures follow the messages in this one script element, so the result lookup resolves (8.14).
+# The busy helper locks Apply and Restore while the lane is busy; the editor follower publishes the state (8.18)
 EDITOR_SCRIPTS = (
     "operation_labels.js", "diagnostic_labels.js", "host_sentences.js", "operation_messages.js",
+    "operation_results.js", "operation_failures.js", "busy_controls.js",
     "map_editor_dom.js", "map_editor_wording.js", "map_editor_bridge.js", "map_editor_layout.js",
     "map_editor_coordinates.js", "map_editor_viewport.js", "map_editor_viewport_render.js",
     "map_editor_viewport_input.js", "map_editor_viewport_ui.js", "map_editor_bounds_plan.js",
@@ -26,7 +29,9 @@ EDITOR_SCRIPTS = (
     "map_editor_tier_control.js", "map_editor_inspect.js", "map_editor_abundance.js", "map_editor_keys.js",
     "map_editor_set_aside.js", "map_editor_close_dialog.js", "map_editor_close.js",
     "map_editor_preview_words.js", "map_editor_preview_dialog.js", "map_editor_preview_apply.js",
-    "map_editor_preview_restore.js", "map_editor_app.js",
+    "map_editor_preview_restore.js", "map_editor_preview_adopt.js", "map_editor_publish_words.js",
+    "map_editor_publish_status.js", "map_editor_follow.js", "map_editor_refresh.js", "map_editor_adopt.js",
+    "map_editor_publish.js", "map_editor_app.js",
 )
 
 

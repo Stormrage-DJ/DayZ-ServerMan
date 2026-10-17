@@ -92,7 +92,7 @@ class EntryShapeTests(unittest.TestCase):
             lambda raw: raw["files"][0].update(after_sha256=sha(VANILLA), owned_after_sha256=OWNED_VANILLA),
             lambda raw: raw.update(files=[]),
             lambda raw: raw.pop("display_path"),
-            lambda raw: raw.update(operation_kind="adopt"),
+            lambda raw: raw.update(operation_kind="export"),
         ]
         for edit in edits:
             raw = copy.deepcopy(entry())

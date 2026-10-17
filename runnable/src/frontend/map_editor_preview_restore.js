@@ -16,8 +16,12 @@ function mapPreviewRestoreOpen(mode, answer, options = {}) {
   const list = (label, rows) => dialog.list(label, rows, refused);
   const external = answer.external_changes ?? [], coordinated = answer.coordinated_changes ?? [];
   const writes = mapPreviewRestoreWrites(mode, answer);
-  const profiles = (answer.other_profiles ?? []).map((profile) =>
-    profile.display_name ?? words.deletedProfile(profile.profile_id));
+  // The other profiles show only after a sentence that explains them: the intro line of Restore previous state or
+  // the shared-original text. A refused Restore original without an original shows no list (Product Owner
+  // 2026-10-15 21:42:25 in evidence 8.16).
+  const explained = mode === "previous" || Boolean(original?.shared);
+  const profiles = explained ? (answer.other_profiles ?? []).map((profile) =>
+    profile.display_name ?? words.deletedProfile(profile.profile_id)) : [];
   const sections = [
     // The family refusal of Restore original is one of the refusals; its text is not repeated
     dialog.section(words.headings.restoreRefusals, [...(answer.refusals ?? []).map((item) => item.message),

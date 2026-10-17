@@ -82,14 +82,15 @@ class MedicalFeatureCoordinator:
             except Exception as error:
                 call = _error(error)
                 recovery = call.code == ErrorCode.RECOVERY_REQUIRED
-                # Only the 8.5 recovery resolves an editor journal, so its blocks belong to the editor kind. They
-                # carry the reason of a map editor Apply. An ordinary medical failure keeps the medical kind.
+                # Only the 8.5 recovery resolves an editor journal, so its block belongs to the editor kind and
+                # carries the catalogue reason of unresolved recovery (8.11 F1). An ordinary medical failure keeps
+                # the medical kind and its own reason.
                 owner = EDITOR_KIND if recovery and isinstance(error, EDITOR_ERRORS) else None
-                if owner is not None:
-                    context.block_for_recovery(RECOVERY_UNRESOLVED, owner=owner)
+                reason = RECOVERY_UNRESOLVED if owner is not None else None
                 # The lane record carries the code, the message and the retry flag of the one mapping, _error
                 raise OperationFailure(call.code.value, call.safe_message, retryable=call.retryable,
-                                       recovery_required=recovery, recovery_owner=owner) from error
+                                       recovery_required=recovery, recovery_owner=owner,
+                                       recovery_reason=reason) from error
         # Submit the toggle with its replay-safe checkpoint phases
         try:
             record = self._operations.submit("APPLY_MEDICAL_FEATURE", work,

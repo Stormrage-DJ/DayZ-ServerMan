@@ -9,11 +9,11 @@ from typing import Any, Callable
 from ..domain.mission_map_plan import PlanForm, parse_plan
 from ..repositories.json_store import StagingPolicy
 from ..repositories.mission_map_layout import (
-    TargetClass, association_folder, is_target_key, ordinal_spelling, profile_folder, target_key,
+    TargetClass, association_folder, has_invalidated, is_target_key, ordinal_spelling, profile_folder, target_key,
 )
 from ..repositories.mission_map_plans import MissionMapPlanStore, PlanInspection, PlanState, retired_marker
 from ..repositories.mission_map_records import record_mission_root
-from .mission_configuration import _contained, resolve_profile_mission
+from .mission_configuration import MissionPathError, _contained, resolve_profile_mission
 from .mission_map_locks import AssociationLocks
 from .profiles import ProfileService
 from .settings import SettingsService, SettingsValidationError
@@ -27,6 +27,19 @@ class MissionPathChanged(RuntimeError):
         self.folders = folders
         self.reason = reason
         super().__init__("the mission path of this profile changed; adopt the earlier plan before saving")
+
+
+# ADOPT-6 Apply refusal (Product Owner 2026-10-16 14:26:38 in evidence 10.1); raised by the Apply preview (10.10)
+ADOPTION_REQUIRED_TEXT = ("A restore removed the last Apply record of this profile for this mission. Adopt the "
+                          "mission before you apply.")
+
+
+class AdoptionRequired(RuntimeError):
+    """Raised when a restore invalidated the last-applied record and no adoption closed it (AR-6, R20)."""
+
+    def __init__(self) -> None:
+        """Set the Product Owner text."""
+        super().__init__(ADOPTION_REQUIRED_TEXT)
 
 
 class ObserverWriteRefused(PermissionError):
@@ -75,7 +88,12 @@ class MissionMapPlanService:
         # Otherwise report the active record as it is, valid, missing or invalid
         inspection = plan_store(self._area, association["profile_id"], association["mission_key"],
                                 self._staging).inspect()
-        return _load_result(association, inspection, read_only=False, path_change=None)
+        # AR-6: an invalidated last-applied record blocks Apply until adoption. The plan stays editable.
+        # Invalid saved data keeps its own reason, so set aside stays the way out of that state.
+        folder = association_folder(self._area, association["profile_id"], association["mission_key"])
+        editable = inspection.state in (PlanState.VALID, PlanState.MISSING)
+        reason = "adoption_required" if editable and has_invalidated(folder) else None
+        return _load_result(association, inspection, read_only=False, path_change=None, reason=reason)
 
     def save(self, profile_id: object, raw_plan: object, expected_revision: object, *,
              before_save: Callable[[dict[str, Any]], None] | None = None) -> dict[str, Any]:
@@ -194,6 +212,15 @@ def _runtime_key(root: Path, profile: Any) -> str:
     if relative is None:
         raise AssociationMismatch("the profile has no runtime profile folder")
     return target_key(TargetClass.RUNTIME, _contained(root, root / relative, directory=True))
+
+
+def load_runtime_key(root: Path, profile: Any) -> str:
+    """Return the runtime folder key for a load check; a missing or escaping folder is a mismatch (QA-5.3-F8)."""
+    try:
+        return _runtime_key(root, profile)
+    except MissionPathError as error:
+        message = "the runtime profile folder of this profile is missing or outside the DayZ root"
+        raise AssociationMismatch(message) from error
 
 
 def _root_spelling(mission_root: str) -> str | None:

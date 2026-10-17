@@ -39,6 +39,10 @@ class Profiles:
         """Return the record of one profile."""
         return self.records[profile_id]
 
+    def list(self) -> tuple[ProfileRecord, ...]:
+        """Return every record, as ProfileService.list does; the load field of a path change reads it (10.13)."""
+        return tuple(self.records.values())
+
 
 def profile(profile_id: str, mission_root: str = MISSION, runtime_profile: str | None = None) -> ProfileRecord:
     """Build a profile record on the given mission."""

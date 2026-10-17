@@ -109,21 +109,9 @@ EXCLUDED_METHODS = frozenset(EXCLUSION_REASONS)
 PENDING_PREFIX = "pending task 10: "
 # Bridge methods whose command task 10 of the mission map plan builds, each with
 # "pending task 10: <planned command>". A pending method is not an exclusion. Task 10 empties this table.
-PENDING_TASK_10: MappingProxyType[str, str] = MappingProxyType({
-    "load_mission_map": "pending task 10: map show",
-    "save_mission_map_plan": "pending task 10: map save",
-    "inspect_mission_map": "pending task 10: map inspect",
-    "continue_mission_map_inspection": "pending task 10: map inspect",
-    "cancel_mission_map_inspection": "pending task 10: map inspect",
-    # A confirming owner command (Product Owner Q1): a CLI-only admin must be able to leave invalid saved data
-    "set_aside_mission_map_plan": "pending task 10: map set-aside",
-    # Preview and Apply, the restore preview and restore of both modes, and recovery (8.9); commands of 10.5
-    "preview_mission_map": "pending task 10: map preview",
-    "apply_mission_map": "pending task 10: map apply",
-    "preview_mission_map_restore": "pending task 10: map restore",
-    "restore_mission_map": "pending task 10: map restore",
-    "inspect_mission_map_recovery": "pending task 10: map recover",
-})
+# Leaf 10.36 removed the last two entries, the adoption methods of `map adopt` (Architect 2026-10-17 09:30:36 in
+# evidence 10.13).
+PENDING_TASK_10: MappingProxyType[str, str] = MappingProxyType({})
 # Command words that are not leaf commands of the table
 HELP_WORD = "help"
 

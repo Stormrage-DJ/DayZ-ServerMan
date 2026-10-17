@@ -7,16 +7,22 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from ..domain.backup_editor_manifest import is_editor_entry
 from ..domain.backups import BackupManifest
-from ..domain.restores import RestoreJournal, RestoreTarget
+from ..domain.models import RevisionConflict
+from ..domain.restores import EDITOR_JOURNAL_SCHEMA, RESTORE_JOURNAL_SCHEMA, RestoreGroup, RestoreJournal, RestoreTarget
 from .backup_verification import sha256_file
 from .journaled_publication import JournaledPublication, PublicationPolicy
+from .paths import PortablePaths
+from .publication_contracts import in_new_state
+from .restore_editor_targets import EditorWrite, editor_paths_safe, finish_editor_groups, prepare_editor_groups
 from .restore_journal import RestoreJournalError, RestoreJournalRepository
 from .restore_preparation import prepare_groups
 from .restore_paths import (
     copy_verified,
     journal_paths_safe,
-    matches,
+    old_state_matches,
+    remove_staging,
     safe_root,
     safe_target,
     target_relative,
@@ -65,11 +71,13 @@ class RestoreStorage:
         dayz_root: Path,
         runtime_profile: str | None = None,
     ) -> tuple[RestoreTarget, ...]:
-        """Plan the restore targets for one manifest against the DayZ root."""
+        """Plan the restore targets of the DayZ root for one manifest; editor entries are the caller's (10.10)."""
         root = safe_root(dayz_root)
         result: list[RestoreTarget] = []
         # Derive each target path and its pre-restore digest
         for entry in manifest.entries:
+            if is_editor_entry(entry.path):
+                continue
             relative = target_relative(entry.path, runtime_profile)
             target = safe_target(
                 root, relative, allow_missing_parents=entry.path.startswith("runtime-profile/"),
@@ -103,8 +111,15 @@ class RestoreStorage:
         operation_id: str,
         checkpoint: Callable[[str, int], None],
         runtime_profile: str | None = None,
+        *,
+        editor: tuple[EditorWrite, ...] = (),
+        manager: PortablePaths | None = None,
     ) -> dict[str, object]:
-        """Restore a snapshot and return a summary of the committed operation."""
+        """Restore a snapshot and return a summary of the committed operation.
+
+        `editor` lists the editor record files of a same-profile restore (D19); they become manager-root groups
+        after the DayZ groups. The caller holds the association lock from the WRITE_JOURNAL checkpoint on.
+        """
         # Plan and verify targets before any file is touched
         targets = self.targets(snapshot, manifest, dayz_root, runtime_profile)
         checkpoint("VERIFY_SOURCE", 10)
@@ -113,14 +128,19 @@ class RestoreStorage:
             snapshot, targets, dayz_root, recovery_root, operation_id, checkpoint,
             self._disk_usage, copy_verified,
         )
+        editor_groups = _prepare_editor(groups, editor, manager, recovery_root, operation_id)
         # Journal the prepared operation so a crash can be recovered
         journal = RestoreJournal(
             operation_id, manifest.backup_id, manifest.profile_id, manifest.manifest_digest,
-            "PREPARED", False, False, False, groups,
+            "PREPARED", False, False, False, groups + editor_groups,
+            schema_version=EDITOR_JOURNAL_SCHEMA if editor_groups else RESTORE_JOURNAL_SCHEMA,
             runtime_profile=runtime_profile,
         )
         try:
             checkpoint("WRITE_JOURNAL", 60)
+            # Under the association lock: a plan save after the review changed a record, so nothing is kept
+            if not old_state_matches(editor_groups):
+                raise RevisionConflict("Restore preview is stale or changed.")
             journal_repository.save(journal)
             self._publish(journal, journal_repository)
         except Exception as error:
@@ -144,12 +164,13 @@ class RestoreStorage:
                 "Restore publication failed and prior files could not be proven.",
                 recovery_required=True,
             ) from error
-        # Prove every committed target before the journal is retired
-        if not all(matches(Path(group.target_path), group.new_digest) for group in groups):
+        # Prove every committed target before the journal is retired; an editor removal must be absent
+        if not all(in_new_state(group) for group in journal.groups):
             raise RestoreStorageError(
                 "RECOVERY_REQUIRED", "Committed restore targets could not be proven.",
                 recovery_required=True,
             )
+        finish_editor_groups(editor_groups)
         try:
             journal_repository.retire(journal)
         except Exception as error:
@@ -157,13 +178,16 @@ class RestoreStorage:
                 "RECOVERY_REQUIRED", "Committed restore journal could not be retired.",
                 recovery_required=True,
             ) from error
-        return {
+        summary: dict[str, object] = {
             "backup_id": manifest.backup_id,
             "profile_id": manifest.profile_id,
             "manifest_digest": manifest.manifest_digest,
             "restored_count": len(groups),
             "journal_state": journal.phase,
         }
+        if editor_groups:
+            summary["editor_record_count"] = len(editor_groups)
+        return summary
 
     def _publish(self, journal: RestoreJournal, journal_repository: RestoreJournalRepository) -> None:
         """Publish every group through the engine, then record the committed state as backup restore always has."""
@@ -179,11 +203,32 @@ class RestoreStorage:
         journal_repository: RestoreJournalRepository,
         dayz_root: Path,
         recovery_root: Path,
+        manager: PortablePaths | None = None,
     ) -> dict[str, object]:
         """Resolve interrupted journals and report whether any still block."""
-        # Each journal path must still derive from the DayZ root and the recovery folder
+        # Each journal path must still derive from the DayZ root, the editor area and the recovery folder
         return self._engine.inspect(
             journal_repository,
             recovery_root,
-            lambda journal: journal_paths_safe(journal, dayz_root, recovery_root),
+            lambda journal: (journal_paths_safe(journal, dayz_root, recovery_root)
+                             and editor_paths_safe(journal, manager, recovery_root)),
         )
+
+
+def _prepare_editor(
+    groups: list[RestoreGroup], editor: tuple[EditorWrite, ...], manager: PortablePaths | None,
+    recovery_root: Path, operation_id: str,
+) -> list[RestoreGroup]:
+    """Stage the editor groups; a failure removes the staging and the recovery copies of every group."""
+    if not editor:
+        return []
+    staged: list[RestoreGroup] = []
+    try:
+        if manager is None:
+            raise RestoreStorageError("PATH_INVALID", "Restore target path is unsafe.")
+        staged = prepare_editor_groups(manager, editor, recovery_root, operation_id)
+        return staged
+    except Exception:
+        remove_staging(groups + staged)
+        shutil.rmtree(recovery_root.resolve(strict=False) / operation_id, ignore_errors=True)
+        raise

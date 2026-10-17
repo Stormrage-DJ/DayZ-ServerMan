@@ -48,6 +48,10 @@ class MissionMapRestore:
         """Return the restore answer with its fingerprint; the preview writes nothing."""
         return self._reader.review(profile_id, mode).answer
 
+    def commit_point(self, operation_id: str) -> str | None:
+        """Return where the journal of a failed restore stands (AR-4); the rule of the shared commit step."""
+        return self._commit.commit_point(operation_id)
+
     def restore(self, profile_id: object, mode: object, fingerprint: object, *, operation_id: str) -> dict[str, Any]:
         """Restore the reviewed state of the profile's association; the caller holds the operation lane."""
         review = self._reader.review(profile_id, mode)

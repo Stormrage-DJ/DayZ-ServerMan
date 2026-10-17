@@ -2,33 +2,33 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
+from ..domain.backup_entries import RESTORE_PENDING_RUNTIME
 from ..domain.backups import SHA256
-from ..domain.backup_inventory import mission_payload_prefix, server_config_entry
-from ..domain.lifecycle import LifecycleFailure, ServerState
-from ..domain.models import RecordUnavailable, RevisionConflict
+from ..domain.models import RevisionConflict
 from ..domain.restores import RestorePreview
 from ..repositories.backups import BackupStorage, BackupStorageError
 from ..repositories.restore_journal import RestoreJournalRepository
 from ..repositories.restore_storage import RestoreStorage, RestoreStorageError
-from .folder_writer_scope import OWNER_WRITER_WAIT_SECONDS, WriterScope
-from .installation_guard import InstallationGuard
+from .folder_writer_scope import WriterScope
 from .lifecycle_ports import InstallationMutexPort, ServerFolderWriterPort
 from .profiles import ProfileService
+from .restore_editor import RestoreEditor
+from .restore_editor_files import EditorRestore
+# Recovery lives in its own module (10.3); its block reasons are re-exported for existing importers
+from .restore_recovery import RECOVERY_NO_DAYZ_ROOT, RECOVERY_NOT_STOPPED, RestoreRecovery  # noqa: F401
+# The backup and server-state checks live in their own module (10.3)
+from .restore_validation import RestoreValidation
 from .settings import SettingsService
 
-# Block reason of a restore recovery that the installation guard refused
-RECOVERY_NOT_STOPPED = "Mutations are blocked by an interrupted backup restore while the server is not proven stopped."
-# Block reason of a restore recovery without a configured DayZ server folder; a repair save may pass it (QF-069)
-RECOVERY_NO_DAYZ_ROOT = "Backup restore recovery requires a configured DayZ root."
 # Operation kind of a restore apply; it owns every block that the restore recovery may lift
 RESTORE_KIND = "RESTORE_BACKUP"
 
 
-class RestoreService:
+class RestoreService(RestoreRecovery, RestoreValidation):
     """Preview and apply backup restores through verified manifests."""
 
     def __init__(
@@ -42,8 +42,9 @@ class RestoreService:
         lifecycle: Any,
         mutex: InstallationMutexPort,
         folder_writer: ServerFolderWriterPort | None = None,
+        editor: RestoreEditor | None = None,
     ) -> None:
-        """Store the collaborators used by restore preview and apply, and the A13 writer side."""
+        """Store the collaborators used by restore preview and apply, the A13 writer side and the editor part."""
         self._profiles = profiles
         self._settings = settings
         self._backups = backups
@@ -53,6 +54,8 @@ class RestoreService:
         self._lifecycle = lifecycle
         self._mutex = mutex
         self._folder_writer = folder_writer
+        # The map editor records of a same-profile restore (D19, 10.10); without it a schema 4 archive is refused
+        self._editor = editor
 
     def preview(self, profile_id: object, backup_id: object) -> dict[str, Any]:
         """Return a signed restore preview for the selected backup."""
@@ -68,7 +71,8 @@ class RestoreService:
                 targets = self._storage.targets(
                     directory, manifest, dayz_root, profile.values.runtime_profile,
                 )
-        # Sign the preview so apply can detect stale expectations
+                editor = self._editor_restore(profile, directory, manifest, targets, "preview")
+        # Sign the preview so apply can detect stale expectations; the editor summary binds the editor records
         preview = RestorePreview(
             manifest.backup_id,
             manifest.created_at,
@@ -77,6 +81,8 @@ class RestoreService:
             settings.revision,
             manifest.manifest_digest,
             targets,
+            editor=None if editor is None else editor.summary,
+            editor_notes=() if editor is None else tuple(editor.notes),
         ).signed()
         value = preview.to_dict()
         # Describe recovery behavior and target counts for the confirmation UI
@@ -118,10 +124,14 @@ class RestoreService:
                 targets = self._storage.targets(
                     directory, manifest, dayz_root, profile.values.runtime_profile,
                 )
+                # The editor part reads the records again and computes the shared check before the journal
+                editor = self._editor_restore(profile, directory, manifest, targets, operation_id)
                 # Rebuild the signed preview and refuse stale expectations
                 current = RestorePreview(
                     manifest.backup_id, manifest.created_at, profile.values.profile_id,
                     profile.revision, settings.revision, manifest.manifest_digest, targets,
+                    editor=None if editor is None else editor.summary,
+                    editor_notes=() if editor is None else tuple(editor.notes),
                 ).signed()
                 if (
                     manifest.manifest_digest != expected_manifest_digest
@@ -131,66 +141,36 @@ class RestoreService:
                 # Apply the journaled restore; A13: the writer side is taken before WRITE_JOURNAL is relayed
                 scope = WriterScope(self._folder_writer)
                 try:
-                    return self._storage.restore(
-                        directory, manifest, dayz_root, self._recovery_root, self._journals, operation_id,
-                        scope.relay_after_acquire("WRITE_JOURNAL", checkpoint), profile.values.runtime_profile,
-                    )
+                    with ExitStack() as held:
+                        return self._storage.restore(
+                            directory, manifest, dayz_root, self._recovery_root, self._journals, operation_id,
+                            self._locked(scope.relay_after_acquire("WRITE_JOURNAL", checkpoint), editor, held),
+                            profile.values.runtime_profile, editor=() if editor is None else editor.writes,
+                            manager=None if self._editor is None else self._editor.paths,
+                        )
                 finally:
                     scope.release()
 
-    def recovery_pending(self) -> bool:
-        """Report whether a restore journal exists, without reading settings or taking the mutex."""
-        return bool(self._journals.records())
+    def _editor_restore(self, profile: Any, directory: Path, manifest: Any, targets: Any,
+                        operation_id: str) -> EditorRestore | None:
+        """Return the editor files of the restore; a schema 4 archive needs the bound editor part."""
+        if self._editor is None:
+            if manifest.editor is not None:
+                raise BackupStorageError(
+                    RESTORE_PENDING_RUNTIME,
+                    "This backup contains a target form that the current restore mapper does not support.",
+                )
+            return None
+        return self._editor.build(profile.values.profile_id, directory, manifest, targets, operation_id=operation_id)
 
-    def inspect_recovery(self, wait_seconds: float = OWNER_WRITER_WAIT_SECONDS) -> dict[str, object]:
-        """Finish or undo an interrupted restore and report whether recovery still blocks mutations.
-
-        Recovery copies and renames files in the DayZ root, so it runs only under the
-        installation mutex with a proven stopped server (QF-027, QF-039). A refusal
-        writes nothing, keeps the journal for a later inspection, and names the reason.
-        """
-        # Without journal records nothing can be blocking
-        if not self._journals.records():
-            return {"blocked": False, "diagnostics": []}
-        try:
-            settings = self._settings.load()
-            if settings.dayz_root is None:
-                # Named before the guard, so the block can be passed by a save that sets the folder (QF-069)
-                return {
-                    "blocked": True,
-                    "reason": RECOVERY_NO_DAYZ_ROOT,
-                    "diagnostics": [{
-                        "code": "RECOVERY_REQUIRED",
-                        "message": "Restore recovery needs a configured DayZ server folder.",
-                        "usable": False,
-                    }],
-                }
-            root = Path(settings.dayz_root)
-            # The guard refuses before the block runs; the state is read under the mutex; A13 writer side inside
-            guard = InstallationGuard(self._lifecycle, self._mutex, self._folder_writer)
-            with guard.stopped(root, folder_wait=wait_seconds):
-                return self._storage.inspect(self._journals, root, self._recovery_root)
-        except LifecycleFailure as failure:
-            # A busy installation, or a server that is not proven stopped: recover later
-            return {
-                "blocked": True,
-                "reason": RECOVERY_NOT_STOPPED,
-                "diagnostics": [{
-                    "code": failure.code,
-                    "message": "Restore recovery needs a stopped server and the installation mutex.",
-                    "usable": False,
-                }],
-            }
-        except (OSError, RecordUnavailable, RestoreStorageError) as error:
-            # Fail closed when recovery state cannot be inspected safely
-            return {
-                "blocked": True,
-                "diagnostics": [{
-                    "code": "RECOVERY_REQUIRED",
-                    "message": "Restore recovery state could not be inspected safely.",
-                    "usable": False,
-                }],
-            }
+    def _locked(self, relay: Any, editor: EditorRestore | None, held: ExitStack) -> Any:
+        """Wrap the checkpoint: after the writer side at WRITE_JOURNAL, take the association lock (D2 lock order)."""
+        def checkpoint(phase: str, percent: int) -> None:
+            """Relay the phase, then hold the lock until the restore returns."""
+            relay(phase, percent)
+            if phase == "WRITE_JOURNAL" and editor is not None and self._editor is not None:
+                held.enter_context(self._editor.hold(editor))
+        return checkpoint
 
     def _context(self, profile_id: object):
         """Load the selected profile plus the settings needed for restore paths."""
@@ -200,80 +180,6 @@ class RestoreService:
         if settings.revision is None or settings.dayz_root is None:
             raise RestoreStorageError("PATH_INVALID", "Restore settings are not configured.")
         return profile, settings, Path(settings.dayz_root)
-
-    @contextmanager
-    def _validated_backup(self, root: Path, backup_id: object, profile: Any):
-        """Yield the opened backup directory and manifest after all checks."""
-        # Open the backup and verify it before exposing its payload
-        with self._backups.open_verified(root, backup_id, profile.values.profile_id) as verified:
-            directory, manifest = verified
-            # Enforce profile, inventory, and restore compatibility rules
-            self._require_profile_context(profile, manifest)
-            self._require_supported_inventory(profile, manifest)
-            self._backups.require_restore_compatible(manifest)
-            yield directory, manifest
-
-    def _validate_manifest(self, root: Path, backup_id: object, profile: Any) -> None:
-        """Verify the backup manifest and its profile compatibility."""
-        manifest = self._backups.verified_manifest(root, backup_id, profile.values.profile_id)
-        self._require_profile_context(profile, manifest)
-        self._require_supported_inventory(profile, manifest)
-        self._backups.require_restore_compatible(manifest)
-
-    @staticmethod
-    def _require_profile_context(profile: Any, manifest: Any) -> None:
-        """Reject manifests whose stored profile context differs from the selection."""
-        if (
-            manifest.runtime_profile is None
-            or profile.values.runtime_profile is None
-            or manifest.profile_revision != profile.revision
-            or manifest.semantic_profile_digest != profile.semantic_digest
-            or manifest.runtime_profile != profile.values.runtime_profile
-        ):
-            raise BackupStorageError(
-                "PROFILE_CONTEXT_MISMATCH",
-                "The backup profile context does not match the selected profile.",
-            )
-
-    @staticmethod
-    def _require_supported_inventory(profile: Any, manifest: Any) -> None:
-        """Reject payload files outside the selected config and complete mission tree."""
-        actual = tuple(entry.path for entry in manifest.entries if entry.path.startswith("payload/"))
-        config = server_config_entry(profile.values)
-        mission_root = profile.values.mission_root
-        if mission_root is None:
-            # Profile context is digest-bound; infer the mission prefix from the payload paths.
-            candidates = {
-                "/".join(path.split("/")[:3]) + "/"
-                for path in actual if path.startswith("payload/mpmissions/")
-            }
-            prefix = next(iter(candidates)) if len(candidates) == 1 else ""
-        else:
-            prefix = mission_payload_prefix(mission_root)
-        mission_entries = tuple(path for path in actual if prefix and path.startswith(prefix))
-        if (
-            config not in actual
-            or not mission_entries
-            or any(path != config and not (prefix and path.startswith(prefix)) for path in actual)
-        ):
-            raise BackupStorageError(
-                "UNSUPPORTED_SNAPSHOT_CONTENT",
-                "Backup content is outside the selected server configuration or mission tree.",
-            )
-
-    def _require_stopped(self) -> None:
-        """Require a proven stopped server before mutating restore targets."""
-        status = self._lifecycle.status()
-        if status.state == ServerState.STOPPED:
-            return
-        # Map the blocking state to a precise failure code
-        if status.state == ServerState.RUNNING_EXTERNAL:
-            code = "EXTERNAL_PROCESS"
-        elif status.state in {ServerState.UNKNOWN, ServerState.AMBIGUOUS}:
-            code = "PROCESS_STATE_UNKNOWN"
-        else:
-            code = "CONTROL_CONFLICT"
-        raise LifecycleFailure(code, f"Restore requires STOPPED; current state is {status.state.value}.")
 
 
 def _revision(value: object, label: str) -> None:

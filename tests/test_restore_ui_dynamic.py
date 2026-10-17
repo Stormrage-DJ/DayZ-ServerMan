@@ -240,7 +240,7 @@ class RestoreUiDynamicTests(unittest.TestCase):
         # Concatenate the frontend modules that implement the scenario
         scripts = "\n".join(
             (FRONTEND / name).read_text(encoding="utf-8")
-            for name in ("operation_labels.js", "operation_messages.js", "diagnostic_labels.js", "host_sentences.js",
+            for name in ("operation_labels.js", "operation_messages.js", "operation_results.js", "diagnostic_labels.js", "host_sentences.js",
                          "workspace_context.js",
                          "backup_display.js", "backups.js", "backup_history.js", "restore.js",
                          "sections.js", "app.js")

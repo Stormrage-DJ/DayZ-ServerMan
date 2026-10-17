@@ -19,13 +19,16 @@ from ..domain.mission_map_values import PLAN_FORMAT, PLAN_VERSION
 from ..repositories.mission_map_plans import PlanRecordInvalid, PlanState
 from ..repositories.mission_map_terrain import read_capabilities
 from ..repositories.mission_map_providers import read_encounter_providers
+from .mission_map_adoption import load_offer
 from .mission_map_coordinator_errors import exact_parameters, refusal, translate
 from .mission_map_coordinator_records import MissionMapRecordReader
 from .mission_map_images import ImageSelectionService
 from .mission_map_inspection import MissionMapInspection
-from .mission_map_plans import AssociationMismatch, MissionMapPlanService, _check_association, _runtime_key, plan_store
+from .mission_map_plans import (
+    AssociationMismatch, MissionMapPlanService, _check_association, load_runtime_key, plan_store,
+)
 from .mission_map_reader_port import NoReaderPort
-from .mission_configuration import MissionPathError, _contained
+from .mission_configuration import _contained
 
 
 def unknown_terrain_id(folder_name: str) -> str:
@@ -86,7 +89,7 @@ class MissionMapCoordinator:
             # A valid plan that save would refuse for the profile settings is read only (D2 correction 23:12:53)
             if loaded["state"] == PlanState.VALID.value and not loaded["read_only"]:
                 try:
-                    _check_association(plan["association"], loaded["association"], lambda: _load_runtime_key(root, profile))
+                    _check_association(plan["association"], loaded["association"], lambda: load_runtime_key(root, profile))
                 except AssociationMismatch as error:
                     loaded.update(read_only=True, read_only_reason="association_mismatch", detail=str(error))
             fingerprint, stale = self._records.snapshot(plan) if plan is not None else (None, [])
@@ -109,6 +112,8 @@ class MissionMapCoordinator:
             return {**loaded, "profile": {"profile_id": profile.values.profile_id,
                                          "display_name": profile.values.display_name},
                     "mission_name": mission.name, "plan": public_plan,
+                    # Adoption is offered only by this field and capture.adoption, never by the reason (UX-2)
+                    "adoption": load_offer(self._plans, root, loaded),
                     "capabilities": snapshot,
                     "draft_changes": has_draft_changes(plan, fingerprint) if plan is not None else False,
                     "evaluation": evaluation}
@@ -188,14 +193,6 @@ class MissionMapCoordinator:
             raise
         except Exception as error:
             raise translate(error) from error
-
-
-def _load_runtime_key(root: Path, profile: Any) -> str:
-    """Return the runtime folder key for the load check; a missing or escaping folder is a mismatch (QA-5.3-F8)."""
-    try:
-        return _runtime_key(root, profile)
-    except MissionPathError as error:
-        raise AssociationMismatch("the runtime profile folder of this profile is missing or outside the DayZ root") from error
 
 
 def _new_plan(association: dict[str, Any], mission_name: str,

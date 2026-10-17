@@ -3,13 +3,14 @@
 
 // Bounds state is independent of viewport numeric availability and stored geometry.
 // failure: the last failed bounds save ({reason, reload, at}) for the close dialog (UI-UX 2026-10-14 02:21:57).
+// paused: an own Apply or restore runs; a running bounds save goes on, and its answer is adopted (8.18).
 const mapBoundsState = {value: null, enabled: false, identifier: null, save: null, accepted: null, current: null, reviewing: false,
-  held: null, failure: null};
+  held: null, failure: null, paused: false};
 
 // Only a current writable association can submit a bounds change.
 function mapBoundsWritable() {
   const state = mapBoundsState;
-  return Boolean(state.enabled && state.value && !state.value.read_only && state.value.association?.mission_key);
+  return Boolean(state.enabled && !state.paused && state.value && !state.value.read_only && state.value.association?.mission_key);
 }
 
 // Busy/load/close freezes controls; a failed viewport axis never freezes this form.
@@ -184,6 +185,7 @@ function mapBoundsEnabled(enabled) {
 // The controller has no public host method and does not change Apply policy.
 window.ServerManMapBounds = Object.freeze({init: mapBoundsInit, load: mapBoundsLoad,
   enabled: mapBoundsEnabled, reviewHistory: mapBoundsReviewHistory, busy: () => Boolean(mapBoundsState.save?.busy()),
+  pause: (value) => { mapBoundsState.paused = value; if (mapBoundsState.save) mapBoundsRefresh(); },
   // The close dialog (5.4): typed bounds, their save while the editor closes, and their discard
   typed: mapBoundsTyped, reset: () => mapBoundsLoad(mapBoundsState.current()), failure: () => mapBoundsState.failure,
   saveTyped: () => { const typed = mapBoundsTyped(); return typed.savable ? mapBoundsSubmit(typed.bounds, "manual", mapBoundsState.value) : null; }});

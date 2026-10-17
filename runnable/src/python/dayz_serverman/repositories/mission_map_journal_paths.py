@@ -2,23 +2,35 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from ..domain.profiles import ProfileValidationError
 from .backup_verification import is_reparse, path_has_reparse
-from .mission_map_journal import MapGroup, MapJournal, record_staging
+from .mission_map_journal import MapGroup, MapJournal, record_path_kind, record_staging
 from .mission_map_journal_store import recovery_folder
 from .mission_map_layout import (
-    APPLIED_FILE, BASELINE_FILE, TargetClass, association_folder, ledger_folder, original_folder, target_key,
+    APPLIED_FILE, BASELINE_FILE, HISTORY_MARK, PLAN_FILE, RETIRED_FILE, STAMP_PATTERN, TargetClass,
+    association_folder, is_target_key, ledger_folder, original_folder, profile_folder, target_key,
 )
-from .mission_map_records import ORIGINAL_FILE
+from .mission_map_records import ORIGINAL_FILE, restored_copy_file, superseded_file
 from .paths import PortablePaths
 from .restore_paths import RestorePathError, safe_root
 
 
 # Suffix of a DayZ-side staging file beside its target: .<name>.<operation_id>.mission-map-stage
 GROUP_STAGE_SUFFIX = ".mission-map-stage"
+# Record files of the sibling folder that becomes the active folder at step 7 of an adoption commit (10.34)
+SIBLING_KINDS = {PLAN_FILE: "plan", BASELINE_FILE: "baseline", APPLIED_FILE: "applied"}
+# The closed name of an invalidated last-applied record in the active folder (10.35)
+CLOSED_NAME = re.compile(r"applied\.closed-[0-9]{8}T[0-9]{6}Z(?:-[0-9]+)?\.json")
+
+
+def sibling_kind(name: str, operation_id: str) -> str | None:
+    """Return the kind of a file name in the sibling folder: the three records, or a restored copy (10.35)."""
+    restored = {f"restored-{target_class.value}-{operation_id}.json" for target_class in TargetClass}
+    return SIBLING_KINDS.get(name) or ("restored_copy" if name in restored else None)
 
 
 def group_staging_path(target: Path, operation_id: str, ancestors: Sequence[Path]) -> Path:
@@ -54,18 +66,51 @@ def target_folder(root: Path, relative: str) -> Path:
 def record_targets(journal: MapJournal, paths: PortablePaths) -> dict[str, str]:
     """Return each record path that the journal may stage, manager-relative, with its record kind.
 
-    Originals and ledger entries use a target key of the journal; baseline and last applied use its association.
+    Originals, superseded records and ledger entries use a target key of the journal. Baseline, last applied and
+    the restored copy of each target class use its association. A copied original has the path of the original.
     """
     area = paths.mission_map
     keys = [journal.mission_key] + ([journal.runtime_profile_key] if journal.runtime_profile_key else [])
     allowed: dict[str, str] = {}
     for key in keys:
         allowed[paths.relative(original_folder(area, key) / ORIGINAL_FILE)] = "original"
+        allowed[paths.relative(superseded_file(area, key, journal.operation_id))] = "superseded"
         allowed[paths.relative(ledger_folder(area, key) / f"{journal.operation_id}.json")] = "ledger"
     association = association_folder(area, journal.profile_id, journal.mission_key)
     allowed[paths.relative(association / BASELINE_FILE)] = "baseline"
     allowed[paths.relative(association / APPLIED_FILE)] = "applied"
+    for target_class in [TargetClass.MISSION] + ([TargetClass.RUNTIME] if journal.runtime_profile_key else []):
+        copy = restored_copy_file(area, journal.profile_id, journal.mission_key, target_class, journal.operation_id)
+        allowed[paths.relative(copy)] = "restored_copy"
     return allowed
+
+
+def adoption_kind(journal: MapJournal, paths: PortablePaths, target: str) -> str | None:
+    """Return the 10.34 kind that a manager-relative record path has in the journal, or None.
+
+    Each path is in a folder of the journal's profile. It is the plan of the active association, the retired
+    marker of another association folder, or the dated history name of the active folder. The Apply preflight
+    uses only record_targets, so it never accepts these kinds.
+    """
+    profile = paths.relative(profile_folder(paths.mission_map, journal.profile_id))
+    path = PurePosixPath(target)
+    active = paths.relative(association_folder(paths.mission_map, journal.profile_id, journal.mission_key))
+    if target in (active, f"{active}/{PLAN_FILE}"):
+        return "rename" if target == active else "plan"
+    # The sibling folder of the active folder stages its fresh records (Architect 00:21:00 in evidence 10.34)
+    if str(path.parent) == record_staging(active, journal.operation_id):
+        return sibling_kind(path.name, journal.operation_id)
+    # Adoption of the restore case closes an invalidated record in the active folder (10.35)
+    if str(path.parent) == active and CLOSED_NAME.fullmatch(path.name):
+        return "history_file"
+    # Adoption never retires the new active folder, and never a folder of another profile (OP-1)
+    if (path.name == RETIRED_FILE and str(path.parent.parent) == profile and is_target_key(path.parent.name)
+            and path.parent.name != journal.mission_key):
+        return "retired"
+    stamp = path.name.removeprefix(journal.mission_key + HISTORY_MARK)
+    if str(path.parent) == profile and stamp != path.name and STAMP_PATTERN.fullmatch(stamp):
+        return "rename"
+    return None
 
 
 def journal_paths_safe(journal: MapJournal, dayz_root: Path, paths: PortablePaths) -> bool:
@@ -91,7 +136,8 @@ def journal_paths_safe(journal: MapJournal, dayz_root: Path, paths: PortablePath
             return False
         allowed = record_targets(journal, paths)
         return all(
-            allowed.get(record.target_path) == record.kind
+            (allowed.get(record.target_path) or adoption_kind(journal, paths, record.target_path))
+            == record_path_kind(record.kind)
             and record.staging_path == record_staging(record.target_path, journal.operation_id)
             and not path_has_reparse(paths.root / record.target_path)
             and not path_has_reparse(paths.root / record.staging_path)

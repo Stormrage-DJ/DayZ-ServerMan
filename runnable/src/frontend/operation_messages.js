@@ -1,4 +1,5 @@
-// Operator wording for host error codes and for the result of a finished operation. A code is never printed.
+// Operator wording for host error codes. A code is never printed. The result of a finished operation is
+// worded in operation_results.js; every document that loads this file also loads that one (8.14).
 "use strict";
 
 // Text shown for an internal fault and for every message that would show an identifier.
@@ -62,6 +63,23 @@ const operationKindErrorTexts = Object.freeze({
   }),
   APPLY_MISSION_MAP: Object.freeze({
     REVISION_CONFLICT: "The map plan, the profile, the settings or the mission files changed after the preview. Nothing was applied. Preview the changes again and check them before you apply.",
+    PUBLICATION_FAILED: "Apply reached its commit point, but a later step failed. The mission files can have changed. Preview the changes again to see what is left to apply.",
+  }),
+  // A stale review or a late file change of a restore; the window shows the late-change host text (8.8, 8.14).
+  // A failure after the commit point has the kind text of 10.32 (Product Owner 2026-10-17 02:14:51).
+  RESTORE_MISSION_MAP_ORIGINAL: Object.freeze({
+    REVISION_CONFLICT: "The profile, the settings, the mission files or the map editor records changed after the preview. Nothing was restored. Preview the restore again and check it before you restore.",
+    PUBLICATION_FAILED: "The restore reached its commit point, but a later step failed. The mission files can have changed. Preview the restore again to see what is left to restore.",
+  }),
+  RESTORE_MISSION_MAP_PREVIOUS: Object.freeze({
+    REVISION_CONFLICT: "The profile, the settings, the mission files or the map editor records changed after the preview. Nothing was restored. Preview the restore again and check it before you restore.",
+    PUBLICATION_FAILED: "The restore reached its commit point, but a later step failed. The mission files can have changed. Preview the restore again to see what is left to restore.",
+  }),
+  // ADOPT-28, a stale adoption review (Product Owner 2026-10-16 14:26:38, evidence 10.1)
+  ADOPT_MISSION_MAP: Object.freeze({
+    REVISION_CONFLICT: "The profile, the settings, the mission files or the map editor records changed after the preview. Nothing was adopted. Preview the adoption again and check it before you adopt.",
+    // A failure after the commit point (Product Owner 2026-10-17 11:41:56, evidence 10.35)
+    PUBLICATION_FAILED: "Adoption reached its commit point, but a later step failed. No mission file changed. The map editor records can have changed. Preview the adoption again to see what is left to adopt.",
   }),
 });
 // Host sentences of one kind that are shown unchanged, by a fragment; never the general request text (8.7).
@@ -75,6 +93,8 @@ const operationShownHostTexts = Object.freeze([
   "mapgroupproto.xml has a layout that this setting cannot change safely: ",
   "mapgroupproto.xml differs from its stored original: ",
   "Apply and Restore original are not available for this mission. ",
+  // The 8.13 stale zone review, before and under the guard; an ordinary mission has another message (8.14).
+  "The profile, the settings, the mission files or the map editor records changed after the review of medical loot zones. ",
 ]);
 // Known host sentences of a rejected request, by a fragment of the host message.
 const operationRequestTexts = Object.freeze([
@@ -89,14 +109,6 @@ const operationServerStates = Object.freeze({
   RUNNING_EXTERNAL: "running outside DayZ-ServerMan", RUNNING_MANAGED: "running",
   STOPPED: "stopped", STARTING: "starting", STOPPING: "stopping",
   AMBIGUOUS: "in an unknown state", UNKNOWN: "in an unknown state",
-});
-// Result of a mod update that ran to its end, by its download state: sentence and look.
-const operationDownloadResults = Object.freeze({
-  VERIFIED: ["Mods are downloaded and checked.", "success"],
-  EMPTY: ["This profile has no Workshop mods.", "success"],
-  FAILED: ["Some mods could not be updated.", "failed"],
-  UNKNOWN: ["The mod update could not be confirmed.", "failed"],
-  CANCELLED: ["Mod update cancelled.", "cancelled"],
 });
 
 // Sentences of "apply mods and restart" for a failed or cancelled end, chosen by the last working phase.
@@ -135,9 +147,6 @@ const operationZoneRefusalTexts = Object.freeze([
   ["medical loot zones cannot change because the map editor manages this mission",
     "Medical loot zones cannot change because the map editor manages this mission.", ""]
 ]);
-
-// Item states of a verification that mean no problem; a mod in any other state needs the operator.
-const operationVerifyGood = Object.freeze({ source: "VERIFIED", target: "MATCHES_SOURCE" });
 
 // Word an unmappable loot-zone baseline: its reason, the way out and the stored original (6.5).
 // A mappable baseline, or a reason without a row, gives null, so the state is never guessed.
@@ -213,82 +222,13 @@ function recoveryNoticeText(reason, owner = null) {
     + "Details are in Logs, Manager diagnostics.";
 }
 
-// Count the mods of a verification result that have a problem with the download or with the server copy.
-function verifyProblemCount(items) {
-  return (Array.isArray(items) ? items : []).filter((item) =>
-    item?.source_state !== operationVerifyGood.source || item?.target_state !== operationVerifyGood.target).length;
-}
-
 // Word the text of a failed bridge call for a page notice.
 function bridgeErrorText(result, fallback) {
   return operationErrorText(result?.error, fallback);
 }
 
-// Build the success sentence and look of a finished "apply mods and restart" from its start outcome.
-function restartApplySuccess(result, labels) {
-  if (result.start_state === "NOT_NEEDED") {
-    return { sentence: "All mods are current. The server was not restarted. To restart it anyway, use Save & Restart on Overview.", look: "success" };
-  }
-  if (result.start_state === "CANCELLED") {
-    return { sentence: "Mods and keys applied. The server start was cancelled. The server stays stopped.", look: "success" };
-  }
-  if (result.start_state === "FAILED") {
-    const reason = operationErrorText({ code: result.start_error, message: "" });
-    return { sentence: `Server stopped and mods applied, but the server could not be started: ${reason}`, look: "failed" };
-  }
-  return { sentence: result.backup ? "Server backed up, mods applied and server restarted." : labels.success, look: "success" };
-}
-
-// Build the success sentence and look of a finished operation from its result.
-function successPresentation(operation, labels) {
-  const result = operation.result || {};
-  if (operation.kind === "UPDATE_WORKSHOP_ITEMS" && Object.hasOwn(operationDownloadResults, String(result.download_state))) {
-    const [sentence, look] = operationDownloadResults[result.download_state];
-    return { sentence, look };
-  }
-  // A stop or restart names the backup that it made.
-  if (operation.kind === "STOP_SERVER" && result.backup) return { sentence: "Server stopped and backed up.", look: "success" };
-  if (operation.kind === "RESTART_SERVER" && result.backup) return { sentence: "Server backed up and restarted.", look: "success" };
-  // A verification that found problems says how many mods need the operator.
-  const problems = operation.kind === "VERIFY_WORKSHOP_FILES" ? verifyProblemCount(result.items) : 0;
-  if (problems) {
-    return { sentence: problems === 1 ? "1 mod has a problem." : `${problems} mods have problems.`, look: "warning" };
-  }
-  if (operation.kind === "APPLY_MODS_AND_RESTART") return restartApplySuccess(result, labels);
-  // A medical toggle that changed no group says that no file was changed.
-  if (operation.kind === "APPLY_MEDICAL_FEATURE" && result.message === OPERATION_MEDICAL_UNCHANGED) {
-    return { sentence: OPERATION_MEDICAL_UNCHANGED, look: "success" };
-  }
-  if (operation.kind === "PUBLISH_MODS_AND_KEYS") {
-    // An apply names the outcome of the server start that it was asked to do.
-    if (result.start_state === "STARTED") return { sentence: `${labels.success} The server was started.`, look: "success" };
-    if (result.start_state === "CANCELLED") return { sentence: `${labels.success} The server start was cancelled.`, look: "success" };
-    if (result.start_state === "NOT_REQUESTED") return { sentence: `${labels.success} Server start was not requested.`, look: "success" };
-    if (result.start_state === "FAILED") {
-      const reason = operationErrorText({ code: result.start_error, message: "" });
-      return { sentence: `${labels.success} The server could not be started: ${reason}`, look: "failed" };
-    }
-  }
-  return { sentence: labels.success, look: "success" };
-}
-
-// Describe a finished operation: look, result sentence, message, and both joined as one text.
-function operationResult(operation, seenPhase = null) {
-  const labels = window.ServerManOperationLabels.kind(operation?.kind);
-  const phase = operation?.last_working_phase || seenPhase;
-  let look = "failed"; let sentence = labels.failure; let message = "";
-  // A failed or cancelled operation is worded in operation_failures.js.
-  if (operation?.state === "SUCCEEDED") {
-    ({ sentence, look } = successPresentation(operation, labels));
-  } else if (operation?.state === "CANCELLED") {
-    ({ sentence, look } = cancelPresentation(operation, phase, labels));
-  } else {
-    ({ sentence, look, message } = failurePresentation(operation, phase, labels));
-  }
-  return Object.freeze({ look, sentence, message, text: message ? `${sentence} ${message}` : sentence });
-}
-
-// Publish the message lookups used by the bar and by every page notice.
+// Publish the message lookups used by the bar and by every page notice. operationResult is declared in
+// operation_results.js, which each document composes into the same script element.
 window.ServerManOperationMessages = Object.freeze({
   error: operationErrorText,
   bridgeError: bridgeErrorText,

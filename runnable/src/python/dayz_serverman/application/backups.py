@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, tzinfo
 from pathlib import Path, PureWindowsPath
 from typing import Any
@@ -13,10 +13,29 @@ from ..domain.backups import entry_path_key
 from ..domain.backups import restore_compatibility
 from ..domain.backup_inventory import MISSION_INVENTORY, mission_payload_prefix
 from ..domain.profiles import ProfileRecord
+from ..repositories.backup_editor_records import EditorArchive, EditorRecordsInvalid, collect_editor_records
 from ..repositories.backups import BackupSource, BackupStorage, BackupStorageError
 from .profiles import ProfileService
 from .mission_configuration import MissionPathError, resolve_profile_mission
 from .settings import SettingsService
+
+
+# Product Owner text (2026-10-16 16:47:54 in evidence 10.9), shown after the success line of a backup
+# whose editor records were left out because they are not valid
+EDITOR_RECORDS_OMITTED = ("The backup was created without the map editor records of this profile, because they "
+                          "are not valid. A restore of this backup does not bring them back.")
+
+
+
+def editor_records_notice(result: object) -> str | None:
+    """Return the text that follows the success line when a backup left out corrupt editor records, else None.
+
+    A `create` result holds the flag itself. A stop or restart with backup holds it in its `backup` result.
+    """
+    result = result if isinstance(result, Mapping) else {}
+    backup = result.get("backup") if isinstance(result.get("backup"), Mapping) else {}
+    omitted = result.get("editor_records_omitted") is True or backup.get("editor_records_omitted") is True
+    return EDITOR_RECORDS_OMITTED if omitted else None
 
 
 class BackupService:
@@ -39,6 +58,12 @@ class BackupService:
         # Fall back to the current UTC time when no clock is injected
         self._clock = clock or (lambda: datetime.now(UTC))
         self._local_timezone = local_timezone
+        # Editor records stay out of the backup until bind_editor gives the plan service, its locks and the area
+        self._editor: tuple[Any, Any, Path] | None = None
+
+    def bind_editor(self, plans: Any, locks: Any, area: Path) -> None:
+        """Bind the mission map plan service, its association lock set and the editor area (10.9)."""
+        self._editor = (plans, locks, area)
 
     def history(self, profile_id: object) -> dict[str, Any]:
         """Return the stored history for one profile with its revision context."""
@@ -111,6 +136,7 @@ class BackupService:
             or current_settings.revision != settings.revision
         ):
             raise RevisionConflict("backup context changed while the inventory was prepared")
+        editor, omitted = self._editor_records(Path(settings.dayz_root).resolve(strict=True), profile)
         # Use local time for the human-readable id and UTC for the stored timestamp
         instant = self._clock()
         created = instant.astimezone(UTC)
@@ -130,6 +156,7 @@ class BackupService:
             checkpoint,
             reconstruction=metadata, directories=directories,
             validate_context=lambda: self._validate_capture(profile, settings, directories, mission_root),
+            editor=editor,
         )
         # Judge restore compatibility before reporting the new backup
         compatibility, reason = restore_compatibility(manifest)
@@ -148,6 +175,8 @@ class BackupService:
             "restore_compatibility": compatibility,
             "restore_compatibility_reason": reason,
             "status": "USABLE",
+            # True when corrupt editor records were left out; the result then shows EDITOR_RECORDS_OMITTED
+            "editor_records_omitted": omitted,
         }
 
     def _inventory(self, dayz_root: Path, profile: ProfileRecord) -> tuple[BackupSource, ...]:
@@ -175,6 +204,32 @@ class BackupService:
         if len(folded) != len(set(folded)):
             raise BackupStorageError("BACKUP_SOURCE_INVALID", "The backup inventory contains duplicate targets.")
         return ordered
+
+    def _editor_records(self, root: Path, profile: ProfileRecord) -> tuple[EditorArchive | None, bool]:
+        """Read the records of the active association under its lock; None keeps the backup at schema 3 (D18).
+
+        The active association is that of the mission key that the profile resolves now. A profile in the
+        path-change state has none, so its backup carries no editor record. A corrupt record or content
+        does not refuse the backup: it is made without editor records, and the flag says so (Product Owner,
+        evidence 10.9). A record that changed during the read still refuses.
+        """
+        if self._editor is None:
+            return None, False
+        from .mission_map_plans import MissionPathChanged, _runtime_key
+        plans, locks, area = self._editor
+        association = plans.active_association(profile.values.profile_id)
+        with locks.hold(association["profile_id"], association["mission_key"]):
+            try:
+                if plans.load(profile.values.profile_id)["path_change"] is not None:
+                    return None, False
+            except MissionPathChanged:
+                return None, False
+            # The target keys are the mission folder and the runtime profile folder of the profile
+            keys = (association["mission_key"], _runtime_key(root, profile))
+            try:
+                return collect_editor_records(area, association, keys), False
+            except EditorRecordsInvalid:
+                return None, True
 
     def _validate_capture(self, profile, settings, directories, mission_root):
         """Recheck identity and directory inventory after the complete payload capture."""

@@ -6,10 +6,12 @@ coordinator (8.9). The lane kind follows the mode: `RESTORE_MISSION_MAP_ORIGINAL
 
 Failures use the Apply mapping (8.7): the 6.11 refusal of Restore original
 keeps `UNSUPPORTED_SNAPSHOT_CONTENT` with the gate text, a stale review is the
-retryable `REVISION_CONFLICT` and a refused review is `INVALID_REQUEST`. Every
-editor journal kind shares one recovery owner, so a failure that needs
-recovery blocks the lane under the editor kind. The 8.5 recovery then lifts
-that block.
+retryable `REVISION_CONFLICT` and a refused review is `INVALID_REQUEST`.
+
+A refusal code raised at or after `COMMITTING` becomes a fixed failure code,
+as for Apply (AR-4, leaf 10.32). Every editor journal kind shares one recovery
+owner, so a failure that needs recovery blocks the lane under the editor kind.
+The 8.5 recovery then lifts that block.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ from typing import Any
 from ..bridge.contracts import ErrorCode
 from ..bridge.facade import ApplicationCallError
 from ..domain.mission_map_restore_texts import INVALID_MODE, INVALID_MODE_TEXT, LANE_KINDS
-from .mission_map_apply_coordinator import apply_error
+from .mission_map_apply_coordinator import apply_error, late_failure
 from .mission_map_coordinator_errors import refusal
 from .mission_map_recovery import EDITOR_KIND, RECOVERY_UNRESOLVED
 from .mission_map_restore import MissionMapRestore
@@ -55,15 +57,17 @@ class MissionMapRestoreCoordinator:
             except OperationCancelled:
                 raise
             except Exception as error:
-                call = apply_error(error)
+                # A refusal code at or after the commit point never claims that nothing changed (AR-4)
+                call = late_failure(apply_error(error), self._service.commit_point(context.operation_id))
                 recovery = call.code == ErrorCode.RECOVERY_REQUIRED
-                # Not the restore kind: the 8.5 recover handler lifts only blocks of the editor kind. The lane
-                # blocks again under the failure's recovery owner, so both blocks belong to the editor kind (8.13 F1)
+                # Not the restore kind: the 8.5 recover handler lifts only blocks of the editor kind (8.13 F1).
+                # The lane sets the one block with the catalogue reason; the record keeps the commit-step
+                # message for diagnostics (8.11 F1)
                 owner = EDITOR_KIND if recovery else None
-                if owner is not None:
-                    context.block_for_recovery(RECOVERY_UNRESOLVED, owner=owner)
+                reason = RECOVERY_UNRESOLVED if recovery else None
                 raise OperationFailure(call.code.value, call.safe_message, retryable=call.retryable,
-                                       recovery_required=recovery, recovery_owner=owner) from error
+                                       recovery_required=recovery, recovery_owner=owner,
+                                       recovery_reason=reason) from error
 
         try:
             record = self._operations.submit(LANE_KINDS[mode], work,

@@ -131,7 +131,7 @@ function syncOperationBarStatus(model) {
   }
 }
 
-// Publish the busy state: body marker, reason text, and the one event that locks page controls.
+// Publish the busy state: the body marker here, the reason text and the event in the busy helper (8.18).
 function publishOperationBusy() {
   const lead = operationBarLead();
   const busy = Boolean(lead) || operationBarState.shutdown;
@@ -141,12 +141,7 @@ function publishOperationBusy() {
   operationBarState.published = signature;
   if (busy) document.body.dataset.operationBusy = "true";
   else delete document.body.dataset.operationBusy;
-  const reason = document.getElementById("busy-reason");
-  if (reason) {
-    reason.textContent = !busy ? "" : name ? `Not available while \u201C${name}\u201D is in progress.`
-      : "Not available while DayZ-ServerMan is closing.";
-  }
-  document.dispatchEvent(new CustomEvent("serverman:operation-change", { detail: { busy, name } }));
+  window.ServerManBusy.publish(busy, name);
 }
 
 // Redraw the bar when a drawn value changed, then refresh the status and the busy state.

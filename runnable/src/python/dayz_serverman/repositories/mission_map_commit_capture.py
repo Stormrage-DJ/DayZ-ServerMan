@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from ..adapters.windows.shared_files import read_bytes_shared
 from ..domain.mission_map_ledger import refusal
@@ -27,6 +28,16 @@ class OriginalCaptureRefused(MissionMapPublicationError):
         super().__init__("ORIGINAL_CAPTURE_REFUSED",
                          f"Original capture refused: editor output from operation {report['operation_id']} at "
                          f"{report['display_path']} [{report['mission_root']}]{profile} was found.")
+
+
+def capture_entry(area: Path, matches: list[dict[str, Any]]) -> tuple[dict[str, Any], bool]:
+    """Return the ledger entry that a capture refusal names, and whether its key has an active original.
+
+    An entry of a key with an active original comes first, else the oldest match. The 8.6 preview and this
+    commit check share the rule, so both name the same source (Architect 2026-10-17 09:30:36 in evidence 10.13).
+    """
+    active = [entry for entry in matches if (original_folder(area, entry["target_key"]) / "original.json").exists()]
+    return (active or matches)[0], bool(active)
 
 
 def check_capture(
@@ -67,7 +78,6 @@ def check_capture(
             owned = owned_digest(target_class, item["path"], data)
             matches = ledger.capture_matches(target_class, item["path"], digest, owned)
             if matches:
-                report = refusal(matches[0], existing_profiles)
-                original = original_folder(paths.mission_map, report["target_key"]) / "original.json"
-                raise OriginalCaptureRefused(report, adoption_required=original.exists())
+                entry, adoption = capture_entry(paths.mission_map, matches)
+                raise OriginalCaptureRefused(refusal(entry, existing_profiles), adoption_required=adoption)
             check_reserved(target_class, item["path"], data)

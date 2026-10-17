@@ -12,19 +12,25 @@ from ..domain.mission_map_applied import content_items
 from ..domain.profiles import validate_profile_id
 from .backup_verification import path_has_reparse
 from .json_store import StagingPolicy
+from .mission_map_commit_kinds import content_kind
 from .mission_map_commit_records import parse_record
 from .mission_map_contents import ContentStore
 from .mission_map_journal_store import MissionMapJournalRepository, journal_folder
 from .mission_map_layout import PLAN_STAGING_GLOB, interrupted_name, is_target_key
-from .mission_map_records import RecordFile
+from .mission_map_records import RecordFile, record_files
 from .paths import PortablePaths
 
 if TYPE_CHECKING:
     from ..application.mission_map_locks import AssociationLocks
 
 
-# Only record commit staging carries an operation identifier; plan staging uses a different pattern
-COMMIT_STAGE = re.compile(r"[A-Za-z0-9_-]{1,64}\.json\.staged-[A-Za-z0-9_-]{1,64}")
+# Only record commit staging carries an operation identifier; plan staging uses a different pattern. The stem of a
+# superseded or restored copy (10.8) holds a prefix and an operation identifier.
+COMMIT_STAGE = re.compile(r"[A-Za-z0-9_-]{1,96}\.json\.staged-[A-Za-z0-9_-]{1,64}")
+# Record stems whose commit staging an original folder or an association folder may hold; 10.34 adds the plan and
+# the retired marker of an adoption commit
+ORIGINAL_STEMS = re.compile(r"original|superseded-[A-Za-z0-9_-]{1,64}")
+ASSOCIATION_STEMS = re.compile(r"plan|retired|baseline|applied|restored-(?:mission|runtime)-[A-Za-z0-9_-]{1,64}")
 
 
 def cleanup_orphans(paths: PortablePaths, locks: AssociationLocks) -> None:
@@ -41,8 +47,7 @@ def cleanup_orphans(paths: PortablePaths, locks: AssociationLocks) -> None:
         _safe(parent, paths.root)
         for folder in sorted(parent.glob("*")):
             if is_target_key(folder.name):
-                names = {"original"} if branch == "originals" else None
-                _clean_folder(folder, paths.root, names)
+                _clean_folder(folder, paths.root, ORIGINAL_STEMS if branch == "originals" else None)
     # Plan saves use the same association locks, so their active staging never appears orphaned
     parent = area / "profiles"
     _safe(parent, paths.root)
@@ -55,24 +60,24 @@ def cleanup_orphans(paths: PortablePaths, locks: AssociationLocks) -> None:
         for folder in sorted(profile.glob("*")):
             if is_target_key(folder.name):
                 with locks.hold(profile.name, folder.name):
-                    _clean_folder(folder, paths.root, {"baseline", "applied"})
+                    _clean_folder(folder, paths.root, ASSOCIATION_STEMS)
                     _preserve_plans(folder, paths.root)
 
 
-def _clean_folder(folder: Path, root: Path, names: set[str] | None) -> None:
+def _clean_folder(folder: Path, root: Path, stems: re.Pattern[str] | None) -> None:
     """Prove referenced content before deleting orphan stages or unused content."""
     _safe(folder, root)
     _safe(folder / "files", root)
     keep: set[str] = set()
-    for name, kind in (("original.json", "original"), ("baseline.json", "baseline"), ("applied.json", "applied")):
-        target = folder / name
+    # Superseded and restored copies keep their content too (10.8)
+    for target, kind in record_files(folder):
         _safe(target, root)
         found = RecordFile(target, lambda raw, kind=kind: parse_record(kind, raw), StagingPolicy.OBSERVER).read()
         if found is not None:
-            keep.update(item["sha256"] for item in content_items(kind, found[0]) if item["existed"])
+            keep.update(item["sha256"] for item in content_items(content_kind(kind), found[0]) if item["existed"])
     for stage in sorted(folder.glob("*.json.staged-*")):
         _safe(stage, root)
-        if COMMIT_STAGE.fullmatch(stage.name) and (names is None or stage.name.split(".json.", 1)[0] in names):
+        if COMMIT_STAGE.fullmatch(stage.name) and (stems is None or stems.fullmatch(stage.name.split(".json.", 1)[0])):
             stage.unlink()
     # Check each content entry before the store can remove it
     for entry in (folder / "files").glob("*"):

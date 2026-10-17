@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import re
 from datetime import datetime, timezone
-from typing import Any, Callable, Sequence
+from typing import Any, Sequence
 
 from .medical_editor_texts import MEDICAL_KIND
 from .mission_map_applied import (
@@ -13,8 +14,12 @@ from .mission_map_applied import (
     check_realization, record_version,
 )
 from .mission_map_plan import canonical_json
-from .mission_map_values import IDENTIFIER, SHA256, TARGET_KEY, TERRAIN_ID, ObjectRuleError, exact_fields, integer
-from .profiles import ProfileValidationError, validate_profile_id, validate_relative_path
+# The field checks and the shape error live in their own module (10.3); they are re-exported for existing importers
+from .mission_map_record_checks import (  # noqa: F401
+    MAX_SAFE_INTEGER, RecordShapeError, _integer, _list, require_exact, require_key, require_match, require_profile,
+    require_relative, require_text,
+)
+from .mission_map_values import IDENTIFIER, SHA256, TERRAIN_ID
 
 
 # UTC time of a record, for example 2026-10-10T12:30:00Z
@@ -26,8 +31,6 @@ APPLIED_KINDS = frozenset(("apply", "restore_original", "restore_previous", MEDI
 PROVENANCE_SOURCES = frozenset(("original", "adoption", REPLACED_SOURCE, "restore_original", "profile_restore"))
 # Newest provenance entries a baseline keeps
 MAX_PROVENANCE = 50
-# Largest file size and revision a record may state: the exact JSON integer range
-MAX_SAFE_INTEGER = 2**53 - 1
 # Field sets of the three records and of their file entries
 ORIGINAL_FIELDS = frozenset(("target_class", "target_key", "display_path", "mission_root", "terrain_id",
                              "captured_at", "profile_id", "operation_id", "files", "manifest_sha256"))
@@ -38,11 +41,13 @@ APPLIED_FIELDS = frozenset(("profile_id", "mission_key", "mission_root", "operat
                             "baseline_manifest_sha256", "files_after", "files_before", "excluded_encounters",
                             "manifest_sha256"))
 STORED_FILE_FIELDS = frozenset(("target_key", "path", "existed", "sha256", "size"))
-
-
-class RecordShapeError(ValueError):
-    """Raised when a record breaks its D3 shape or its manifest digest does not match."""
-    pass
+# Field of the provenance-linked original of a new key, its fields and its adoption cases (10.2 OP-3, 10.8)
+PROVENANCE_FIELD = "provenance"
+PROVENANCE_FIELDS = frozenset(("case", "source_key", "source_manifest_sha256", "operation_id"))
+# A restore as a new profile adds `restore`: its source is the verified archive entry (ruling (c), 10.37)
+COPY_CASES = frozenset(("move", "copy", "restore"))
+# Fields that the original of a new key takes from its source unchanged; the new key gives the others
+COPIED_FIELDS = ("target_class", "terrain_id", "captured_at", "profile_id", "operation_id", "files")
 
 
 def utc_text(moment: datetime) -> str:
@@ -65,8 +70,13 @@ def sealed(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def parse_original(raw: object, file_set: Sequence[str]) -> dict[str, Any]:
-    """Return a protected original that captures every file of its class's managed set (D2)."""
-    record = checked_record(raw, ORIGINAL_FIELDS, "original")
+    """Return a protected original that captures every file of its class's managed set (D2).
+
+    The original of a new key also holds its provenance: the source key, the source manifest digest and the
+    adoption operation ID (10.8).
+    """
+    linked = isinstance(raw, dict) and PROVENANCE_FIELD in raw
+    record = checked_record(raw, ORIGINAL_FIELDS | ({PROVENANCE_FIELD} if linked else set()), "original")
     if record["target_class"] not in ("mission", "runtime"):
         raise RecordShapeError("original target_class must be mission or runtime")
     require_key(record["target_key"])
@@ -83,7 +93,38 @@ def parse_original(raw: object, file_set: Sequence[str]) -> dict[str, Any]:
         raise RecordShapeError("original files must list the managed file set in order")
     for entry in files:
         _sized(require_exact(entry, STORED_FILE_FIELDS - {"target_key"}, "file entry"))
+    if linked:
+        source = require_exact(record[PROVENANCE_FIELD], PROVENANCE_FIELDS, "provenance")
+        if source["case"] not in COPY_CASES:
+            raise RecordShapeError("original provenance case must be move, copy or restore")
+        require_key(source["source_key"])
+        # A copy always names another key; a backup original for the same key is a plain original (10.37)
+        if source["source_key"] == record["target_key"]:
+            raise RecordShapeError("original provenance names another target key")
+        require_match(source["source_manifest_sha256"], SHA256, "source_manifest_sha256")
+        require_match(source["operation_id"], IDENTIFIER, "operation_id")
     return record
+
+
+def copied_original(source: dict[str, Any], *, target_key: str, display_path: str, mission_root: str, case: str,
+                    operation_id: str) -> dict[str, Any]:
+    """Return the sealed original of a new key with the content of a source original and its provenance (10.8).
+
+    The source original stays in place. A copy of a copy names its direct source.
+    """
+    content = {name: copy.deepcopy(source[name]) for name in COPIED_FIELDS}
+    link = {"case": case, "source_key": source["target_key"], "source_manifest_sha256": source["manifest_sha256"],
+            "operation_id": operation_id}
+    return sealed({**content, "target_key": target_key, "display_path": display_path, "mission_root": mission_root,
+                   PROVENANCE_FIELD: link})
+
+
+def copy_matches(record: dict[str, Any], source: dict[str, Any]) -> bool:
+    """Return whether an original of a new key holds the content of the source original that its provenance names."""
+    link = record.get(PROVENANCE_FIELD)
+    named = None if link is None else (link["source_key"], link["source_manifest_sha256"])
+    return (named == (source["target_key"], source["manifest_sha256"])
+            and all(record[name] == source[name] for name in COPIED_FIELDS))
 
 
 def parse_baseline(raw: object) -> dict[str, Any]:
@@ -239,55 +280,3 @@ def _file_digests(item: dict[str, Any], field: str) -> None:
         require_match(item[field], SHA256, field)
     elif item[field] is not None:
         raise RecordShapeError("an absent file has a null digest")
-
-
-def _guarded(check: Callable[[], object]) -> object:
-    """Run one value check and report its failure as a record shape error."""
-    try:
-        return check()
-    except (ObjectRuleError, ProfileValidationError) as error:
-        raise RecordShapeError(str(error)) from error
-
-
-def require_exact(value: object, fields: set[str] | frozenset[str], name: str) -> dict[str, Any]:
-    """Return an object with exactly the fields."""
-    return _guarded(lambda: exact_fields(value, name, fields))  # type: ignore[return-value]
-
-
-def require_match(value: object, pattern: re.Pattern[str], field: str) -> None:
-    """Check that a text fully matches the pattern."""
-    if not isinstance(value, str) or pattern.fullmatch(value) is None:
-        raise RecordShapeError(f"{field} has an invalid value")
-
-
-def require_key(value: object) -> None:
-    """Check a target key."""
-    require_match(value, TARGET_KEY, "target key")
-
-
-def require_profile(value: object) -> None:
-    """Check a stable profile ID."""
-    _guarded(lambda: validate_profile_id(value))
-
-
-def require_relative(value: object) -> None:
-    """Check a mission root relative to the DayZ root."""
-    _guarded(lambda: validate_relative_path(value, "mission_root"))
-
-
-def require_text(value: object, field: str) -> None:
-    """Check a non-empty text."""
-    if not isinstance(value, str) or not value:
-        raise RecordShapeError(f"{field} must be non-empty text")
-
-
-def _integer(value: object, field: str) -> None:
-    """Check a non-negative JSON integer."""
-    _guarded(lambda: integer(value, field, 0, MAX_SAFE_INTEGER))
-
-
-def _list(value: object, field: str) -> list[Any]:
-    """Return a JSON list."""
-    if not isinstance(value, list):
-        raise RecordShapeError(f"{field} must be a list")
-    return value

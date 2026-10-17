@@ -45,7 +45,7 @@ class CopyTests(unittest.TestCase):
 
     def test_operation_results(self) -> None:
         """Download results and the start outcomes of an apply (`successPresentation`, `restartApplySuccess`)."""
-        self.assert_in_file("operation_messages.js", *texts.DOWNLOAD_RESULTS.values(), *texts.START_TEXTS.values(),
+        self.assert_in_file("operation_results.js", *texts.DOWNLOAD_RESULTS.values(), *texts.START_TEXTS.values(),
                             texts.START_FAILED, texts.RESTART_START_CANCELLED, texts.RESTART_START_FAILED,
                             texts.RESTART_BACKED_UP)
 

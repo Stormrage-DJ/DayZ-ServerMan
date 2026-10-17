@@ -11,8 +11,14 @@ JOURNAL_SCHEMA = 1
 PHASES = frozenset(("PREPARED", "PUBLISHING", "PUBLISHED", "COMMITTING", "COMPENSATING", "ROLLED_BACK", "COMMITTED"))
 # Lifecycle states of one DayZ-side group, as in backup restore
 GROUP_STATES = frozenset(("READY", "PUBLISHING", "PUBLISHED", "COMPENSATED"))
-# Kinds of manager-root records that a publication stages, and their states
-RECORD_KINDS = frozenset(("original", "baseline", "applied", "ledger"))
+# Kinds of manager-root records that a publication stages, and their states.
+# - 10.8: the superseded original, the inactive restored copy and the provenance-linked original (D5, D19).
+# - 10.34: the plan, the retired marker and the rename of the active folder to its history name (AR-3).
+# - 10.35: the rename of an invalidated last-applied record to its closed name (Architect 00:21:00, 10.34).
+RECORD_KINDS = frozenset((
+    "original", "baseline", "applied", "ledger", "superseded", "restored_copy", "copied_original",
+    "plan", "retired", "rename", "history_file",
+))
 RECORD_STATES = frozenset(("READY", "PUBLISHED"))
 # Terminal results of a resolved journal
 RESULTS = frozenset(("ROLLED_BACK", "COMMITTED"))
@@ -105,6 +111,11 @@ class MapJournal:
         value["groups"] = [group.to_dict() for group in self.groups]
         value["records"] = [record.to_dict() for record in self.records]
         return value
+
+
+def record_path_kind(kind: str) -> str:
+    """Return the kind of the record path that a staged kind publishes: a copied original is the active original."""
+    return "original" if kind == "copied_original" else kind
 
 
 def record_staging(target: str, operation_id: str) -> str:

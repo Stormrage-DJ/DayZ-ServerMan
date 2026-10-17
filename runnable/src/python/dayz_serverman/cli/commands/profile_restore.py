@@ -101,6 +101,9 @@ def result_lines(result: Mapping[str, Any]) -> list[Block]:
         blocks.append(sentence(" ".join((texts.PROFILE_RESTORED, *reasons))))
     else:
         blocks.append(sentence(texts.PROFILE_RESTORED_CHECK))
+    # The move of editor records that an interrupted deletion left, as the window says it
+    if result.get("editor_remnant_notice"):
+        blocks.append(sentence(str(result["editor_remnant_notice"])))
     if result.get("recovery_copy"):
         blocks.append(sentence(f"{texts.WORLD_RECOVERY_COPY}: ", Value(str(result["recovery_copy"]))))
     return blocks

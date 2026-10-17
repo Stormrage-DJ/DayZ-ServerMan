@@ -26,6 +26,10 @@ NOTICES = (("zombie_max_count_zero", "zombie_max_count", ZOMBIE_MAX_COUNT_ZERO_T
 PREVIEW_STALE_TEXT = ("The map plan, the profile, the settings or the mission files changed after the preview. "
                       "Nothing was applied. Preview the changes again and check them before you apply.")
 NO_SAVED_PLAN_TEXT = "This mission has no saved map plan. Make a plan in the map editor, then preview it."
+# A late file change under Apply, as the host message names it (Product Owner 2026-10-15 15:57:10 in evidence 8.10,
+# decision 7c). The window shows PREVIEW_STALE_TEXT for it (decision 7b); `map apply` shows this text
+TARGET_CHANGED_TEXT = ("Apply stopped because {path} changed after the preview. Nothing was applied, and that file "
+                       "keeps its current content. Preview the changes again and check them before you apply.")
 
 # Residual risk of the capture check (detailed-design D2, T2.1-M3). Product Owner text of 2026-10-15 15:57:10 in
 # evidence 8.10, decision 2; it replaces the 8.6 text

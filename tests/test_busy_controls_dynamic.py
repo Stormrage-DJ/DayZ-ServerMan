@@ -253,6 +253,19 @@ form.requestSubmit(); await wait(10);
 check(profileSaves === 1, "an unlocked profile form was not submitted");
 """
 
+# A page's own aria-disabled reason, set before the mark or after the busy lock (Architect 2026-10-16 16:50:12 in
+# evidence 8.19). After the lock, the page sets it again at each operation-change event, as the 8.10 preview gate does
+OWN_REASON = CHECKS + r"""
+await start(); const ids = (b) => (b.getAttribute("aria-describedby") || "").split(" "); for (const order of ["before", "after", "none"]) {
+  const form = document.createElement("form"), b = Object.assign(document.createElement("button"), {type: "submit"}), hits = [];
+  const own = () => { if (order !== "none") { b.setAttribute("aria-disabled", "true"); if (!ids(b).includes("own")) b.setAttribute("aria-describedby", ["own", ...ids(b)].join(" ").trim()); } };
+  b.addEventListener("click", () => hits.push("click")); form.addEventListener("submit", (e) => { e.preventDefault(); hits.push("submit"); }); form.append(b); document.getElementById("content-region").append(form); if (order === "after") document.addEventListener("serverman:operation-change", own);
+  if (order === "before") own(); window.ServerManBusy.mark(b); await push(record(order, "CREATE_BACKUP", "RUNNING", {progress_phase: "STAGE"})); if (order === "after") { own(); window.ServerManBusy.refresh(); }
+  b.click(); form.requestSubmit(); await wait(10);   check(hits.length === 0 && ids(b).includes("busy-reason") && b.dataset.busyLocked === "", `${order}: busy stops the click and the submit`); await push(record(order, "CREATE_BACKUP", "SUCCEEDED", {revision: 9, progress_phase: "complete", result: {}})); await wait(30); b.click(); await wait(10);
+  check(hits[0] === "click" && !ids(b).includes("busy-reason") && !("busyLocked" in b.dataset), `${order}: the end lets the click through`);
+  check(order === "none" ? !b.hasAttribute("aria-disabled") && !b.hasAttribute("aria-describedby") : b.getAttribute("aria-disabled") === "true" && ids(b).join() === "own", `${order}: the own reason stays`); document.removeEventListener("serverman:operation-change", own); form.remove(); }
+"""
+
 
 @unittest.skipUnless(EDGE.is_file(), "Microsoft Edge is unavailable")
 class BusyControlsDynamicTests(unittest.TestCase):
@@ -277,6 +290,10 @@ class BusyControlsDynamicTests(unittest.TestCase):
     def test_settings_and_profile_form(self) -> None:
         """Save locations locks and a locked form does not submit."""
         self.assertEqual(run_shell_harness(SETTINGS_AND_PROFILES), "PASS")
+
+    def test_an_own_reason_in_both_orders(self) -> None:
+        """While busy a click and a submit are stopped; at the end the own reason stays and a click acts."""
+        self.assertEqual(run_shell_harness(OWN_REASON, budget=6000), "PASS")
 
 
 if __name__ == "__main__":

@@ -21,6 +21,7 @@ from .schedules import ScheduleCoordinator
 from .settings import SettingsService
 from .profile_restore_ownership import owns_complete_mission
 from .editor_guard import EditorGuardPort, NoEditorGuard
+from .profile_deletion_editor import ProfileDeletionEditor
 
 
 class ProfileDeletionError(RuntimeError):
@@ -35,7 +36,7 @@ class ProfileDeletionService:
         preferences: PreferenceCoordinator, schedules: ScheduleCoordinator,
         applied_mod_state: AppliedModStateRepository,
         folder_writer: ServerFolderWriterPort | None = None,
-        editor_guard: EditorGuardPort | None = None,
+        editor_guard: EditorGuardPort | None = None, editor: ProfileDeletionEditor | None = None,
     ) -> None:
         self._profiles = profiles
         self._settings = settings
@@ -45,6 +46,8 @@ class ProfileDeletionService:
         self._applied_mod_state = applied_mod_state
         self._folder_writer = folder_writer
         self._editor_guard = editor_guard if editor_guard is not None else NoEditorGuard()
+        # The map editor records of the profile; None in compositions without an editor area
+        self._editor = editor
 
     def delete(
         self, profile_id: str, expected_revision: int, *, before_change: Callable[[], None] | None = None,
@@ -90,6 +93,11 @@ class ProfileDeletionService:
             self._preflight_directory(storage, mission)
         if mission_is_exclusive:
             self._preflight_directory(mission, root)
+        # Decide the map editor records now; their folders pass the same link checks
+        editor = None if self._editor is None else self._editor.prepare(
+            profile, root, mission, mission_removed=mission_is_exclusive, others=self._profiles.list())
+        for path in () if editor is None else self._editor.paths(editor):
+            self._preflight_directory(path, self._editor.area)
 
         # A13: the writer side is held from the first change to the last folder removal; a refusal changes nothing
         with WriterScope(self._folder_writer).held_for():
@@ -100,6 +108,8 @@ class ProfileDeletionService:
             self._applied_mod_state.delete_profile(profile_id)
             removed_storage = self._remove_directory(mission) if mission_is_exclusive else self._remove_directory(storage) if storage_is_exclusive else 0
             removed_generated = self._remove_directory(generated)
+            # The editor records go after their target folders and before the profile record
+            removed_editor = None if editor is None else self._editor.remove(editor)
             self._profiles.delete(profile_id, expected_revision)
         return {
             "profile_id": profile_id,
@@ -108,6 +118,7 @@ class ProfileDeletionService:
             "removed_mission_storage_files": removed_storage,
             "preserved_shared_mission_storage": not storage_is_exclusive,
             "removed_owned_mission": mission_is_exclusive,
+            "editor": removed_editor,
         }
 
     @staticmethod

@@ -61,6 +61,7 @@ function mapDisplayEnabled(enabled) {
   window.ServerManMapBackground.enabled(enabled);
   // The set-aside action also stops while loading or closing, and a cancelled close may load again (5.3)
   window.ServerManMapSetAside.enabled(enabled);
+  window.ServerManMapAdopt.enabled(enabled);
   if (!enabled) window.ServerManMapCalibration.cancel();
 }
 
@@ -68,15 +69,17 @@ function mapDisplayEnabled(enabled) {
 function mapLoadStatus(value) {
   const words = window.ServerManMapWording;
   // Backend details include stale-record reload guidance that must stay visible.
-  const status = value.read_only ? words.readOnly(value.read_only_reason) :
-    (!value.plan ? words.boundsRequired : (value.state === "MISSING" ? words.unsaved : words.loaded));
+  // ADOPT-6: the plan stays editable after a restore, and the status still names adoption
+  const status = value.read_only || value.read_only_reason === "adoption_required" ? words.readOnly(value.read_only_reason) :
+    value.adoption?.case === "copy" ? words.adoptCopy : (!value.plan ? words.boundsRequired : (value.state === "MISSING" ? words.unsaved : words.loaded));
   const detail = words.detail(value);
   return detail ? `${status} ${detail}` : status;
 }
 
 // A read-only reason and reload guidance also show in full on the map.
 function mapLoadNotice(value) {
-  return value.read_only || value.detail ? "info" : null;
+  return value.read_only || value.detail || value.read_only_reason === "adoption_required" ||
+    value.adoption?.case === "copy" ? "info" : null;
 }
 
 // Keep the submitted snapshot locally, with only actual returned save metadata.
@@ -119,6 +122,7 @@ async function mapLoad() {
     mapEditorState.loaded = value;
     // Profile, mission and terrain remain visible even when the plan is read only.
     window.ServerManMapLayout.identity(value);
+    window.ServerManMapPublish.family();
     window.ServerManMapViewportUi.load(value);
     window.ServerManMapBounds.load(value);
     // The tier overlay and the stored image read in the background; editing does not wait for them
@@ -135,6 +139,7 @@ async function mapLoad() {
     window.ServerManMapLayout.status(mapLoadStatus(value), {notice: mapLoadNotice(value), announce: true});
     window.ServerManMapLayout.draftChanges(value.draft_changes);
     window.ServerManMapSetAside.load(value);
+    window.ServerManMapAdopt.load(value);
     document.body.dataset.mapReady = "true";
     region.dataset.readOnly = String(value.read_only);
     region.setAttribute("aria-busy", "false");
@@ -148,6 +153,7 @@ async function mapLoad() {
     window.ServerManMapTiers.load(null);
     window.ServerManMapBackground.load(null);
     window.ServerManMapSetAside.load(null);
+    window.ServerManMapAdopt.load(null);
     document.body.dataset.mapReady = "false";
     region.setAttribute("aria-busy", "false");
     window.ServerManMapLayout.status(error.message || window.ServerManMapWording.failed, {notice: "error", announce: true});
@@ -160,6 +166,10 @@ function mapStart() {
   window.ServerManMapLayout.init();
   window.ServerManMapViewportUi.init();
   mapInitModel();
+  // Apply and Restore, the lane follower and the refresh after an operation (8.18)
+  window.ServerManMapRefresh.init(mapEditorState);
+  window.ServerManMapPublish.init(mapEditorState);
+  window.ServerManMapAdopt.init(mapEditorState);
   if (window.pywebview?.api) mapLoad();
 }
 

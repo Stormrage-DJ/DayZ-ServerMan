@@ -120,7 +120,7 @@ await answer(failure("PROFILE_CONTEXT_MISMATCH","mission_path_changed","The miss
 check(status().startsWith("Not saved: ")&&!reload().hidden,"a changed mission path offers the reload");
 editorAnswer={success:true,value:{...value(plan()),read_only:true,read_only_reason:"mission_path_changed"}};
 reload().click();await wait();await wait();
-check(status()==="Read only: the mission path changed. Reload the active mission before editing."&&reload().hidden,"the reload shows the read-only reason");
+check(status()==="Read only: the mission path changed. The map plan shown belongs to an earlier path. Adopt the mission to use its map editor records for the new path."&&reload().hidden,"the reload shows the read-only reason (ADOPT-4)");
 check(document.getElementById("map-tool-circle").disabled&&!model.add("x",{}),"the path-change state is read only");
 ''', budget=20000), "PASS")
 

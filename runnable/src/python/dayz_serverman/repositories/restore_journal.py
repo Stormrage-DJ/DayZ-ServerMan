@@ -12,7 +12,7 @@ from pathlib import Path
 from ..adapters.windows.shared_files import read_text_shared, replace_file
 from ..domain.backups import BACKUP_ID, SHA256
 from ..domain.profiles import validate_profile_id, validate_relative_path
-from ..domain.restores import RESTORE_JOURNAL_SCHEMA, RestoreGroup, RestoreJournal
+from ..domain.restores import EDITOR_JOURNAL_SCHEMA, RESTORE_JOURNAL_SCHEMA, RestoreGroup, RestoreJournal
 
 
 # Restore identifiers become file names, so the pattern stays path-safe
@@ -23,6 +23,8 @@ GROUP_STATES = frozenset(("READY", "PUBLISHING", "PUBLISHED", "COMPENSATED"))
 PHASES = frozenset(("PREPARED", "PUBLISHING", "COMPENSATING", "ROLLED_BACK", "COMMITTED"))
 # Terminal results allowed on a resolved journal
 RESULTS = frozenset(("ROLLED_BACK", "COMMITTED"))
+# Target classes of a schema 4 group: a file of the DayZ root, or an editor record file of the manager root (10.10)
+TARGET_CLASSES = frozenset(("dayz", "manager"))
 
 
 class RestoreJournalError(RuntimeError):
@@ -119,7 +121,7 @@ class RestoreJournalRepository:
 
 
 def _parse(raw: object, filename_id: str) -> RestoreJournal:
-    """Parse and validate a journal document of schema one to three."""
+    """Parse and validate a journal document of schema one to four."""
     common_fields = {
         "schema_version", "operation_id", "backup_id", "profile_id", "manifest_digest",
         "phase", "publication_started", "committed", "resolved", "result", "groups",
@@ -127,7 +129,7 @@ def _parse(raw: object, filename_id: str) -> RestoreJournal:
     if not isinstance(raw, dict):
         raise RestoreJournalError("restore journal schema is invalid")
     version = raw.get("schema_version")
-    if not isinstance(version, int) or isinstance(version, bool) or version not in (1, 2, 3):
+    if not isinstance(version, int) or isinstance(version, bool) or version not in (1, 2, 3, EDITOR_JOURNAL_SCHEMA):
         raise RestoreJournalError("restore journal schema is invalid")
     # The expected field set depends on the schema version being read
     fields = common_fields if version == 1 else common_fields | {"runtime_profile"}
@@ -173,9 +175,11 @@ def _parse_group(raw: object, version: int) -> RestoreGroup:
         "entry_path", "target_path", "staging_path", "recovery_path", "old_existed",
         "old_digest", "new_digest", "state",
     }
-    # Version three records the ancestors created during publication
+    # Version three records the ancestors created during publication; version four names the target class
     if version >= 3:
         fields.add("created_ancestors")
+    if version >= EDITOR_JOURNAL_SCHEMA:
+        fields |= {"target_class", "new_exists"}
     if not isinstance(raw, dict) or set(raw) != fields:
         raise RestoreJournalError("restore journal group fields are invalid")
     for field in ("entry_path", "target_path", "staging_path"):
@@ -193,9 +197,16 @@ def _parse_group(raw: object, version: int) -> RestoreGroup:
     ancestors = raw.get("created_ancestors", [])
     if not isinstance(ancestors, list) or any(not isinstance(item, str) or not item for item in ancestors):
         raise RestoreJournalError("restore journal ancestor paths are invalid")
+    target_class, new_exists = raw.get("target_class", "dayz"), raw.get("new_exists", True)
+    # Schema 4: only an editor record file can end absent, and only a file that ends absent has no new digest
+    if version >= EDITOR_JOURNAL_SCHEMA and (
+            target_class not in TARGET_CLASSES or not isinstance(new_exists, bool)
+            or (not new_exists and target_class != "manager") or (raw["new_digest"] is None) == new_exists):
+        raise RestoreJournalError("restore journal group target is invalid")
     return RestoreGroup(
         raw["entry_path"], raw["target_path"], raw["staging_path"], recovery,
         raw["old_existed"], old_digest, raw["new_digest"], raw["state"], tuple(ancestors),
+        target_class, new_exists,
     )
 
 

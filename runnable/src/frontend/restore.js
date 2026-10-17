@@ -59,6 +59,19 @@ function restoreFeedback(text, kind = "", role = "status") {
   node.focus();
 }
 
+// The map editor records of the restore (10.10): one container with the heading and one plain paragraph for each
+// sentence of editor_notes, in the order of the preview. The review section already carries the warning style
+// (UI-UX Designer 2026-10-16 21:55:05). A restore without an editor part shows nothing.
+function restoreEditorNotes(preview) {
+  const notes = Array.isArray(preview.editor_notes) ? preview.editor_notes : [];
+  if (!notes.length) return [];
+  const container = restoreNode("div");
+  container.id = "restore-editor-notes";
+  container.append(restoreNode("h5", "", "Map editor records"),
+    ...notes.map((note) => restoreNode("p", "", String(note))));
+  return [container];
+}
+
 // Verify the chosen backup and show the reviewed restore plan.
 async function previewRestore(backupId) {
   if (restoreState.dialog || restoreState.pendingOperation) return;
@@ -96,7 +109,10 @@ async function previewRestore(backupId) {
   apply.type = "button";
   apply.addEventListener("click", showRestoreConfirmation);
   window.ServerManBusy?.mark(apply);
-  summary.append(list, apply);
+  const notes = restoreEditorNotes(preview);
+  // The focus goes to the button, so the button names the notes that come before it (R2)
+  if (notes.length) apply.setAttribute("aria-describedby", "restore-editor-notes");
+  summary.append(list, ...notes, apply);
   // Show the reviewed summary and focus its apply action.
   document.getElementById("restore-feedback").replaceChildren(summary);
   apply.focus();

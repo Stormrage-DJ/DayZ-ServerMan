@@ -25,11 +25,13 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from ..domain.mission_map_families import APPLY, require_verified_family
-from ..domain.mission_map_preview_texts import PREVIEW_STALE_TEXT
+from ..domain.mission_map_preview_texts import PREVIEW_STALE_TEXT, TARGET_CHANGED_TEXT
 from ..domain.mission_map_records import utc_text
 from ..domain.mission_map_terrain import TerrainCapabilities
 from ..domain.profiles import ProfileRecord
+from ..repositories.mission_map_publication import MissionMapPublicationError
 from ..repositories.paths import PortablePaths
+from ..repositories.restore_paths import group_old_matches
 from .mission_map_apply_choices import (
     Choices, check_choices, check_review, chosen_base, chosen_candidates, parse_choices,
 )
@@ -85,9 +87,24 @@ class MissionMapApply:
                 revalidate()
             return {**summary, "result": "UNCHANGED"}
         existing = {record.values.profile_id for record in self._profiles.list()}
-        result = self._commit.commit(publication.journal, publication.updates, publication.candidates,
-                                     revalidate=revalidate, existing_profiles=existing)
+        try:
+            result = self._commit.commit(publication.journal, publication.updates, publication.candidates,
+                                         revalidate=revalidate, existing_profiles=existing)
+        except MissionMapPublicationError as error:
+            details = getattr(error, "details", None) or {}
+            if error.code != "REVISION_CONFLICT" or details.get("reason") != "target_changed":
+                raise
+            # A late file change gets the Product Owner text 7c outside the commit module, as a restore does
+            path = next((group.relative_path for group in publication.journal.groups
+                         if group.state == "READY" and not group_old_matches(group)), "a mission file")
+            conflict = MissionMapPublicationError("REVISION_CONFLICT", TARGET_CHANGED_TEXT.format(path=path))
+            conflict.details, conflict.retryable = dict(details), True  # type: ignore[attr-defined]
+            raise conflict from error
         return {**summary, "result": result["result"]}
+
+    def commit_point(self, operation_id: str) -> str | None:
+        """Return where the journal of a failed operation stands (AR-4); the commit step owns the rule."""
+        return self._commit.commit_point(operation_id)
 
     def _publication(self, review: PreviewReview, choices: Choices, operation_id: str) -> Publication:
         """Return the commit of the chosen base and candidates."""

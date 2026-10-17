@@ -3,16 +3,19 @@
 "use strict";
 
 // The active tool, the last circle radius and the press of the current click; the outline draft is not here.
-const mapToolsState = {model: null, value: null, tool: null, radius: 100, down: null, message: ""};
+// paused: the pause text of an own Apply or restore, which holds the map notice until the operation ends (8.18).
+const mapToolsState = {model: null, value: null, tool: null, radius: 100, down: null, message: "", paused: ""};
 // Tool buttons in toolbar order (UI-UX 10:22:15: Encounter between Polygon and Inspect)
 const mapToolsNames = Object.freeze(["select", "circle", "polygon", "encounter", "inspect"]);
 
 // Every tool needs confirmed bounds and a usable view transform. Drawing and selection need a writable draft.
 // Inspect writes nothing, so it also acts in a read-only draft without a dialog (Product Owner 2026-10-14 00:33:43).
+// While an own Apply or restore runs, Select stays and Inspect stops: it would read files while they change (8.18).
 function mapToolsUsable(tool) {
   const view = window.ServerManMapViewportUi.view()?.snapshot(), value = mapToolsState.value;
-  const ready = Boolean(value?.plan?.terrain?.bounds_confirmed && view?.scale && !view.failure);
-  return ready && (tool === "inspect" ? Boolean(value.enabled && !document.querySelector("dialog")) : Boolean(mapToolsState.model?.editable()));
+  const ready = Boolean(value?.plan?.terrain?.bounds_confirmed && view?.scale && !view.failure), open = !document.querySelector("dialog");
+  if (ready && value.paused && ["inspect", "select"].includes(tool)) return tool === "select" && Boolean(value.enabled && value.object_list_available && open);
+  return ready && (tool === "inspect" ? Boolean(value.enabled && open) : Boolean(mapToolsState.model?.editable()));
 }
 
 // A tool reason shows in the panel and on the map, and goes to the polite live region; an empty text clears it.
@@ -20,7 +23,7 @@ function mapToolsUsable(tool) {
 function mapToolsMessage(text) {
   mapToolsState.message = text;
   document.getElementById("map-tool-message").textContent = text;
-  document.getElementById("map-tool-notice").textContent = text;
+  document.getElementById("map-tool-notice").textContent = text || mapToolsState.paused;
   if (text) document.getElementById("map-announcement").textContent = text;
 }
 
@@ -181,4 +184,6 @@ window.ServerManMapTools = Object.freeze({init: mapToolsInit, refresh: mapToolsR
   value: () => mapToolsState.value, draft: () => window.ServerManMapOutlineDraft.draft(),
   restore: (vertices) => window.ServerManMapOutlineDraft.restore(vertices), object: mapToolsObject,
   message: mapToolsMessage, hit: (point) => mapToolsHit(point)?.id ?? null, choose: (tool) => mapToolsChoose(tool),
-  active: () => mapToolsState.tool, end: () => { mapToolsState.tool = null; }, radius: () => mapToolsState.radius});
+  active: () => mapToolsState.tool, end: () => { mapToolsState.tool = null; }, radius: () => mapToolsState.radius,
+  // The pause text shows on the map without an announcement; an empty text ends it (UI-UX section 7)
+  pause: (text) => { mapToolsState.paused = text; document.getElementById("map-tool-notice").textContent = text; }});

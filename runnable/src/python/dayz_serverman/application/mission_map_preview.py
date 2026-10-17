@@ -23,7 +23,8 @@ from ..adapters.windows.shared_files import read_bytes_shared
 from ..domain.mission_map_families import family_gate
 from ..domain.mission_map_plan import bounds_of, canonical_json, configuration_fingerprint
 from ..domain.mission_map_preview_changes import (
-    applied_global, applied_group_names, applied_groups, applied_objects, object_changes, unavailable_encounters,
+    applied_global, applied_group_names, applied_groups, applied_objects, excluded_encounters, object_changes,
+    unavailable_encounters,
 )
 from ..domain.mission_map_preview_texts import NO_SAVED_PLAN_TEXT, PREVIEW_STALE_TEXT, infected_section
 from ..domain.mission_map_terrain import TerrainCapabilities
@@ -41,7 +42,9 @@ from ..repositories.mission_map_providers import read_encounter_providers
 from ..repositories.mission_map_terrain import AREAFLAGS_FILE, read_capabilities
 from .mission_configuration import _contained
 from .mission_map_coordinator_records import MissionMapRecordReader
-from .mission_map_plans import MissionMapPlanService, MissionPathChanged, _check_association, _runtime_key, plan_store
+from .mission_map_plans import (
+    AdoptionRequired, MissionMapPlanService, MissionPathChanged, _check_association, _runtime_key, plan_store,
+)
 from .mission_map_preview_read import MissionInputs, read_inputs
 from .mission_map_preview_targets import capture_check, other_profiles
 
@@ -170,7 +173,8 @@ class MissionMapPreview:
             "objects": {**object_changes(plan["objects"], applied_objects(applied)),
                         "global": {"current": plan["global_abundance"], "applied": applied_global(applied)}},
             "loot": report,
-            "encounters": {"written": _written(candidates), "unavailable": unavailable},
+            "encounters": {"written": _written(candidates), "unavailable": unavailable,
+                           "excluded": excluded_encounters(plan["objects"])},
             "infected": infected_section(candidates.caps, candidates.infected_written()),
             "affected_files": _affected(inputs.managed, candidates.contents()),
             "external_changes": external, "coordinated_changes": coordinated,
@@ -196,6 +200,9 @@ class MissionMapPreview:
         loaded = self._plans.load(profile.values.profile_id)
         if loaded["path_change"] is not None:
             raise MissionPathChanged(loaded["path_change"]["folders"], loaded["read_only_reason"])
+        # AR-6: after a restore invalidated the last Apply record, Apply waits for adoption (exit 3)
+        if loaded["read_only_reason"] == "adoption_required":
+            raise AdoptionRequired()
         association = loaded["association"]
         if loaded["state"] == PlanState.MISSING.value:
             raise NoSavedPlan(NO_SAVED_PLAN_TEXT)

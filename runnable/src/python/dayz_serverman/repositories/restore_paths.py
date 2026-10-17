@@ -165,12 +165,17 @@ def remove_stage_tree(group: RestoreGroup) -> None:
 
 
 def journal_paths_safe(journal: RestoreJournal, dayz_root: Path, recovery_root: Path) -> bool:
-    """Verify every journal path still maps to its expected location."""
+    """Verify every DayZ-root journal path still maps to its expected location.
+
+    A group of the manager root (schema 4, 10.10) is checked by `restore_editor_targets.editor_paths_safe`.
+    """
     try:
         root = safe_root(dayz_root)
         recovery = recovery_root.resolve(strict=False)
         # Re-derive each expected path so tampered journals are rejected
         for group in journal.groups:
+            if group.target_class != "dayz":
+                continue
             target = Path(group.target_path).resolve(strict=False)
             relative = target_relative(group.entry_path, journal.runtime_profile)
             if target != root.joinpath(*relative.parts).resolve(strict=False):

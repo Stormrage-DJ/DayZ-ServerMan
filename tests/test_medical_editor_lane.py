@@ -149,12 +149,12 @@ class WordingTests(unittest.TestCase):
     """The activity view shows the refusals unchanged under the medical kind; a running server as for Apply."""
 
     def test_texts(self) -> None:
-        """Plain sentences pass; staleness uses the existing conflict text; the guard text equals Apply's."""
+        """Plain sentences pass; staleness shows the 8.13 stale text; the guard text equals Apply's."""
         for text in (MISMATCH_TEXT, NO_APPLIED_PLAN_TEXT, FINGERPRINT_MISSING_TEXT):
             self.assertEqual(error_text("INVALID_REQUEST", text, kind=KIND), text)
-        # Until leaf 8.10 adds the stale text to both catalogues, the general conflict text shows (PO 06:27:10)
-        self.assertEqual(error_text("REVISION_CONFLICT", FINGERPRINT_STALE_TEXT, kind=KIND),
-                         ERROR_TEXTS["REVISION_CONFLICT"])
+        # Leaf 8.14 shows the stale text in both catalogues, never the general conflict text (PO 06:27:10)
+        self.assertEqual(error_text("REVISION_CONFLICT", FINGERPRINT_STALE_TEXT, kind=KIND), FINGERPRINT_STALE_TEXT)
+        self.assertNotEqual(FINGERPRINT_STALE_TEXT, ERROR_TEXTS["REVISION_CONFLICT"])
         running = "Applying mods requires STOPPED; current state is RUNNING_MANAGED."
         self.assertEqual(error_text("CONTROL_CONFLICT", running, kind=KIND),
                          error_text("CONTROL_CONFLICT", running, kind="APPLY_MISSION_MAP"))

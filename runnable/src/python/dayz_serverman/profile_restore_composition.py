@@ -2,6 +2,7 @@
 
 from .adapters.windows.udp_ports import bound_udp_ports
 from .application.installation_guard import InstallationGuard
+from .application.profile_restore_editor_plan import ProfileEditorPlanner
 from .application.profile_restores import ProfileRestoreService
 from .application.profile_restore_coordinator import ProfileRestoreCoordinator
 from .application.settings_repair import SettingsRepair
@@ -11,8 +12,9 @@ from .repositories.profile_restore_journal import ProfileRestoreJournal
 
 
 def _storage(paths) -> ProfileRestoreStorage:
-    """Return the direct restore storage over the manager's journal folder."""
-    return ProfileRestoreStorage(ProfileRestoreJournal(paths.operations / "profile-restore-journals"), paths.profiles, paths.backup_recovery)
+    """Return the direct restore storage over the manager's journal folder; the editor group uses its layout."""
+    return ProfileRestoreStorage(ProfileRestoreJournal(paths.operations / "profile-restore-journals"), paths.profiles,
+                                 paths.backup_recovery, manager=paths)
 
 
 def build_profile_restore(paths, profiles, settings, backups, lifecycle, mutex, operations, *,
@@ -24,7 +26,7 @@ def build_profile_restore(paths, profiles, settings, backups, lifecycle, mutex, 
     if recover:
         recover_interrupted_profile_restores(storage, settings, operations, InstallationGuard(lifecycle, mutex, folder_writer))
     service = ProfileRestoreService(profiles, settings, backups, storage, lifecycle, mutex, bound_udp_ports,
-                                    folder_writer=folder_writer)
+                                    folder_writer=folder_writer, editor=ProfileEditorPlanner(paths))
     return ProfileRestoreCoordinator(service, operations)
 
 

@@ -18,6 +18,10 @@ html, body { height: 100%; overflow: hidden; }
 #map-identity-fields dt, #map-status-area dt { color: var(--color-text-muted); font-size: 12px; margin-bottom: var(--primitive-space-1); }
 #map-identity-fields dd { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 #map-identity-fields dd, #map-status-area dd { margin: 0; }
+/* Apply and Restore at the right end of the header; the mode group opens under Restore, above the map (8.18). */
+#map-publication { position: relative; display: flex; flex: none; gap: var(--primitive-space-2); }
+#map-restore-modes { position: absolute; top: calc(100% + var(--primitive-space-1)); right: 0; z-index: 2; display: grid; gap: var(--primitive-space-2); width: max-content; max-width: min(20rem, 100vw - 2rem); padding: var(--primitive-space-2); border: 1px solid var(--panel-border); border-radius: var(--radius-control); background: var(--panel-background); }
+#map-restore-modes[hidden] { display: none; }
 /* The unverified-family reason takes its own full-width line below the identity fields (6.11). */
 #map-family-reason { flex-basis: 100%; margin: 0; color: var(--color-status-warning); overflow-wrap: anywhere; }
 
@@ -53,6 +57,16 @@ html, body { height: 100%; overflow: hidden; }
 /* Status remains selectable, with stable numeric slots and no live coordinates. */
 #map-status-area { padding-top: var(--primitive-space-3); border-top: 1px solid var(--color-border); }
 #map-status-area dl { display: grid; grid-template-columns: 34ch 12ch minmax(0, 1fr) 12ch; gap: var(--primitive-space-3); margin: 0; }
+/* The own Apply or restore slot shows from the first activation and keeps its place (8.18, UI-UX section 2). */
+#map-status-area dl:has(#map-operation-item:not([hidden])) { grid-template-columns: 34ch 12ch minmax(0, 1fr) 12ch minmax(0, 1fr); }
+#map-operation-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto 24px; column-gap: var(--primitive-space-3); align-items: center; }
+#map-operation-item[hidden] { display: none; }
+#map-operation-item dt { grid-column: 1 / -1; }
+#map-operation-item .link-button { white-space: nowrap; }
+#map-operation-status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--color-text-muted); }
+#map-operation-status.map-operation-done { color: var(--color-text); }
+#map-operation-status.map-operation-error { color: var(--color-status-error); }
+#map-operation-status.map-operation-recovery { color: var(--color-status-recovery); }
 #map-status-area dl > div { min-width: 0; }
 #map-status-area dd { overflow-wrap: anywhere; }
 #map-coordinates { font-variant-numeric: tabular-nums; width: 34ch; max-width: 100%; white-space: pre-line; min-height: 3em; }
@@ -70,17 +84,29 @@ html, body { height: 100%; overflow: hidden; }
 .map-preview[open] { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
 .map-preview::backdrop { background: rgb(0 0 0 / .65); }
 .map-preview h2 { margin: 0; padding: var(--primitive-space-4) var(--primitive-space-5) var(--primitive-space-2); font-size: 18px; }
+/* The title takes the first focus but is no control and no Tab stop, so it shows no outline (UI-UX 17:59:02, change 1). */
+.map-preview h2:focus { outline: none; }
 .map-preview h3 { margin: var(--primitive-space-4) 0 var(--primitive-space-2); font-size: 15px; }
 .map-preview-body { min-height: 0; overflow: auto; padding: 0 var(--primitive-space-5) var(--primitive-space-3); }
+/* The body spans the full dialog width, which clips its sides; an inner outline stays visible (change 6). */
+.map-preview-body:focus-visible { outline-offset: -3px; }
 .map-preview p, .map-preview li, .map-preview legend { overflow-wrap: anywhere; }
 .map-preview-body p { margin: var(--primitive-space-2) 0 0; }
 .map-preview-body .notice { padding: var(--primitive-space-3); }
 .map-preview-list ul { margin: var(--primitive-space-1) 0 0; padding-left: 1.25rem; }
 .map-preview fieldset { display: grid; gap: var(--primitive-space-1); min-width: 0; margin: var(--primitive-space-3) 0 0; }
 .map-preview-refusal, .map-preview-stale { color: var(--color-status-warning); }
+/* A locked choice looks locked; the refusal text under it keeps its full colour (change 2). The disabled checkbox
+   rule is in controls.css, which alone styles the checkbox; this is the same rule for the radio. */
+.map-preview input[type="radio"]:disabled { cursor: not-allowed; opacity: var(--control-disabled-opacity); }
+.map-preview .check-row:has(input:disabled) { color: var(--color-text-muted); cursor: not-allowed; }
+@media (forced-colors: active) { .map-preview .check-row:has(input:disabled) { color: GrayText; } }
 .map-preview-body .map-preview-reason, .map-preview-body .map-preview-refusal { margin-left: 1.5rem; font-size: 13px; }
 .map-preview-footer { padding: var(--primitive-space-3) var(--primitive-space-5) var(--primitive-space-4); border-top: 1px solid var(--color-border); }
 .map-preview-footer p { margin: 0 0 var(--primitive-space-2); }
 .map-preview-footer p:empty:not([role]) { display: none; }
 .map-preview-footer p:empty { margin: 0; }
 .map-preview-footer .action-row { margin-top: 0; justify-content: flex-end; }
+/* The busy wait line of an open dialog, as operation_bar.css draws it in the main window (UI-UX, Narrow Window). */
+.busy-wait-line { margin: var(--primitive-space-4) 0 0; color: var(--color-status-warning); font-weight: 700; }
+.busy-wait-line + .action-row { margin-top: var(--primitive-space-3); }

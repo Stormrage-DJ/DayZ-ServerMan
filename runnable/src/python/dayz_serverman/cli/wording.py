@@ -258,7 +258,7 @@ def recovery_clear() -> Line:
 
 def revision_pinned(subject: str, current: object, pinned: int) -> Line:
     """Word an `--expect-…` pin that differs from the stored revision, with the read to repeat (QF-45)."""
-    show = "profile show --json" if subject == "profile" else "settings show --json"
+    show = {"profile": "profile show --json", "map plan": "map show --json"}.get(subject, "settings show --json")
     return sentence(f"The {subject} revision is now {current}, not {pinned}. Read it again with ", TypeText(show),
                     ", then pin the new number.")
 

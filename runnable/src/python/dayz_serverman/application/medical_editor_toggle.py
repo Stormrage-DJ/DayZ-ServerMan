@@ -29,17 +29,11 @@ from ..domain.medical_editor_texts import (
     FINGERPRINT_MISSING_TEXT, FINGERPRINT_STALE_TEXT, ZoneReviewStale, ZoneToggleRefused,
 )
 from ..domain.mission_map_records import utc_text
-from ..repositories.mission_map_journal_store import MissionMapJournalRepository, journal_folder
-from ..repositories.mission_map_owned import check_reserved
 from ..repositories.paths import PortablePaths
-from .installation_guard import InstallationGuard
-from .lifecycle_ports import ServerFolderWriterPort
 from .medical_editor_records import build_toggle
 from .medical_editor_review import ZoneReview, ZoneTarget, fingerprint_form, review_zone_toggle
 from .medical_features import NO_ZONE_CHANGE
-from .mission_map_apply_records import owned_or_none
 from .mission_map_commit import MissionMapCommit
-from .mission_map_locks import AssociationLocks
 
 # The loot-zone feature, the only one that an editor-managed mission coordinates
 FEATURE = "medical_loot_zones"
@@ -103,12 +97,11 @@ class MedicalEditorToggle:
         return dict(result, digest=_sha(review.candidate), changed_fields=[FEATURE])
 
 
-def build_medical_editor(paths: PortablePaths, locks: AssociationLocks, guard: InstallationGuard,
-                         folder_writer: ServerFolderWriterPort | None, *, create_root: bool) -> MedicalEditorToggle:
-    """Return the toggle over its own commit step; it shares the association locks of the plan service."""
-    journals = MissionMapJournalRepository(journal_folder(paths), create_root=create_root)
-    commit = MissionMapCommit(paths, journals, guard, folder_writer, locks, owned_digest=owned_or_none,
-                              check_reserved=check_reserved)
+def build_medical_editor(paths: PortablePaths, commit: MissionMapCommit) -> MedicalEditorToggle:
+    """Return the toggle over the one commit step of the editor (Architect 2026-10-17 13:41:03, evidence 10.31).
+
+    Apply, the restores, adoption and the toggle share that step, its journal folder and its association locks.
+    """
     return MedicalEditorToggle(paths, commit)
 
 

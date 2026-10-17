@@ -9,16 +9,26 @@ from ..domain.mission_map_applied import APPLIED_VERSION, content_items, record_
 from ..domain.mission_map_records import (
     RecordShapeError, identity, parse_applied, parse_baseline, parse_original, sealed,
 )
+from ..domain.mission_map_values import IDENTIFIER
 from ..domain.models import RecordInspection, RecordState, RepositoryError
 from .json_store import StagingPolicy, VersionedJsonRepository
 from .mission_map_contents import ContentStore
 from .mission_map_layout import (
-    APPLIED_FILE, BASELINE_FILE, FILE_SETS, TargetClass, association_folder, is_target_key, original_folder,
+    APPLIED_FILE, BASELINE_FILE, CLOSED_GLOB, FILE_SETS, INVALIDATED_GLOB, TargetClass, association_folder,
+    original_folder,
 )
 
 
 # Record file of a protected original inside its target folder
 ORIGINAL_FILE = "original.json"
+# Staged kinds that hold a whole protected original (D5, D19, 10.8). The active original has a superseded record
+# beside it. An association folder can hold an inactive restored copy. A new key gets a provenance-linked original.
+ORIGINAL_KINDS = frozenset(("original", "superseded", "restored_copy", "copied_original"))
+# Create-once kinds: an identical rewrite does nothing and a different one is refused (D3)
+CREATE_ONCE_KINDS = ORIGINAL_KINDS | {"ledger"}
+# Name patterns of the superseded and restored copies; the operation ID makes each name unique
+SUPERSEDED_GLOB = "superseded-*.json"
+RESTORED_GLOB = "restored-*.json"
 
 
 class RecordCorrupt(RepositoryError):
@@ -112,6 +122,14 @@ class OriginalStore:
         found = self._file.read()
         return None if found is None else found[0]
 
+    def read_revision(self) -> tuple[dict[str, Any], int] | None:
+        """Return the original and its envelope revision, which a D5 replacement names; None when none exists."""
+        return self._file.read()
+
+    def stored_contents(self, record: dict[str, Any]) -> dict[str, bytes]:
+        """Return the verified content of every existing file of an original that this folder stores."""
+        return {item["sha256"]: self.contents.read(item["sha256"]) for item in record["files"] if item["existed"]}
+
     def create(self, raw: dict[str, Any], contents: Mapping[str, bytes]) -> dict[str, Any]:
         """Write the original once; an identical rewrite does nothing and a different one is refused."""
         record = self._parse(sealed(raw))
@@ -134,11 +152,16 @@ class OriginalStore:
 
     def _parse(self, raw: dict[str, Any]) -> dict[str, Any]:
         """Check an original against the managed file set of its class."""
-        try:
-            file_set = FILE_SETS[TargetClass(raw.get("target_class"))]
-        except ValueError as error:
-            raise RecordShapeError("original target_class must be mission or runtime") from error
-        return parse_original(raw, file_set)
+        return parse_stored_original(raw)
+
+
+def parse_stored_original(raw: dict[str, Any]) -> dict[str, Any]:
+    """Check an original, a superseded record or a restored copy against the managed file set of its class."""
+    try:
+        file_set = FILE_SETS[TargetClass(raw.get("target_class"))]
+    except ValueError as error:
+        raise RecordShapeError("original target_class must be mission or runtime") from error
+    return parse_original(raw, file_set)
 
 
 class AssociationRecordStore:
@@ -177,14 +200,6 @@ class AssociationRecordStore:
         return None if found is None else identity(self.kind, found[0], found[1])
 
 
-def association_profiles(area: Path, key: str) -> list[str]:
-    """Return every profile that has an association folder for the key: one part of the D2 shared check."""
-    profiles = area / "profiles"
-    if not is_target_key(key) or not profiles.is_dir():
-        return []
-    return sorted(folder.name for folder in profiles.iterdir() if (folder / key).is_dir())
-
-
 def record_mission_root(folder: Path) -> str | None:
     """Return the relative mission root that the last-applied or baseline record of a folder names, leniently."""
     # Read only published records; an unreadable record names no root
@@ -194,3 +209,41 @@ def record_mission_root(folder: Path) -> str | None:
         if isinstance(root, str) and root:
             return root
     return None
+
+
+def superseded_file(area: Path, key: str, operation_id: str) -> Path:
+    """Return the record that keeps the original that a D5 restore replaced, beside the active one."""
+    return original_folder(area, key) / f"superseded-{_operation(operation_id)}.json"
+
+
+def restored_copy_file(area: Path, profile_id: str, mission_key: str, target_class: TargetClass,
+                       operation_id: str) -> Path:
+    """Return the inactive restored copy of an original of one class in the restoring profile's association folder."""
+    name = f"restored-{target_class.value}-{_operation(operation_id)}.json"
+    return association_folder(area, profile_id, mission_key) / name
+
+
+def record_files(folder: Path) -> list[tuple[Path, str]]:
+    """Return each record file of an original or association folder with its kind; the sweep keeps their content."""
+    fixed = [(folder / name, kind) for name, kind in
+             ((ORIGINAL_FILE, "original"), (BASELINE_FILE, "baseline"), (APPLIED_FILE, "applied"))]
+    # An invalidated last-applied record is history too; its content stays (Architect 21:00:06 in evidence 10.10)
+    # A closed invalidated record keeps its content too (Architect 2026-10-17 00:21:00 in evidence 10.34)
+    kept = [(path, kind) for pattern, kind in ((SUPERSEDED_GLOB, "superseded"), (RESTORED_GLOB, "restored_copy"),
+                                               (INVALIDATED_GLOB, "invalidated"), (CLOSED_GLOB, "closed"))
+            for path in sorted(folder.glob(pattern))]
+    return fixed + kept
+
+
+def kept_originals(folder: Path) -> list[dict[str, Any]]:
+    """Return the superseded records or restored copies of one folder; they are kept and are never active."""
+    found = (RecordFile(path, parse_stored_original, StagingPolicy.OBSERVER).read()
+             for path, kind in record_files(folder) if kind in ("superseded", "restored_copy"))
+    return [item[0] for item in found if item is not None]
+
+
+def _operation(operation_id: str) -> str:
+    """Return an operation ID that is safe as one part of a file name, or raise."""
+    if not isinstance(operation_id, str) or IDENTIFIER.fullmatch(operation_id) is None:
+        raise ValueError("an operation ID must be an identifier")
+    return operation_id

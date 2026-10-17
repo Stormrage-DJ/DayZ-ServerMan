@@ -116,8 +116,8 @@ class MutationConflictCauseTests(unittest.TestCase):
                 sites += 1
                 self.assertIn("ErrorCode.MUTATION_CONFLICT", block, path.name)
                 self.assertIn("details=error.details", block, path.name)
-        # 8.7 added the mission map Apply lane operation, 8.8 the restore lane operations (one site)
-        self.assertEqual(sites, 19)
+        # 8.7 added the mission map Apply lane operation, 8.8 the restore lane operations (one site), 10.35 adoption
+        self.assertEqual(sites, 20)
 
     def test_block_reason_is_logged_when_it_is_set(self) -> None:
         """QF-008: Manager diagnostics holds every block reason; Manager activity words it."""

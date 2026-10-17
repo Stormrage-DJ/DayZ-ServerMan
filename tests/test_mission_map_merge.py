@@ -158,8 +158,10 @@ class CompatibilityTests(unittest.TestCase):
             return "the provider is not installed" if item["kind"] == "encounter" else None
 
         report = compatibility(target, read_candidate(imported(), target), TransferMode.MERGE, availability)
+        # Leaf 10.33 adds the kind, the provider and the event, so the review words the reason as map show does
         self.assertEqual(report["unavailable"], [{"id": "i3", "name": "Encounter 1",
-                                                  "reason": "the provider is not installed"}])
+                                                  "reason": "the provider is not installed", "kind": "encounter",
+                                                  "provider": "native_infected", "event_name": "InfectedCity"}])
 
 
 if __name__ == "__main__":

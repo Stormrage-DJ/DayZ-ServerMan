@@ -12,9 +12,11 @@ from types import SimpleNamespace
 from dayz_serverman.application.mission_map_plans import MissionMapPlanService, MissionPathChanged
 from dayz_serverman.domain.models import RevisionConflict
 from dayz_serverman.repositories.mission_map_contents import ContentCorrupt, ContentStore
-from dayz_serverman.repositories.mission_map_layout import TargetClass, association_folder, target_key
+from dayz_serverman.repositories.mission_map_layout import (
+    TargetClass, association_folder, association_profiles, target_key,
+)
 from dayz_serverman.repositories.mission_map_records import (
-    AssociationRecordStore, OriginalStore, RecordConflict, RecordCorrupt, association_profiles,
+    AssociationRecordStore, OriginalStore, RecordConflict, RecordCorrupt,
 )
 from tests.test_mission_map_plan import stored_plan
 from tests.test_mission_map_plan_service import Profiles, profile
@@ -123,9 +125,10 @@ class AssociationRecordTests(StoreFixture):
         for profile_id in ("main", "test20261001"):
             AssociationRecordStore(self.area, profile_id, key, "baseline").save(
                 baseline(profile_id, key), {sha(VANILLA): VANILLA}, None)
-        self.assertEqual(association_profiles(self.area, key), ["main", "test20261001"])
-        self.assertEqual(association_profiles(self.area, MISSION_KEY), [])
-        self.assertEqual(association_profiles(self.area, "../x"), [])
+        # The layout copy is the only one since 10.34; a key that is not a target key gives an empty answer
+        self.assertEqual(association_profiles(self.area, key), ("main", "test20261001"))
+        self.assertEqual(association_profiles(self.area, MISSION_KEY), ())
+        self.assertEqual(association_profiles(self.area, "../x"), ())
 
 
 class PathChangeFallbackTests(StoreFixture):

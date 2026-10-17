@@ -15,6 +15,7 @@ from typing import Any
 
 from ..adapters.windows.console import is_terminal
 from ..application.activity_wording import KIND_FALLBACK, KIND_TEXTS, error_text, restart_apply_text
+from ..application.backups import editor_records_notice
 from ..application.medical_features import NO_ZONE_CHANGE
 from ..application.phase_wording import cancelling_text, phase_text
 from .bridge_client import CliBridgeError
@@ -32,6 +33,9 @@ TERMINAL_STATES = frozenset(("SUCCEEDED", "FAILED", "CANCELLED", "RECOVERY_REQUI
 SIGN_IN_KIND = "AUTHENTICATE_STEAMCMD"
 # The kind whose failed and cancelled ends have their own sentences by the last working phase
 RESTART_APPLY_KIND = "APPLY_MODS_AND_RESTART"
+# Map lane kinds report no phase: the waiter shows the running label of the kind only (PO-8, D15)
+LABEL_ONLY_KINDS = frozenset(("APPLY_MISSION_MAP", "RESTORE_MISSION_MAP_ORIGINAL", "RESTORE_MISSION_MAP_PREVIOUS",
+                              "ADOPT_MISSION_MAP"))
 
 
 class WaitState(str, Enum):
@@ -77,7 +81,9 @@ class Waiter:
                 # A success ends with its sentence here; any other end is the command's failure text (flow.py).
                 # An update that downloaded nothing has no true end line: the command words it (QF-52)
                 if record.get("state") == "SUCCEEDED" and not ran_no_download(record, kind):
-                    self._output.note((end_line(record, kind),))
+                    # A backup that left out corrupt editor records says so after the success line (10.9)
+                    notice = editor_records_notice(record.get("result"))
+                    self._output.note((end_line(record, kind), *((sentence(notice),) if notice else ())))
                 return record
             if kind != SIGN_IN_KIND:
                 shown = self._render(record, kind, shown)
@@ -93,8 +99,7 @@ class Waiter:
         if self._terminal:
             self._output.progress(sentence(text), rewrite=True, width=self._width())
         elif key != shown:
-            self._output.progress(sentence(f"{self._now_text()} {_kind_name(kind)}: {_phase_part(record, kind)}"),
-                                  rewrite=False)
+            self._output.progress(sentence(f"{self._now_text()} {text}"), rewrite=False)
         return key
 
     def _cancel(self, operation_id: str, last_note: float) -> float:
@@ -120,7 +125,12 @@ class Waiter:
 
 
 def progress_text(record: Mapping[str, Any], kind: str) -> str:
-    """Return the terminal line: "<kind name>: <phase text> <percent>%", the percent only when determinate."""
+    """Return the terminal line: "<kind name>: <phase text> <percent>%", the percent only when determinate.
+
+    A map lane kind shows only its name, also while it waits; a cancellation keeps its own line.
+    """
+    if kind in LABEL_ONLY_KINDS and record.get("state") != "CANCELLING":
+        return _kind_name(kind)
     return f"{_kind_name(kind)}: {_phase_part(record, kind)}"
 
 

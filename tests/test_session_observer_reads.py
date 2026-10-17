@@ -79,6 +79,9 @@ class ObserverReadTests(unittest.TestCase):
         self.assertEqual((inspected["status"], inspected["result"]["tier_source"]), ("done", "unknown"))
         self.assertEqual(answers["continue_mission_map_inspection"], "INVALID_REQUEST")
         self.assertEqual(answers["cancel_mission_map_inspection"], "INVALID_REQUEST")
+        # The export returns the portable text of the saved plan; it wrote nothing (leaf 10.6)
+        exported = answers["export_mission_map_plan"]
+        self.assertEqual((json.loads(exported["text"])["objects"][0]["id"], exported["revision"]), ("observer-loot", 0))
         self.assertNotIn("INTERNAL_FAILURE", {value for value in answers.values() if isinstance(value, str)})
 
     def test_an_owner_composition_on_the_same_root_still_writes_its_log(self) -> None:

@@ -33,6 +33,11 @@ from .operations.models import OperationCancelled, OperationFailure, QueueUnavai
 
 # Exact request fields of the lane operation
 APPLY_FIELDS = frozenset(("profile_id", "preview_fingerprint", "choices"))
+# Codes that keep their meaning at or after the commit point; any other code there is a refusal code (AR-4)
+FAILURE_CODES = frozenset((ErrorCode.RECOVERY_REQUIRED, ErrorCode.PUBLICATION_FAILED, ErrorCode.INTERNAL_FAILURE,
+                           ErrorCode.STORAGE_FAILURE))
+# The host message of an Apply that needs recovery
+RECOVERY_MESSAGE = "The mission map apply requires recovery."
 # Bridge codes of the commit-step refusals; any other refusal is a refused request
 PUBLICATION_CODES = {"REVISION_CONFLICT": ErrorCode.REVISION_CONFLICT, "TARGET_CHANGED": ErrorCode.REVISION_CONFLICT,
                      "PATH_INVALID": ErrorCode.PATH_INVALID}
@@ -58,12 +63,15 @@ class MissionMapApplyCoordinator:
             except OperationCancelled:
                 raise
             except Exception as error:
-                call = apply_error(error)
+                call = late_failure(apply_error(error), self._service.commit_point(context.operation_id))
                 recovery = call.code == ErrorCode.RECOVERY_REQUIRED
-                if recovery:
-                    context.block_for_recovery(RECOVERY_UNRESOLVED)
+                # The lane sets the one editor block with the catalogue reason; the record keeps the
+                # commit-step message for diagnostics (8.11 F1). The Apply kind is the editor kind
+                owner = EDITOR_KIND if recovery else None
+                reason = RECOVERY_UNRESOLVED if recovery else None
                 raise OperationFailure(call.code.value, call.safe_message, retryable=call.retryable,
-                                       recovery_required=recovery) from error
+                                       recovery_required=recovery, recovery_owner=owner,
+                                       recovery_reason=reason) from error
 
         try:
             record = self._operations.submit(EDITOR_KIND, work,
@@ -91,11 +99,25 @@ def apply_error(error: Exception) -> ApplicationCallError:
     if isinstance(error, MissionMapPublicationError):
         return _publication_error(error)
     if isinstance(error, (MissionMapJournalError, RestorePathError)):
-        return refusal(ErrorCode.RECOVERY_REQUIRED, "recovery_required", "The mission map apply requires recovery.")
+        return refusal(ErrorCode.RECOVERY_REQUIRED, "recovery_required", RECOVERY_MESSAGE)
     if isinstance(error, RevisionConflict):
         # A stale preview: review the preview again (retryable); the message is the Apply or the restore stale text
         return refusal(ErrorCode.REVISION_CONFLICT, "preview_stale", str(error), retryable=True)
     return translate(error)
+
+
+def late_failure(call: ApplicationCallError, point: str | None) -> ApplicationCallError:
+    """Return the failure of a map lane operation by its commit point (AR-4, D13).
+
+    A refusal code raised at or after COMMITTING becomes a fixed failure code. So the record never claims that
+    nothing changed. The code is RECOVERY_REQUIRED while the journal is active, and PUBLICATION_FAILED after the
+    journal was retired as committed. Before the commit point, and for a failure code, the failure stays as it is.
+    """
+    if point is None or call.code in FAILURE_CODES:
+        return call
+    if point == "active":
+        return refusal(ErrorCode.RECOVERY_REQUIRED, "recovery_required", RECOVERY_MESSAGE)
+    return ApplicationCallError(ErrorCode.PUBLICATION_FAILED, call.safe_message)
 
 
 def _publication_error(error: MissionMapPublicationError) -> ApplicationCallError:

@@ -51,9 +51,13 @@
 #map-plan-status dt { grid-column: 1 / -1; }
 #map-status, #map-draft-changes { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #map-draft-changes.map-draft-updating { color: var(--color-text-subtle); }
-/* The full plan state on the map for a delay, a failure or a read-only reason; it never moves the layout. */
-#map-save-notice { position: absolute; inset: auto var(--primitive-space-3) var(--primitive-space-3) auto; max-width: min(52ch, 60%); margin: 0; padding: var(--primitive-space-2) var(--primitive-space-3); border: 1px solid var(--color-status-warning); border-left-width: 4px; border-radius: var(--radius-control); background: var(--panel-background); color: var(--color-text); font-size: 13px; overflow-wrap: anywhere; pointer-events: none; }
-#map-save-notice.map-save-error { border-color: var(--color-status-error); }
+/* The full plan state on the map for a delay, a failure or a read-only reason; it never moves the layout. The
+   operation notice (8.18) comes first in the same bottom-right column, so the two notices never overlap. */
+#map-notices { position: absolute; inset: auto var(--primitive-space-3) var(--primitive-space-3) auto; display: flex; flex-direction: column; align-items: flex-end; gap: var(--primitive-space-2); max-width: min(52ch, 60%); pointer-events: none; }
+#map-save-notice, #map-operation-notice { max-width: 100%; margin: 0; padding: var(--primitive-space-2) var(--primitive-space-3); border: 1px solid var(--color-status-warning); border-left-width: 4px; border-radius: var(--radius-control); background: var(--panel-background); color: var(--color-text); font-size: 13px; overflow-wrap: anywhere; }
+#map-save-notice.map-save-error, #map-operation-notice { border-color: var(--color-status-error); }
+#map-operation-notice.map-operation-recovery { border-color: var(--color-status-recovery); }
+#map-operation-notice:empty { display: none; }
 /* A success, such as a set-aside plan, and link labels that never wrap the plan state line (UI-UX 5.3). */
 #map-save-notice.map-save-success { border-color: var(--color-status-success); }
 #map-plan-status .link-button { white-space: nowrap; }

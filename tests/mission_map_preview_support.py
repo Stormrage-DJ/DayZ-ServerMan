@@ -26,7 +26,7 @@ from tests.test_mission_map_terrain_files import limits_text
 
 # Folder of the verified mission and of an unverified one (6.11)
 VERIFIED = "dayzOffline.chernarusplus"
-UNVERIFIED = "dayzOffline.enoch"
+UNVERIFIED = "dayzOffline.deerisle"
 # Globals with both shown values readable and above 0, and another value that the preview never binds
 GLOBALS = (b'<variables>\n<var name="ZombieMaxCount" type="0" value="1000"/>\n'
            b'<var name="ZoneSpawnDist" type="0" value="300"/>\n<var name="AnimalMaxCount" type="0" value="5"/>\n'

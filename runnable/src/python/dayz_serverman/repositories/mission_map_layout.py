@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import datetime, timezone
 from enum import Enum
 from functools import cache
@@ -34,10 +35,20 @@ PLAN_FILE = "plan.json"
 BASELINE_FILE = "baseline.json"
 APPLIED_FILE = "applied.json"
 RETIRED_FILE = "retired.json"
+# Folder of the area where a profile deletion moves records out of the live layout before it removes them
+DELETED_FOLDER = "deleted"
 # Glob of the plan-save staging files that VersionedJsonRepository leaves after an interrupted save
 PLAN_STAGING_GLOB = f".{PLAN_FILE}.*.tmp"
+# Dated name of a last-applied record that a restore could not install (AR-6); only adoption closes it
+INVALIDATED_GLOB = "applied.invalidated-*.json"
+# A closed invalidated record: adoption renamed it; the content sweep keeps its content (leaf 10.35)
+CLOSED_GLOB = "applied.closed-*.json"
+INVALIDATED_PREFIX, CLOSED_PREFIX = "applied.invalidated-", "applied.closed-"
 # UTC time stamp form of dated evidence names
 STAMP_FORMAT = "%Y%m%dT%H%M%SZ"
+# Name mark of an association folder that adoption kept as history: <mission_key>.history-<stamp>
+HISTORY_MARK = ".history-"
+STAMP_PATTERN = re.compile(r"[0-9]{8}T[0-9]{6}Z")
 # Committed Windows ordinal upcase table of the target keys (Architect 16:35:31, evidence 2.8): version name,
 # data file beside the domain modules, and the pinned SHA-256 of its LF-normalized bytes. A new table needs a new
 # version name and a key-migration leaf; tools/generate_ordinal_upcase.py writes it on Windows.
@@ -128,6 +139,22 @@ def ledger_folder(area: Path, key: str) -> Path:
     return area / "ledger" / _key(key)
 
 
+def association_profiles(area: Path, mission_key: str) -> tuple[str, ...]:
+    """Return the names of the profile folders that hold an association folder of one mission key.
+
+    It is one part of the D2 shared check. A key that is not a target key gives an empty answer (10.34).
+    """
+    parent = area / "profiles"
+    if not is_target_key(mission_key) or not parent.is_dir():
+        return ()
+    return tuple(sorted(child.name for child in parent.iterdir() if (child / _key(mission_key)).is_dir()))
+
+
+def deleted_name(kind: str, name: str, moment: datetime) -> str:
+    """Return the dated name of a profile folder or an original folder that a deletion moved away."""
+    return f"{kind}-{name}-{utc_stamp(moment)}"
+
+
 def is_target_key(name: str) -> bool:
     """Return whether a folder name has the form of a target key."""
     return TARGET_KEY.fullmatch(name) is not None
@@ -143,6 +170,41 @@ def utc_stamp(moment: datetime) -> str:
 def set_aside_name(moment: datetime) -> str:
     """Return the dated name of a plan record that an explicit set aside moved away."""
     return f"plan.invalid-{utc_stamp(moment)}.json"
+
+
+def invalidated_name(moment: datetime, number: int) -> str:
+    """Return the dated name of a last-applied record that a restore invalidated; number 1 has no suffix."""
+    return f"applied.invalidated-{utc_stamp(moment)}{'' if number == 1 else f'-{number}'}.json"
+
+
+def corrupt_name(name: str, moment: datetime, number: int = 1) -> str:
+    """Return the dated evidence name of a damaged record or content file that a restore keeps (10.10).
+
+    `applied.json` becomes `applied.corrupt-<stamp>.json`, and a content file `<sha256>.corrupt-<stamp>`. No glob
+    of the record readers or of the content sweep matches it.
+    """
+    stem, dot, suffix = name.partition(".")
+    return f"{stem}.corrupt-{utc_stamp(moment)}{'' if number == 1 else f'-{number}'}{dot}{suffix}"
+
+
+def history_name(mission_key: str, moment: datetime) -> str:
+    """Return the dated history name of an association folder that adoption moved aside (10.2 D-2, RQ2).
+
+    The name is not a target key, so the path-change check, the shared check and the backup ignore it.
+    """
+    return f"{_key(mission_key)}{HISTORY_MARK}{utc_stamp(moment)}"
+
+
+def closed_name(invalidated: str) -> str:
+    """Return the dated history name of a closed invalidated record: the same stamp and number, closed."""
+    if not invalidated.startswith(INVALIDATED_PREFIX):
+        raise ValueError("only an invalidated last-applied record is closed")
+    return CLOSED_PREFIX + invalidated.removeprefix(INVALIDATED_PREFIX)
+
+
+def has_invalidated(folder: Path) -> bool:
+    """Return whether an association folder holds an invalidated last-applied record that no adoption closed."""
+    return folder.is_dir() and any(path.is_file() for path in folder.glob(INVALIDATED_GLOB))
 
 
 def interrupted_name(moment: datetime, number: int) -> str:

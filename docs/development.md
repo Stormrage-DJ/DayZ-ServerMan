@@ -474,11 +474,15 @@ add one `registerSection` call for its page module.
 Operator-facing text never shows an internal identifier, enum name, raw phase,
 or error code. Raw detail stays in **Logs → Manager diagnostics**.
 
-The frontend catalogue is frozen data in five modules:
+The frontend catalogue is frozen data in six modules:
 
 - `frontend/operation_labels.js`: operation names, phases, and result
   sentences;
 - `frontend/operation_messages.js`: error and conflict messages;
+- `frontend/operation_results.js`: the result of a finished operation and its
+  success sentences. Each document that loads `operation_messages.js` also
+  loads this module, because `ServerManOperationMessages.result` is declared
+  here; `tests/test_wording_catalogue_composition.py` checks it;
 - `frontend/operation_failures.js`: failed and cancelled operation results,
   guard codes, and lifecycle and restart failure sentences;
 - `frontend/diagnostic_labels.js`: state labels, path and process diagnostics,
@@ -489,7 +493,10 @@ The frontend catalogue is frozen data in five modules:
 The backend composes **Manager activity** with
 `application/activity_wording.py` and `application/log_activity.py`.
 `application/host_sentence_wording.py` holds the role labels, the identifier
-check, and the block reasons and their texts. Add every new operation kind,
+check, and the block reasons and their texts.
+`application/activity_result_wording.py` holds the neutral success sentences
+and the sentences of "apply mods and restart". `activity_wording.py`
+re-exports the names of both modules. Add every new operation kind,
 phase, error code, and block reason to both sides.
 `tests/test_operator_wording.py`, `tests/test_activity_wording.py`, and
 `tests/test_block_reason_wording.py` (block reasons) fail when an entry is

@@ -2,7 +2,8 @@
 
 The frontend catalogue holds the same texts for kinds, error codes, block reasons, and path roles.
 Tests keep the two catalogues equal. A raw kind, state, code, or role is a key here and is never printed.
-Path roles and block reasons live in `host_sentence_wording.py`; this module re-exports them.
+Path roles and block reasons live in `host_sentence_wording.py`, and the result texts of a finished
+operation live in `activity_result_wording.py` (8.14); this module re-exports both.
 """
 
 from __future__ import annotations
@@ -23,6 +24,10 @@ from .host_sentence_wording import (  # noqa: F401
     leaks_identifier,
     plain_sentence,
 )
+# The result texts of a finished operation live in their own module (8.14); re-exported for existing importers
+from .activity_result_wording import GUARD_CODES, NEUTRAL_SUCCESS, RESTART_APPLY_TEXTS, restart_apply_text  # noqa: F401
+# ADOPT-28 of the adoption review is also the REVISION_CONFLICT text of its lane kind (leaf 10.35)
+from ..domain.mission_map_adoption_texts import ADOPTION_COMMITTED_TEXT, ADOPTION_STALE_TEXT
 
 # Text for an internal fault and for every message that would show an identifier
 INTERNAL_TEXT = "Something went wrong inside DayZ-ServerMan. Details are in Logs, Manager diagnostics."
@@ -36,12 +41,20 @@ RECOVERY_TEXT = ("An earlier operation did not finish cleanly. Changes are block
 QUEUE_FULL_TEXT = "Too many operations are waiting. Wait for one to finish and try again."
 CLOSING_TEXT = "DayZ-ServerMan is closing and starts no new operation."
 BLOCKED_TEXT = "Changes are blocked until recovery is resolved."
+# A stale review or a late file change of both restore kinds; one text per kind, as for Apply (8.8)
+RESTORE_STALE_TEXT = ("The profile, the settings, the mission files or the map editor records changed after the "
+                      "preview. Nothing was restored. Preview the restore again and check it before you restore.")
+# A failure of both restore kinds after the commit point (Product Owner 2026-10-17 02:14:51, evidence 10.32)
+RESTORE_COMMITTED_TEXT = ("The restore reached its commit point, but a later step failed. The mission files can have "
+                          "changed. Preview the restore again to see what is left to restore.")
 
 # Per operation kind: name while active, success, failure, and cancellation sentence
 KIND_TEXTS: dict[str, tuple[str, str, str, str]] = {
     "APPLY_MISSION_MAP": ("Applying mission map", "Mission map applied.", "The mission map could not be applied.", "Mission map apply cancelled."),
     "RESTORE_MISSION_MAP_ORIGINAL": ("Restoring original mission map", "Original mission map restored.", "The original mission map could not be restored.", "Original mission map restore cancelled."),
     "RESTORE_MISSION_MAP_PREVIOUS": ("Restoring previous mission map", "Previous mission map restored.", "The previous mission map could not be restored.", "Previous mission map restore cancelled."),
+    # ADOPT-29 (Product Owner 2026-10-16 14:26:38, evidence 10.1)
+    "ADOPT_MISSION_MAP": ("Adopting mission map records", "Mission map records adopted.", "The mission map records could not be adopted.", "Mission map adoption cancelled."),
     "START_SERVER": ("Starting server", "Server started.", "The server could not be started.", "Server start cancelled."),
     "STOP_SERVER": ("Stopping server", "Server stopped.", "The server could not be stopped.", "Backup cancelled. The server stays stopped."),
     "RESTART_SERVER": ("Restarting server", "Server restarted.", "The server could not be restarted.", "Restart cancelled during the backup. The server stays stopped."),
@@ -67,29 +80,6 @@ KIND_TEXTS: dict[str, tuple[str, str, str, str]] = {
 }
 # Wording for a kind that this catalogue does not know yet
 KIND_FALLBACK = ("Working", "Operation finished.", "The operation did not finish.", "Operation cancelled.")
-# Kinds whose outcome depends on a result that the log record does not hold: a neutral end sentence
-NEUTRAL_SUCCESS = {
-    "UPDATE_WORKSHOP_ITEMS": "Mod update finished. The result is on the Mods page.",
-    "VERIFY_WORKSHOP_FILES": "Mod file verification finished. The result is on the Mods page.",
-    "APPLY_MODS_AND_RESTART": "Applying mods and restarting finished. The result is on the Mods page.",
-}
-# Sentences of "apply mods and restart" for a failed or cancelled end, chosen by the last working phase
-RESTART_APPLY_TEXTS: dict[str, str] = {
-    "cancelledRunning": "Cancelled. The server keeps running; nothing was applied.",
-    "cancelledStopped": "Cancelled. The server stays stopped; the mods were not applied.",
-    "preflight": "The reviewed plan is out of date, or the server state changed. The server keeps running; nothing was applied. Update again.",
-    "stop": "The server could not be stopped. Nothing was applied.",
-    "stopNotRunning": "The server was already stopped, so it was not restarted. Nothing was applied. To apply the mods and start the server, use Update & start.",
-    "backup": "Server stopped, but the backup failed. The mods were not applied and the server was not started again.",
-    "check": "Mods applied, but the server folder changed before the start. The server stays stopped.",
-    "apply": "Server stopped, but the mods could not be applied. The server folder is as it was. The server was not started again.",
-    "applyBlocked": "Server stopped, but the mods could not be applied.",
-    "applyRefused": "The server was stopped, but its state changed before the mods could be applied. Nothing was applied; the server folder is as it was.",
-    "startCheck": "Mods applied, but the server folder changed before the start. The server was not started.",
-    "start": "Mods applied, but the server start did not succeed or could not be confirmed. Check the server state on Overview.",
-}
-# Error codes of a write guard that refused the apply because the server was not stopped
-GUARD_CODES = frozenset(("CONTROL_CONFLICT", "EXTERNAL_PROCESS", "PROCESS_STATE_UNKNOWN"))
 
 # Text that replaces the host message, per error code
 ERROR_TEXTS: dict[str, str] = {
@@ -134,10 +124,19 @@ KIND_ERROR_TEXTS: dict[str, dict[str, str]] = {
     "AUTHENTICATE_STEAMCMD": {
         "UPDATE_RESULT_UNKNOWN": "SteamCMD did not close cleanly after the Steam sign-in, so the sign-in cannot be confirmed. Changes are blocked.",
     },
-    # A stale review or a late file change of the map editor Apply (Product Owner 2026-10-15 01:16:10, evidence 8.7)
+    # A stale review or a late file change of the map editor Apply (Product Owner 2026-10-15 01:16:10, evidence 8.7);
+    # a failure after the commit point (Product Owner 2026-10-16 17:17:52, evidence 10.5)
     "APPLY_MISSION_MAP": {
         "REVISION_CONFLICT": "The map plan, the profile, the settings or the mission files changed after the preview. Nothing was applied. Preview the changes again and check them before you apply.",
+        "PUBLICATION_FAILED": "Apply reached its commit point, but a later step failed. The mission files can have changed. Preview the changes again to see what is left to apply.",
     },
+    # A stale review or a late file change of a restore (Product Owner 2026-10-15 07:10:16, evidence 8.8);
+    # a failure after the commit point (Product Owner 2026-10-17 02:14:51, evidence 10.32)
+    "RESTORE_MISSION_MAP_ORIGINAL": {"REVISION_CONFLICT": RESTORE_STALE_TEXT, "PUBLICATION_FAILED": RESTORE_COMMITTED_TEXT},
+    "RESTORE_MISSION_MAP_PREVIOUS": {"REVISION_CONFLICT": RESTORE_STALE_TEXT, "PUBLICATION_FAILED": RESTORE_COMMITTED_TEXT},
+    # ADOPT-28, a stale adoption review (Product Owner 2026-10-16 14:26:38, evidence 10.1)
+    # A failure after the commit point (Product Owner 2026-10-17 11:41:56, evidence 10.35)
+    "ADOPT_MISSION_MAP": {"REVISION_CONFLICT": ADOPTION_STALE_TEXT, "PUBLICATION_FAILED": ADOPTION_COMMITTED_TEXT},
 }
 # Host sentences of one kind that are shown unchanged, by a fragment; never the general request text (8.7)
 KIND_SHOWN_TEXTS: dict[str, tuple[str, ...]] = {
@@ -154,6 +153,9 @@ SHOWN_HOST_TEXTS: tuple[str, ...] = (
     "mapgroupproto.xml differs from its stored original: ",
     # The 6.11 family gate of Apply and Restore original (8.7); never the general backup text of its code
     "Apply and Restore original are not available for this mission. ",
+    # The 8.13 stale zone review, before and under the guard. An ordinary mission has another message.
+    # Source: Product Owner 2026-10-15 06:27:10 and 14:59:22, evidence 8.13
+    "The profile, the settings, the mission files or the map editor records changed after the review of medical loot zones. ",
 )
 # Way out of a loot-zone refusal where mapgroupproto.xml and its stored original do not match (6.5, PO 15:19:49)
 ZONE_ORIGINAL_WAY_OUT = ("DayZ-ServerMan does not guess the original loot of these groups. If mapgroupproto.xml "
@@ -198,38 +200,6 @@ BLOCK_SENTENCE = re.compile(r"\s*Changes are blocked(?: until [^.]*)?\.")
 def without_block_sentence(text: str) -> str:
     """Return an error text without the sentences that state the block, for a result that states it itself."""
     return BLOCK_SENTENCE.sub("", text).strip()
-
-
-def restart_apply_text(
-    state: object, phase: object, code: object = None, message: object = None,
-) -> str | None:
-    """Return the sentence of a failed or cancelled "apply mods and restart", or None for the generic one.
-
-    `code` and `message` are the host error; a server state that the message names
-    tells a refused stop of a stopped server and a refused apply from a real failure.
-    """
-    name = phase if isinstance(phase, str) else ""
-    if state == "CANCELLED":
-        # Before the stop the server still runs; every later safe point leaves it stopped
-        return RESTART_APPLY_TEXTS["cancelledRunning" if name in ("", "preflight") else "cancelledStopped"]
-    if not name:
-        return None
-    states = _STATE_NAME.findall(str(message or ""))
-    named = states[-1] if states else None
-    if name == "STOP_SERVER":
-        # A stop that was refused because the server was already stopped did not fail to stop it
-        key = "stopNotRunning" if named == "STOPPED" else "stop"
-    elif name in ("preflight", "VERIFY_BEFORE_START", "START_SERVER"):
-        # A failure of the start handoff proves neither a changed folder nor a stopped server
-        key = {"preflight": "preflight", "VERIFY_BEFORE_START": "check", "START_SERVER": "start"}[name]
-    elif name.startswith("BACKUP_"):
-        key = "backup"
-    elif state == "RECOVERY_REQUIRED":
-        key = "applyBlocked"
-    else:
-        # A write guard that found the server no longer stopped applied nothing
-        key = "applyRefused" if named not in (None, "STOPPED") and code in GUARD_CODES else "apply"
-    return RESTART_APPLY_TEXTS[key]
 
 
 def conflict_text(message: object, reason: object = None, owner: object = None) -> str:

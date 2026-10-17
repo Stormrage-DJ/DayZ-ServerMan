@@ -17,6 +17,7 @@ NOUN_TEXTS: dict[str, str] = {
     "logs": "Show the latest log lines.",
     "settings": "Show and change the folders of DayZ-ServerMan.",
     "migrate": "Preview and import data from an older DayZ-ServerMan.",
+    "map": "Show and change the map plan of a mission, apply it, and restore the mission files.",
     "help": "Show the commands, or the help of one command.",
 }
 
@@ -66,6 +67,19 @@ COMMAND_TEXTS: dict[str, str] = {
     "settings set": "Change the folders of DayZ-ServerMan.",
     "migrate preview": "Show what an import from an older DayZ-ServerMan folder would bring.",
     "migrate apply": "Import data from an older DayZ-ServerMan folder, after a review.",
+    "map show": "Show the saved map plan of a profile and the state of its mission.",
+    "map inspect": "Show the loot tier and the building capacity at one point, or for one object.",
+    "map save": "Save a map plan from a file over the saved map plan.",
+    "map set-aside": "Keep an invalid saved map plan under a dated name and start a new, empty plan, after a review.",
+    "map preview": "Show what Apply would change in the mission files. Nothing is changed.",
+    "map apply": "Apply the saved map plan to the mission files, after a review.",
+    "map restore": "Restore the original mission files or the previous state, after a review.",
+    "map adopt": "Move or copy the map editor records of a mission that moved, was copied or was restored, after a "
+                 "review.",
+    "map recover": "Finish or undo an interrupted mission map change.",
+    "map export": "Write the saved map plan to a file.",
+    "map import": "Replace the saved map plan with a plan from a file, or merge the two, after a review.",
+    "map copy": "Replace the saved map plan with the plan of another profile, or merge the two, after a review.",
 }
 
 # One sentence per option, keyed by its destination; the common options come first
@@ -113,6 +127,19 @@ OPTION_TEXTS: dict[str, str] = {
     "root": "The folder of the older DayZ-ServerMan.",
     "item": "One item to import, by its ID; repeat it for several items.",
     "all_items": "Import every item that can be imported (the default when no item is named).",
+    "point": "A point as X,Z in native metres, for example 7500,7500. For a negative number, write --point=-5,3. Use it or --object.",
+    "object_id": "A plan object, by its ID as map show lists it. Use it or --point.",
+    "plan_file": "A UTF-8 JSON file that holds the map plan.",
+    "plan_revision": "Refuse when the saved map plan is not at this revision.",
+    "keep_change": "Keep the change in this mission file when you apply, by its path as the review prints it. Repeat it for more files.",
+    "replace_file": "Replace this mission file when you apply, by its path as the review prints it. Repeat it for more files.",
+    "exclude_encounter": "Leave this encounter out of the apply, by its ID as the review prints it. Repeat it for more encounters.",
+    "restore_mode": "What to restore: original or previous.",
+    "output_file": "The file to write.",
+    "overwrite_output": "Replace the file when it exists.",
+    "transfer_mode": "How the plan joins the saved plan: replace or merge.",
+    "source_profile": "The profile whose map plan is copied, by its ID or its name.",
+    "confirm_listed": "Confirm the objects and items that the review lists as not imported, and the placement review.",
 }
 
 # The lines of the general help, before and after the command list

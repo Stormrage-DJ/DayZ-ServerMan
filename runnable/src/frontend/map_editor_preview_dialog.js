@@ -1,4 +1,4 @@
-// The frame of the Apply and Restore preview dialog (8.10): sections, collapsed lists, focus, the choice gate and the
+// The frame of the Apply, Restore and Adopt preview dialog (8.10, 10.16): sections, collapsed lists, focus, the choice gate and the
 // stale state (UI-UX 2026-10-15 15:58:12, sections 3, 4 and 6). It submits nothing; it resolves a value or null.
 "use strict";
 
@@ -13,13 +13,16 @@ function mapPreviewDialogId(prefix) {
   return `${prefix}-${mapPreviewDialogState.ids}`;
 }
 
-// A section with its heading; an empty section is not drawn (null)
+// A section with its heading; an empty section is not drawn (null). The toggle of a list without a label or a
+// text before it is named by the heading (UI-UX 2026-10-15 17:59:02, change 5).
 function mapPreviewDialogSection(heading, nodes) {
   const parts = nodes.flat().filter(Boolean);
   if (!parts.length) return null;
   const id = mapPreviewDialogId("map-preview-heading"), dom = window.ServerManMapDom;
   const section = dom.element("section", "", {"aria-labelledby": id});
   section.append(dom.element("h3", heading, {id}), ...parts);
+  section.querySelectorAll(".link-button[aria-controls]:not([aria-labelledby])").forEach((toggle) =>
+    toggle.setAttribute("aria-labelledby", `${id} ${toggle.id}`));
   return section;
 }
 
@@ -29,17 +32,21 @@ function mapPreviewDialogNotice(text, kind = null) {
   return window.ServerManMapDom.element("p", text, {class: kind ? `notice notice-${kind}` : "notice"});
 }
 
-// A list with an optional label. Above 5 rows, or when collapsed is true, a toggle with the count opens it.
-function mapPreviewDialogList(label, rows, collapsed = false) {
+// A list with an optional label. Above 5 rows, or when collapsed is true, a toggle with the count opens it. The
+// toggle is named by the label, else by the element of namedBy (the text before the list), then by its count.
+function mapPreviewDialogList(label, rows, collapsed = false, namedBy = null) {
   const items = rows.filter((row) => row !== null && row !== undefined && row !== "");
   if (!items.length) return null;
   const dom = window.ServerManMapDom, box = dom.element("div", "", {class: "map-preview-list"});
   const list = dom.element("ul", "", {id: mapPreviewDialogId("map-preview-list")});
   list.append(...items.map((row) => row instanceof Node ? row : dom.element("li", String(row))));
-  if (label) box.append(dom.element("p", label));
+  const labelId = label ? mapPreviewDialogId("map-preview-label") : namedBy;
+  if (label) box.append(dom.element("p", label, {id: labelId}));
   if (collapsed || items.length > mapPreviewDialogOpenRows) {
-    const toggle = dom.element("button", window.ServerManMapPreviewWords.entries(items.length),
-      {type: "button", class: "link-button", "aria-expanded": "false", "aria-controls": list.id});
+    const toggleId = mapPreviewDialogId("map-preview-toggle");
+    const toggle = dom.element("button", window.ServerManMapPreviewWords.entries(items.length), {type: "button",
+      id: toggleId, class: "link-button", "aria-expanded": "false", "aria-controls": list.id,
+      ...(labelId ? {"aria-labelledby": `${labelId} ${toggleId}`} : {})});
     toggle.addEventListener("click", () => {
       list.hidden = !list.hidden;
       toggle.setAttribute("aria-expanded", String(!list.hidden));
@@ -57,8 +64,9 @@ function mapPreviewDialogStops(dialog) {
     .filter((element) => !element.disabled && !element.closest("[hidden]") && element.tabIndex >= 0);
 }
 
-// Open one preview. spec: {kind: "apply" | "restore", title, sections, refused, confirm (label), count (missing
-// choices), first (the first control without a choice), value (the resolved value), opener}.
+// Open one preview. spec: {kind: "apply" | "restore" | "adopt", title, sections, refused, confirm (label), count
+// (missing choices), first (the first control without a choice), value (the resolved value), opener}. A refused
+// answer can also have `second`: the label of a button before Close that resolves {adopt: true}.
 function mapPreviewDialogOpen(spec) {
   const dom = window.ServerManMapDom, words = window.ServerManMapPreviewWords;
   const opener = spec.opener ?? document.activeElement, headingId = mapPreviewDialogId("map-preview-title");
@@ -73,19 +81,23 @@ function mapPreviewDialogOpen(spec) {
     dom.element("p", "", {id: mapPreviewDialogId("map-preview-remaining")}) : null;
   const status = dom.element("p", "", {role: "status", class: "map-preview-status"});
   const actions = dom.element("div", "", {class: "action-row"});
-  footer.append(dom.element("p", words.stop[spec.kind]), ...(remaining ? [remaining] : []), status, actions);
+  // The stop sentence shows only when its text is not empty (adoption needs no stopped server, ADOPT-19)
+  footer.append(...(words.stop[spec.kind] ? [dom.element("p", words.stop[spec.kind])] : []),
+    ...(remaining ? [remaining] : []), status, actions);
   dialog.append(heading, body, footer);
   return new Promise((resolve) => {
     const active = {stale: null, marked: false};
     // Resolve once, remove the modal and return the focus to the opener, or to the map when the opener is gone
     const finish = (value) => {
       if (mapPreviewDialogState.active === active) mapPreviewDialogState.active = null;
+      document.removeEventListener("serverman:operation-change", gate);
       dialog.close(); dialog.remove();
       (opener?.isConnected ? opener : document.getElementById("map-viewport"))?.focus();
       resolve(value);
     };
     let confirm = null;
     if (spec.refused) {
+      if (spec.second) actions.append(mapPreviewDialogButton(spec.second, "button", () => finish({adopt: true})));
       actions.append(mapPreviewDialogButton(words.close, "button", () => finish(null)));
     } else {
       confirm = mapPreviewDialogButton(spec.confirm, "button button-primary", () => {
@@ -96,15 +108,22 @@ function mapPreviewDialogOpen(spec) {
       });
       if (remaining) confirm.setAttribute("aria-describedby", remaining.id);
       actions.append(mapPreviewDialogButton(words.cancel, "button", () => finish(null)), confirm);
+      // The busy lock of the lane also locks the confirm button, with the wait line above the buttons (8.18)
+      window.ServerManBusy?.mark(confirm, true);
     }
-    // The choice gate: the remaining line and aria-disabled, never disabled, so the keyboard reaches the reason
-    const gate = () => {
+    // The choice gate: the remaining line and aria-disabled, never disabled, so the keyboard reaches the reason.
+    // While the busy lock holds the button, the gate does not clear aria-disabled. The lock stops every click
+    // (UI-UX section 4; Architect 2026-10-16 16:50:12 in evidence 8.19).
+    function gate() {
       const count = spec.count();
       if (remaining) remaining.textContent = count ? words.remaining(count) : "";
-      if (confirm && count) confirm.setAttribute("aria-disabled", "true");
-      else confirm?.removeAttribute("aria-disabled");
-    };
+      if (!confirm) return;
+      if (count) confirm.setAttribute("aria-disabled", "true");
+      else if (!("busyLocked" in confirm.dataset)) confirm.removeAttribute("aria-disabled");
+    }
     body.addEventListener("change", gate);
+    // After the busy helper, which listens first: an end of the lock gives the choice gate back its state
+    document.addEventListener("serverman:operation-change", gate);
     // Stale: the choices lock, and Preview again takes the place of the confirm button (UI-UX section 6)
     active.stale = () => {
       if (active.marked) return;
@@ -116,10 +135,13 @@ function mapPreviewDialogOpen(spec) {
       body.querySelectorAll("fieldset, input").forEach((element) => { element.disabled = true; });
       // A choice that had the focus is now disabled; the focus stays in its place, on the scroll region
       if (locked) body.focus();
-      if (!confirm) return;
       const again = mapPreviewDialogButton(words.again, "button button-primary", () => finish({again: true}));
+      // A refused answer has no confirm button: Preview again follows Close, and the focus does not move (change 3)
+      if (!confirm) { actions.append(again); return; }
       const focused = document.activeElement === confirm;
       confirm.replaceWith(again);
+      window.ServerManBusy?.unmark(confirm);
+      footer.querySelector(".busy-wait-line")?.remove();
       confirm = null;
       if (focused) again.focus();
     };

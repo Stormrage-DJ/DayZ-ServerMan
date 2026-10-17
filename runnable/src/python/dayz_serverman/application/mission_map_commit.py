@@ -27,6 +27,9 @@ from .installation_guard import InstallationGuard
 from .lifecycle_ports import ServerFolderWriterPort
 from .mission_map_locks import AssociationLocks
 
+# Journal phases at or after the commit point (D4): only a roll-forward is allowed there
+COMMIT_POINT_PHASES = frozenset(("COMMITTING", "COMMITTED"))
+
 
 class MissionMapCommit:
     """The commit step called from exclusive operation-lane work; candidate generation stays with the caller."""
@@ -44,6 +47,24 @@ class MissionMapCommit:
         self.owned_digest, self.check_reserved = owned_digest, check_reserved
         self.fault = fault_hook or (lambda _phase, _index: None)
 
+    def commit_point(self, operation_id: str) -> str | None:
+        """Return where the journal of a failed Apply or restore stands (AR-4).
+
+        The value is "active" at or after COMMITTING, and "retired" when it was retired as committed. It is None
+        when no journal exists, or when the journal was rolled back before COMMITTING.
+        """
+        try:
+            retired = self.journals.retired_path_for(operation_id)
+            if retired.exists():
+                return "retired" if self.journals.load(retired).result == "COMMITTED" else None
+            active = self.journals.path_for(operation_id)
+            if active.exists() and self.journals.load(active).phase in COMMIT_POINT_PHASES:
+                return "active"
+        except (OSError, ValueError, RuntimeError):
+            # A journal that cannot be read is a case of the 8.5 recovery, so the lane needs recovery
+            return "active"
+        return None
+
     def commit(
         self, journal: MapJournal, updates: list[RecordUpdate], candidates: Mapping[tuple[str, str], bytes], *,
         revalidate: Callable[[], None], existing_profiles: set[str],
@@ -60,6 +81,27 @@ class MissionMapCommit:
                 self._preflight(journal, updates, candidates)
                 check_capture(self.paths, journal, updates, existing_profiles, self.owned_digest, self.check_reserved)
                 return self._commit_locked(journal, updates, candidates, writer)
+
+    def commit_records(
+        self, journal: MapJournal, updates: list[RecordUpdate], *, revalidate: Callable[[], None],
+        preflight: Callable[[MapJournal, list[RecordUpdate]], None],
+    ) -> dict[str, object]:
+        """Commit a journal of manager-root records only, as the adoption does (AR-3, leaf 10.35).
+
+        The installation mutex comes first, without a STOPPED proof, because no DayZ-side file changes. Then the
+        review again, the folder writer side, the association lock, the caller's preflight and the same D4 body.
+        """
+        with self.guard.mutex(Path(journal.dayz_root)):
+            revalidate()
+            self.fault("AFTER_REVALIDATE", -1)
+            writer = WriterScope(self.folder_writer)
+            with writer.held_for(), self.locks.hold(journal.profile_id, journal.mission_key):
+                # A plan save may finish while the writer side is taken; review again under the association lock
+                revalidate()
+                if journal.groups:
+                    raise MissionMapPublicationError("PATH_INVALID", "A records-only commit has no mission file.")
+                preflight(journal, updates)
+                return self._commit_locked(journal, updates, {}, writer)
 
     def _preflight(self, journal: MapJournal, updates: list[RecordUpdate], candidates: Mapping[tuple[str, str], bytes]) -> None:
         """Refuse unsafe paths, reused operations, retired associations and missing record candidates."""

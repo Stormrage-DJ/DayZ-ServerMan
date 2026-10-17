@@ -11,9 +11,11 @@ from .mission_map_objects import vertex_count
 from .mission_map_plan import (
     STORED_ONLY_FIELDS, PlanForm, bounds_of, new_identifier, parse_objects, parse_plan,
 )
+from .mission_map_preview_changes import encounter_unavailable_reason
+from .mission_map_terrain import TIER_OPERATION_PREFIX
 from .mission_map_values import MAX_OBJECTS, MAX_PLAN_VERTICES, PlanValidationError, document_error
 
-# Answers why an object is unavailable at the destination, or None; task 3 and task 7 supply the capability check
+# Answers why an object is unavailable at the destination, or None; `destination_availability` builds it
 Availability = Callable[[dict[str, Any]], "str | None"]
 
 
@@ -70,6 +72,31 @@ def read_candidate(raw: object, destination: dict[str, Any], *, keep_path: bool 
     return Candidate(objects, shell["terrain"], shell["global_abundance"], shell["background"], excluded, discarded)
 
 
+def destination_availability(unsupported: list[dict[str, Any]], providers: dict[str, Any]) -> Availability:
+    """Return the check that names why an object is unavailable at the destination (D7, Architect 03:38:11).
+
+    `unsupported` is the operation list of the capability read and `providers` the provider read of the
+    destination. An encounter first takes the provider rule of Apply; then a tier that the value layer cannot
+    hold gives `tier_not_holdable`. The 6.11 family gate is not a source.
+    """
+    holdless = {str(entry.get("operation"))[len(TIER_OPERATION_PREFIX):] for entry in unsupported
+                if str(entry.get("operation", "")).startswith(TIER_OPERATION_PREFIX)}
+
+    def check(item: dict[str, Any]) -> str | None:
+        """Return the reason of one object, or None when the destination can write it."""
+        if item["kind"] == "encounter":
+            reason = encounter_unavailable_reason(item, providers)
+            if reason is not None:
+                return reason
+            loot = item["linked_loot"]
+            tiers = [loot["tier"]] if loot["enabled"] else []
+        else:
+            tiers = [item["tier"]]
+        return "tier_not_holdable" if any(tier in holdless for tier in tiers if tier is not None) else None
+
+    return check
+
+
 def combine(destination: dict[str, Any], candidate: Candidate,
             mode: TransferMode) -> tuple[dict[str, Any], list[dict[str, str]]]:
     """Return the new draft and the remapped identifiers; association, plan ID, records and terrain stay."""
@@ -115,12 +142,18 @@ def compatibility(destination: dict[str, Any], candidate: Candidate, mode: Trans
         "mode": mode.value, "terrain_match": terrain_match, "bounds_equal": bounds_equal,
         "bounds_difference": {name: imported_bounds[name] - own_bounds[name] for name in own_bounds},
         "imported_terrain_id": candidate.terrain["terrain_id"], "object_count": len(candidate.objects),
+        # The CLI review names both terrains when they differ (leaf 10.33)
+        "destination_terrain_id": destination["terrain"]["terrain_id"],
         "insertion": "replace" if mode is TransferMode.REPLACE else "top", "remapped": remapped,
         "excluded": candidate.excluded, "excluded_count": len(candidate.excluded),
         "discarded": candidate.discarded, "unmapped": candidate.unmapped,
         "global_abundance": {"destination": destination["global_abundance"],
                              "imported": candidate.global_abundance, "result": result["global_abundance"]},
-        "unavailable": [{"id": item["id"], "name": item["name"], "reason": reason} for item in candidate.objects
+        # The kind, provider and event let the review word the reason as `map show` does
+        "unavailable": [{"id": item["id"], "name": item["name"], "reason": reason, "kind": item["kind"],
+                         "provider": item.get("provider"),
+                         "event_name": (item.get("properties") or {}).get("event_name")}
+                        for item in candidate.objects
                         if availability is not None and (reason := availability(item)) is not None],
         "result_object_count": len(result["objects"]),
         "result_vertex_count": sum(vertex_count(item) for item in result["objects"]),

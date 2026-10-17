@@ -11,13 +11,16 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from edit_cli_fixtures import PROFILE, PROFILE_ID, EditRoot  # noqa: E402
+from edit_cli_fixtures import PROFILE, PROFILE_ID, ChangingTerminal, EditRoot  # noqa: E402
 
+from dayz_serverman.application.activity_wording import ERROR_TEXTS  # noqa: E402
+from dayz_serverman.application.medical_features import MedicalFeatureService  # noqa: E402
 from dayz_serverman.application.mission_map_apply_records import realization  # noqa: E402
-from dayz_serverman.domain.medical_editor_texts import MEDICAL_KIND, MISMATCH_TEXT  # noqa: E402
+from dayz_serverman.domain.medical_editor_texts import FINGERPRINT_STALE_TEXT, MEDICAL_KIND, MISMATCH_TEXT  # noqa: E402
 from dayz_serverman.repositories.medical_zone_fragments import zones_enabled  # noqa: E402
 from dayz_serverman.repositories.mission_map_layout import MISSION_FILE_SET, TargetClass, target_key  # noqa: E402
 from dayz_serverman.repositories.mission_map_owned import WRITABLE_MISSION_FILES, owned_digest  # noqa: E402
@@ -26,6 +29,8 @@ from tests.mission_map_mapgroup_support import BASELINE, PROTOTYPE, build, conte
 
 ZONES = ["tweaks", "medical", "set", *PROFILE, "medical_loot_zones"]
 NOW = "2026-10-15T08:00:00Z"
+# The bytes that an outside edit adds to mapgroupproto.xml after the zone review (8.14)
+OUTSIDE = b"\n<!-- outside -->\n"
 
 
 def sha(data: bytes | None) -> str | None:
@@ -116,6 +121,45 @@ class EditorManagedMedicalSetTests(EditRoot):
         self.assertEqual(code, 2)
         self.assertIn(MISMATCH_TEXT, stderr)
         self.assertEqual((self.mission / "mapgroupproto.xml").read_bytes(), before)
+
+    def outside_edit(self) -> None:
+        """Edit mapgroupproto.xml from outside, after the zone review."""
+        (self.mission / "mapgroupproto.xml").write_bytes(self.applied + OUTSIDE)
+
+    def assert_stale(self, code: int, stderr: str, exit_code: int) -> None:
+        """The CLI prints the 8.13 stale-review text, never the general text, and no file changes (8.14).
+
+        The exit code follows the 6.4 rule, which 8.14 does not change: a refusal before the first phase
+        keeps exit 3, and a refusal after it (under the guard) is exit 1.
+        """
+        self.assertEqual(code, exit_code, stderr)
+        self.assertIn(FINGERPRINT_STALE_TEXT, stderr)
+        self.assertNotIn(ERROR_TEXTS["REVISION_CONFLICT"], stderr)
+        self.assertEqual((self.mission / "mapgroupproto.xml").read_bytes(), self.applied + OUTSIDE)
+
+    def test_stale_review_before_the_guard_prints_the_stale_text(self) -> None:
+        """The loot-zone file changes while the question waits: the Apply refuses before the guard."""
+        code, _stdout, stderr = self.cli(*ZONES, "on", stdin=ChangingTerminal(self.outside_edit))
+        self.assert_stale(code, stderr, 3)
+
+    def test_stale_review_under_the_guard_prints_the_stale_text(self) -> None:
+        """The loot-zone file changes when the guard validates again: text and JSON carry the stale text."""
+        original = MedicalFeatureService._reread
+
+        def changed(service: MedicalFeatureService, request: tuple[object, ...]) -> object:
+            """Edit the file from outside, then validate again under the guard."""
+            self.outside_edit()
+            return original(service, request)
+
+        with patch.object(MedicalFeatureService, "_reread", changed):
+            code, _stdout, stderr = self.cli(*ZONES, "on", "--yes")
+            self.assert_stale(code, stderr, 1)
+            (self.mission / "mapgroupproto.xml").write_bytes(self.applied)
+            code, stdout, _stderr = self.cli(*ZONES, "on", "--yes", "--json")
+        error = json.loads(stdout)["error"]
+        # The JSON message is the worded failure line: the failure sentence of the kind, then the stale text
+        self.assertEqual((code, error["code"], error["message"]),
+                         (1, "REVISION_CONFLICT", f"The medical loot setting could not be applied. {FINGERPRINT_STALE_TEXT}"))
 
 
 if __name__ == "__main__":

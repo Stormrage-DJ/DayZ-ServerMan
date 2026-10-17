@@ -17,6 +17,15 @@
         <div><dt>Mission</dt><dd id="map-mission">Loading</dd></div>
         <div><dt>Terrain</dt><dd id="map-terrain">Loading</dd></div>
       </dl>
+      <!-- Apply and Restore open the 8.10 preview; Restore opens its two modes (UI-UX 2026-10-15 15:58:12, section 1) -->
+      <div id="map-publication">
+        <button id="map-apply" type="button" class="button">Apply…</button>
+        <button id="map-restore" type="button" class="button" aria-expanded="false" aria-controls="map-restore-modes">Restore</button>
+        <div id="map-restore-modes" role="group" aria-labelledby="map-restore" hidden>
+          <button id="map-restore-previous" type="button" class="button">Restore previous state…</button>
+          <button id="map-restore-original" type="button" class="button">Restore original…</button>
+        </div>
+      </div>
       <!-- Shown only when the capability snapshot marks the terrain family unverified (6.11) -->
       <p id="map-family-reason" hidden></p>
     </header>
@@ -26,7 +35,8 @@
         <svg id="map-vector" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
         <span id="map-view-label">Plain terrain view</span>
         <p id="map-tool-notice"></p>
-        <p id="map-save-notice"></p>
+        <!-- One bottom-right column, so the operation notice and the save notice never overlap (8.18) -->
+        <div id="map-notices"><p id="map-operation-notice"></p><p id="map-save-notice"></p></div>
       </section>
       <details id="map-panel" open>
         <summary id="map-panel-toggle" aria-controls="map-panel-content" aria-expanded="true">Map controls</summary>
@@ -204,11 +214,17 @@
         <div><dt>Coordinates</dt><dd id="map-coordinates">Not available</dd></div>
         <div><dt>Current tool</dt><dd id="map-tool-status">No tool active</dd></div>
         <div id="map-plan-status"><dt>Plan state</dt><dd id="map-status">Loading map plan</dd>
-          <dd><button id="map-save-reload" type="button" class="link-button" aria-describedby="map-save-notice" hidden>Reload plan</button><button id="map-set-aside" type="button" class="link-button" aria-describedby="map-save-notice" hidden>Set aside invalid plan</button></dd></div>
+          <dd><button id="map-save-reload" type="button" class="link-button" aria-describedby="map-save-notice" hidden>Reload plan</button><button id="map-set-aside" type="button" class="link-button" aria-describedby="map-save-notice" hidden>Set aside invalid plan</button><button id="map-adopt" type="button" class="link-button" aria-describedby="map-save-notice" hidden>Adopt mission…</button></dd></div>
         <div><dt>Draft changes</dt><dd id="map-draft-changes">Not available</dd></div>
+        <div id="map-operation-item" hidden><dt id="map-operation-term">Map operation</dt><dd id="map-operation-status"></dd>
+          <dd><button id="map-check-again" type="button" class="link-button" aria-describedby="map-operation-notice" hidden>Check again</button></dd></div>
       </dl>
     </footer>
     <div id="map-announcement" role="status" aria-live="polite" aria-atomic="true"></div>
+    <!-- The reason text of the busy lock, as in the main window (busy_controls.js) -->
+    <span id="busy-reason" hidden></span>
+    <!-- The reason of the adoption action while its preview reads (ADOPT-2) -->
+    <span id="map-adopt-reason" hidden></span>
   </main>
   <!-- INLINE_SCRIPT -->
 </body>

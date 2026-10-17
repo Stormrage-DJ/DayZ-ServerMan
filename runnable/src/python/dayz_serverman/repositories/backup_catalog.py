@@ -19,7 +19,8 @@ def list_catalog(root: Path) -> dict[str, Any]:
                 raise ValueError("Unsafe archive.")
             manifest = read_archive_manifest(archive)
             verify_archive(archive, manifest)
-            complete = manifest.schema_version == 3
+            # Schema 4 has every schema 3 field, so its profile definition is complete (10.10, D18)
+            complete = manifest.schema_version in (3, 4)
             summary = _summary(manifest)
             summary.update(display_name=manifest.reconstruction["profile"]["display_name"] if complete else manifest.profile_id,
                            can_restore_profile=complete,

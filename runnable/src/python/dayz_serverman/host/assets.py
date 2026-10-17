@@ -51,13 +51,14 @@ def compose_shell_html(frontend_root: Path) -> str:
     operation_bar_styles = (root / "operation_bar.css").read_text(encoding="utf-8")
     # Read every script in the order the shell expects
     shell_ui_script = (root / "shell_ui.js").read_text(encoding="utf-8")
-    # Wording, announcements, the operation bar and the busy helper follow the shell helpers
+    # Wording, announcements, the operation bar and the busy helper follow the shell helpers; the operation
+    # results follow the messages, whose result lookup they declare (8.14)
     shell_ui_script += "".join(
         "\n" + (root / name).read_text(encoding="utf-8")
         for name in (
             "operation_labels.js", "diagnostic_labels.js", "host_sentences.js", "operation_messages.js",
-            "operation_failures.js", "operation_announcer.js", "operation_bar_view.js", "operation_bar.js",
-            "busy_controls.js",
+            "operation_results.js", "operation_failures.js", "operation_announcer.js", "operation_bar_view.js",
+            "operation_bar.js", "busy_controls.js",
         )
     )
     workspace_script = (root / "workspace_context.js").read_text(encoding="utf-8")

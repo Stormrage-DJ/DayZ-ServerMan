@@ -35,14 +35,15 @@ from ..domain.mission_map_families import family_gate
 from ..domain.mission_map_plan import canonical_json
 from ..domain.mission_map_restore_texts import (
     BACKUP_TEXT, DELETED_TEXT, INVALID_MODE, INVALID_MODE_TEXT, KEPT_CHANGES_TEXT, NO_ORIGINAL, NO_ORIGINAL_TEXT,
-    NO_PREVIOUS_STATE, NO_PREVIOUS_STATE_TEXT, ORIGINAL, RECORD_KINDS, RESTORE_STALE_TEXT, SHARED_ORIGINAL_TEXT,
-    TARGET_UNPROJECTABLE, TARGET_UNPROJECTABLE_TEXT,
+    NO_PREVIOUS_STATE, NO_PREVIOUS_STATE_TEXT, ORIGINAL, RECORD_KINDS, RESTORE_STALE_TEXT, RESTORED_COPY_TEXT,
+    SHARED_ORIGINAL_TEXT, TARGET_UNPROJECTABLE, TARGET_UNPROJECTABLE_TEXT,
 )
 from ..domain.mission_map_terrain import TerrainCapabilities
 from ..domain.profiles import ProfileRecord
 from ..repositories.json_store import StagingPolicy
 from ..repositories.mission_map_contents import ContentStore
 from ..repositories.mission_map_layout import MISSION_FILE_SET, TargetClass, association_folder
+from ..repositories.mission_map_records import kept_originals
 from ..repositories.mission_map_owned import OWNED_ERRORS, WRITABLE_MISSION_FILES, owned_digest
 from ..repositories.mission_map_preview_base import (
     BASE_BASELINE, Base, PreviewRecords, build_base, file_changes, read_records,
@@ -162,7 +163,7 @@ class RestoreReader:
             "mission": {"mission_name": mission.name, "mission_root": association["mission_root"], "mission_key": key},
             "family": None if gate is None else gate.to_dict(),
             "refused": bool(refusals), "refusals": refusals,
-            "original": _original_answer(records, others, base) if mode == ORIGINAL else None,
+            "original": _original_answer(records, others, base, _restored_copy(area, pid, key)) if mode == ORIGINAL else None,
             "replaces": None if applied is None else {name: applied[name] for name in (
                 "operation_id", "operation_kind", "applied_at")},
             "affected_files": [_affected(path, current[path], target[path]) for path in changed],
@@ -207,8 +208,17 @@ class RestoreReader:
                 if item["target_key"] == key and item["path"] in WRITABLE_MISSION_FILES}
 
 
-def _original_answer(records: PreviewRecords, others: list[dict[str, Any]], base: Base) -> dict[str, Any] | None:
+def _restored_copy(area: Path, profile_id: str, key: str) -> bool:
+    """Return whether the association folder keeps an inactive restored copy of the original of this folder."""
+    return any(item["target_key"] == key for item in kept_originals(association_folder(area, profile_id, key)))
+
+
+def _original_answer(records: PreviewRecords, others: list[dict[str, Any]], base: Base,
+                     restored_copy: bool = False) -> dict[str, Any] | None:
     """Return the active original that Restore original writes; on a shared target the preview says so (D5).
+
+    A restored copy of a different original adds its sentence once after the shared text; Restore original never
+    uses that copy.
 
     `kept_changes` is the Product Owner sentence when the working-baseline files differ from the writable
     files of the active original. Today only Keep the change makes them differ (ruling 1a).
@@ -224,7 +234,9 @@ def _original_answer(records: PreviewRecords, others: list[dict[str, Any]], base
     return {"target_key": original["target_key"], "manifest_sha256": original["manifest_sha256"],
             "captured_at": original["captured_at"], "profile_id": original["profile_id"],
             "operation_id": original["operation_id"], "active": True, "shared": shared,
-            "text": SHARED_ORIGINAL_TEXT if shared else None, "kept_changes": KEPT_CHANGES_TEXT if kept else None}
+            "text": (f"{SHARED_ORIGINAL_TEXT} {RESTORED_COPY_TEXT}" if restored_copy else SHARED_ORIGINAL_TEXT)
+                    if shared else None,
+            "kept_changes": KEPT_CHANGES_TEXT if kept else None}
 
 
 def _backup_text(change: dict[str, Any]) -> str:

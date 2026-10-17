@@ -13,7 +13,7 @@ from ..domain.profiles import ProfileValidationError
 from ..repositories.mission_map_plans import PlanNotInvalid, PlanRecordInvalid
 from ..repositories.profiles import ProfileNotFound, ProfileStorageError
 from .mission_configuration import MissionPathError
-from .mission_map_plans import AssociationMismatch, MissionPathChanged, ObserverWriteRefused
+from .mission_map_plans import AdoptionRequired, AssociationMismatch, MissionPathChanged, ObserverWriteRefused
 from .settings import SettingsValidationError
 
 
@@ -56,6 +56,9 @@ def translate(error: Exception) -> ApplicationCallError:
                        folders=error.folders)
     if isinstance(error, AssociationMismatch):
         return refusal(ErrorCode.PROFILE_CONTEXT_MISMATCH, "association_mismatch", str(error))
+    # An invalidated last-applied record (AR-6): the ADOPT-6 Apply refusal, a state refusal that exits 3 (D13)
+    if isinstance(error, AdoptionRequired):
+        return refusal(ErrorCode.PROFILE_CONTEXT_MISMATCH, "adoption_required", str(error))
     if isinstance(error, ProfileNotFound):
         return refusal(ErrorCode.NOT_FOUND, "profile_not_found", "The selected profile no longer exists.")
     if isinstance(error, (MissionPathError, SettingsValidationError, RecordUnavailable, FileNotFoundError)):

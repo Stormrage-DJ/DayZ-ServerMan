@@ -210,7 +210,8 @@ class JournalShapeTests(JournalFixture):
 
     def test_record_shape(self) -> None:
         """Record entries have a known kind, a manager-relative path and the staging name with the operation ID."""
-        self.refused(lambda raw: raw["records"][0].update(kind="plan"))
+        # The plan is a record kind since 10.34; a kind that no writer stages stays refused
+        self.refused(lambda raw: raw["records"][0].update(kind="invalidated"))
         self.refused(lambda raw: raw["records"][0].update(staging_path=raw["records"][0]["target_path"] + ".tmp"))
         self.refused(lambda raw: raw["records"][0].update(target_path="../outside.json"))
         self.refused(lambda raw: raw["records"][0].update(old_existed=True))

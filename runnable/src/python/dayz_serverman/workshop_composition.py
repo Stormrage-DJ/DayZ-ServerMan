@@ -23,6 +23,7 @@ from .application.operations.manager import OperationManager
 from .application.preferences import PreferenceCoordinator
 from .application.profile_coordinator import ProfileCoordinator
 from .application.profile_deletion import ProfileDeletionService
+from .application.profile_deletion_editor import ProfileDeletionEditor
 from .application.profiles import ProfileService
 from .application.schedules import ScheduleCoordinator
 from .application.server_readiness import ReadinessLifecycleService
@@ -88,11 +89,11 @@ def build_workshop(
     # The legacy applied-state file is only read; the proof store replaces its writes
     applied_mod_state = AppliedModStateRepository(paths.applied_mod_state)
     content_proofs = ContentProofStore(paths.content_proofs, logger)
-    # Profile deletion also cleans the evidence that belongs to the profile
+    # Profile deletion also cleans the evidence and the map editor records that belong to the profile
     editor_guard = DelegatingEditorGuard()
     profile_deletion = ProfileDeletionService(
         profiles, settings, lifecycle, preferences, schedules, applied_mod_state, folder_writer,
-        editor_guard=editor_guard,
+        editor_guard=editor_guard, editor=ProfileDeletionEditor(paths.mission_map),
     )
     profile_coordinator = ProfileCoordinator(profiles, operations, profile_deletion)
     workshop_updates = WorkshopUpdateService(

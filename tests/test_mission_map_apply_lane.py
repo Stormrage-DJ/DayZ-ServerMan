@@ -64,6 +64,10 @@ class Service:
             raise self.failure
         return {"operation_id": operation_id, "result": "COMMITTED"}
 
+    def commit_point(self, _operation_id: str) -> None:
+        """No journal of this fake reached the commit point (AR-4, leaf 10.5)."""
+        return None
+
 
 class LaneTests(unittest.TestCase):
     """Submission under the editor kind, the request shape and the failures of the work."""
@@ -98,7 +102,7 @@ class LaneTests(unittest.TestCase):
 
     def test_family_refusal_keeps_the_6_11_text_in_the_activity_view(self) -> None:
         """UNSUPPORTED_SNAPSHOT_CONTENT with the gate text; the activity view shows it, never the backup text."""
-        for terrain, text in (("enoch", NOT_VERIFIED_TEXT.format(family="enoch")), (None, FAMILY_UNKNOWN_TEXT)):
+        for terrain, text in (("deerisle", NOT_VERIFIED_TEXT.format(family="deerisle")), (None, FAMILY_UNKNOWN_TEXT)):
             with self.subTest(terrain=terrain):
                 failure, lane = self.failure(FamilyNotVerified(family_gate(terrain), "apply"))
                 self.assertEqual((failure.code, failure.safe_message, failure.retryable, lane.blocks),
@@ -106,9 +110,9 @@ class LaneTests(unittest.TestCase):
                 self.assertTrue(text.startswith(SHOWN_HOST_TEXTS))
                 self.assertEqual(error_text(failure.code, failure.safe_message, kind=EDITOR_KIND), text)
                 self.assertNotEqual(error_text(failure.code, failure.safe_message), ERROR_TEXTS[failure.code])
-        envelope = apply_error(FamilyNotVerified(family_gate("enoch"), "apply"))
+        envelope = apply_error(FamilyNotVerified(family_gate("deerisle"), "apply"))
         self.assertEqual(envelope.details, {"reason": "family_not_verified", "operation": "apply",
-                                            "terrain_id": "enoch"})
+                                            "terrain_id": "deerisle"})
 
     def test_failures_map_to_existing_codes_and_recovery_blocks_the_lane(self) -> None:
         """Running server, stale preview, refused choices, a late edit and recovery each keep their meaning."""

@@ -1,5 +1,6 @@
 // Operator wording for a finished operation that failed or was cancelled. The phase that worked last
-// chooses the sentence. The sentence tables and the error texts stay in operation_messages.js.
+// chooses the sentence. The sentence tables and the error texts stay in operation_messages.js; the entry
+// point that calls these functions is operationResult in operation_results.js.
 "use strict";
 
 // Error codes of a write guard that refused the apply because the server was not stopped.

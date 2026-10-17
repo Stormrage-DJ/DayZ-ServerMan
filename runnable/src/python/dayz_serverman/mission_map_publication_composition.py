@@ -24,10 +24,19 @@ from .repositories.mission_map_owned import check_reserved
 from .repositories.paths import PortablePaths
 
 
+def build_mission_map_commit(paths: PortablePaths, parts: MissionMapParts, guard: InstallationGuard,
+                             folder_writer: ServerFolderWriterPort | None, *, create_root: bool) -> MissionMapCommit:
+    """Return the one commit step of the editor; Apply, the restores and adoption share it and its locks."""
+    journals = MissionMapJournalRepository(journal_folder(paths), create_root=create_root)
+    # Plan saves and Apply, restore or adoption commits of one association meet on the one lock set (T2.3-F9)
+    return MissionMapCommit(paths, journals, guard, folder_writer, parts.locks, owned_digest=owned_or_none,
+                            check_reserved=check_reserved)
+
+
 def build_mission_map_publication(
     paths: PortablePaths, profiles: ProfileService, parts: MissionMapParts, guard: InstallationGuard,
     folder_writer: ServerFolderWriterPort | None, operations: OperationManager, *,
-    medical_baseline: Callable[[str, Path], Path | None], create_root: bool,
+    medical_baseline: Callable[[str, Path], Path | None], create_root: bool, commit: MissionMapCommit | None = None,
 ) -> MissionMapPublicationCoordinator:
     """Return the owner methods over one commit step that takes the plan service's association locks.
 
@@ -38,10 +47,7 @@ def build_mission_map_publication(
     """
     if parts.recovery_coordinator is None:
         raise ValueError("the map editor publication needs the editor recovery coordinator")
-    journals = MissionMapJournalRepository(journal_folder(paths), create_root=create_root)
-    # Plan saves and Apply or restore commits of one association meet on the one lock set (T2.3-F9)
-    commit = MissionMapCommit(paths, journals, guard, folder_writer, parts.locks, owned_digest=owned_or_none,
-                              check_reserved=check_reserved)
+    commit = commit or build_mission_map_commit(paths, parts, guard, folder_writer, create_root=create_root)
     preview = MissionMapPreview(parts.plans, profiles, medical_baseline=medical_baseline)
     reader = RestoreReader(parts.plans, profiles, medical_baseline=medical_baseline)
     restore = MissionMapRestore(reader, commit, paths, profiles)

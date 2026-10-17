@@ -41,7 +41,9 @@ OWNER_METHODS_BEFORE_SPLIT = (
 MISSION_MAP_METHODS = ("load_mission_map", "save_mission_map_plan", "inspect_mission_map", "continue_mission_map_inspection", "cancel_mission_map_inspection",
                        "set_aside_mission_map_plan", "read_mission_map_tier_layer", "read_mission_map_background",
                        "preview_mission_map", "apply_mission_map", "preview_mission_map_restore", "restore_mission_map",
-                       "inspect_mission_map_recovery")
+                       "inspect_mission_map_recovery", "export_mission_map_plan",
+                       "preview_mission_map_import", "import_mission_map_plan", "preview_mission_map_copy",
+                       "copy_mission_map_plan", "preview_mission_map_adoption", "adopt_mission_map")
 OWNER_METHODS_WITH_MISSION_MAP = (
     OWNER_METHODS_BEFORE_SPLIT[:37] + MISSION_MAP_METHODS + OWNER_METHODS_BEFORE_SPLIT[37:]
 )

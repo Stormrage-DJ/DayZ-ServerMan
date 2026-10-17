@@ -35,6 +35,10 @@ TARGET_CHANGED_TEXT = ("Restore stopped because {path} changed after the preview
 SHARED_ORIGINAL_TEXT = ("Other profiles use this mission folder or have map editor records for it. The folder has one "
                         "original for all profiles, and Restore original writes that original. The restore also "
                         "changes the mission files for every profile that uses this folder.")
+# Restore original preview sentence, once after SHARED_ORIGINAL_TEXT. It shows when the profile keeps an inactive
+# restored copy of the original of this folder (Product Owner 2026-10-17 07:28:16 in evidence 10.37).
+RESTORED_COPY_TEXT = ("This profile also has a different original from a restored backup. Restore original does not "
+                      "use that original.")
 # Preview lines of a file that changed outside the map editor and that the restore overwrites (R17)
 BACKUP_TEXT = ("{path} changed outside the map editor. DayZ-ServerMan saves a copy of the current file before the "
                "restore changes it.")

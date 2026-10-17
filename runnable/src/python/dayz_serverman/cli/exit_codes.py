@@ -45,6 +45,14 @@ CONFLICT_REASONS: dict[str | None, int] = {
 }
 # Answer of a cancellation request that changes no exit: the waiter keeps waiting
 NO_EXIT_CODES = frozenset(("OPERATION_NOT_CANCELLABLE",))
+# INVALID_REQUEST at dispatch, by `details.reason` (D13). A reason that describes the current state exits 3, and
+# a missing confirmation of import or copy exits 4. Any other reason keeps exit 2 (PO-9). Only map methods give them
+INVALID_REQUEST_REASONS: dict[str, int] = {
+    **dict.fromkeys(("no_saved_plan", "preview_refused", "candidate_refused", "incorporation_refused", "no_original",
+                     "no_previous_state", "target_unprojectable", "no_valid_plan", "plan_limit", "nothing_to_adopt",
+                     "adoption_refused"), REFUSED),
+    "confirmation_required": NOT_CONFIRMED,
+}
 
 # Pre-change evidence (6.5): kinds judged by the percent below a first-change marker
 MARKER_PERCENT: dict[str, int] = {
@@ -62,10 +70,24 @@ PRE_CHANGE_PHASES: dict[str, frozenset[str | None]] = {
     "APPLY_MISSION_CONFIGURATION": frozenset((None, "loaded")),
     "CONVERT_STARTER_LOADOUT": frozenset((None, "loaded")),
     "APPLY_MEDICAL_FEATURE": frozenset((None,)),
+    # The map lane kinds report no checkpoint (AR-4); each CLI leaf adds its own kinds
+    "APPLY_MISSION_MAP": frozenset((None,)),
+    "RESTORE_MISSION_MAP_ORIGINAL": frozenset((None,)),
+    "RESTORE_MISSION_MAP_PREVIOUS": frozenset((None,)),
+    "ADOPT_MISSION_MAP": frozenset((None,)),
     "CREATE_BACKUP": frozenset((None,)),
     "VERIFY_WORKSHOP_FILES": frozenset((None,)),
     "AUTHENTICATE_STEAMCMD": frozenset((None, "preflight", "wait_steamcmd")),
     "UPDATE_WORKSHOP_ITEMS": frozenset((None, "preflight", "wait_steamcmd", "resolve_items")),
+}
+# The class of a refusal code under one kind, where it differs from REFUSAL_CODES (AR-4, D13). The CLI checks
+# the command line and the choices against the review before the submit. So a lane INVALID_REQUEST of a map
+# kind is a refusal of the current state
+KIND_REFUSAL_CLASSES: dict[str, dict[str, int]] = {
+    "APPLY_MISSION_MAP": {"INVALID_REQUEST": REFUSED},
+    "RESTORE_MISSION_MAP_ORIGINAL": {"INVALID_REQUEST": REFUSED},
+    "RESTORE_MISSION_MAP_PREVIOUS": {"INVALID_REQUEST": REFUSED},
+    "ADOPT_MISSION_MAP": {"INVALID_REQUEST": REFUSED},
 }
 # Kinds whose records never show the side of the first change: every refusal there exits 1
 NEVER_PRE_CHANGE = frozenset(("PROVISION_PROFILE", "SAVE_PROFILE", "SAVE_SETTINGS", "SAVE_STEAM_SETTINGS",
@@ -90,6 +112,11 @@ def dispatch_exit(error: Mapping[str, Any], *, names_confirmed: bool = False) ->
     if code == "MUTATION_CONFLICT":
         details = error.get("details") if isinstance(error.get("details"), Mapping) else {}
         return CONFLICT_REASONS.get(details.get("reason"), REFUSED)
+    if code == "INVALID_REQUEST":
+        details = error.get("details") if isinstance(error.get("details"), Mapping) else {}
+        reason = details.get("reason")
+        if isinstance(reason, str) and reason in INVALID_REQUEST_REASONS:
+            return INVALID_REQUEST_REASONS[reason]
     if code in CLI_CODES:
         return CLI_CODES[code]
     if code in REFUSAL_CODES:
@@ -127,6 +154,8 @@ def record_exit(record: Mapping[str, Any], *, backup_after_stop: bool = False) -
     if code in FIXED_CODES:
         return FIXED_CODES[code]
     if code in REFUSAL_CODES:
-        # A refusal keeps its class only with evidence that nothing was changed yet
-        return REFUSAL_CODES[code] if pre_change(record, backup_after_stop=backup_after_stop) else FAILED
+        # A refusal keeps its class only with evidence that nothing was changed yet; a kind can give it its own class
+        if not pre_change(record, backup_after_stop=backup_after_stop):
+            return FAILED
+        return KIND_REFUSAL_CLASSES.get(str(record.get("kind")), {}).get(code, REFUSAL_CODES[code])
     return FAILED

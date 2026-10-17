@@ -136,9 +136,14 @@ class OperationBarStaticTests(unittest.TestCase):
         self.assertEqual(others, [])
 
     def test_bar_publishes_one_busy_event_and_pages_only_mark(self) -> None:
-        """The shell dispatches the operation-change event; pages use the busy helper, not the event."""
-        self.assertEqual(self.scripts["operation_bar.js"].count(
-            'new CustomEvent("serverman:operation-change"'), 1)
+        """The busy helper dispatches the one operation-change event; the bar and the editor follower publish
+        through it (8.18), and pages use the helper, not the event."""
+        dispatching = sorted(name for name, source in self.scripts.items()
+                             if 'new CustomEvent("serverman:operation-change"' in source)
+        self.assertEqual(dispatching, ["busy_controls.js"])
+        self.assertEqual(self.scripts["busy_controls.js"].count('new CustomEvent("serverman:operation-change"'), 1)
+        self.assertIn("window.ServerManBusy.publish(busy, name);", self.scripts["operation_bar.js"])
+        self.assertIn("window.ServerManBusy.publish(Boolean(lead), name);", self.scripts["map_editor_follow.js"])
         self.assertIn('document.addEventListener("serverman:operation-change"', self.scripts["busy_controls.js"])
         self.assertIn('document.addEventListener("click", guardLockedActivation, true)',
                       self.scripts["busy_controls.js"])
@@ -152,6 +157,10 @@ class OperationBarStaticTests(unittest.TestCase):
             "mods_signin.js", "mods_verify.js", "mods_update_actions.js", "mod-publication.js", "backups.js",
             "restore.js",
             "profile_restore.js", "settings.js", "migration.js",
+            # The bar and the editor follower publish; the editor marks Apply, Restore and the preview confirm (8.18)
+            "operation_bar.js", "map_editor_follow.js", "map_editor_publish.js", "map_editor_preview_dialog.js",
+            # The adoption action is marked as the mutating openers are (10.16)
+            "map_editor_adopt.js",
         )))
 
     def test_global_names_are_unique_across_the_composed_script(self) -> None:

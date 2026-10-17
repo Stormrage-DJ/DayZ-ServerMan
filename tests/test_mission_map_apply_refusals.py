@@ -49,16 +49,16 @@ class GuardRefusalTests(ApplyFixture):
                 self.assertEqual(self.events, ["mutex", "stopped", "release mutex"])
 
     def test_unverified_family_refuses_with_the_gate_text(self) -> None:
-        """An Apply on enoch raises the 6.11 refusal of operation apply; no guard is taken, nothing is written."""
+        """An Apply on deerisle raises the 6.11 refusal of operation apply; no guard is taken, nothing is written."""
         self.save([INFECTED], identifier="other")
         before = self.snapshot()
         self.events.clear()
         with self.assertRaises(FamilyNotVerified) as refused:
             self.run_apply(identifier="other")
         self.assertEqual((refused.exception.operation, str(refused.exception)),
-                         ("apply", NOT_VERIFIED_TEXT.format(family="enoch")))
+                         ("apply", NOT_VERIFIED_TEXT.format(family="deerisle")))
         self.assertEqual((self.snapshot(), self.events), (before, []))
-        self.assertTrue(UNVERIFIED.endswith(".enoch"))
+        self.assertTrue(UNVERIFIED.endswith(".deerisle"))
 
     def test_family_gate_runs_inside_the_guard_on_its_own_read(self) -> None:
         """The lane's own capability read under the guard decides; a family that changes refuses there."""
@@ -67,7 +67,7 @@ class GuardRefusalTests(ApplyFixture):
         def capabilities(mission):
             """Read the real mission and report another family, as a changed folder would."""
             reads.append(mission.name)
-            return dataclasses.replace(read_capabilities(mission), terrain_id="enoch")
+            return dataclasses.replace(read_capabilities(mission), terrain_id="deerisle")
         self.service = MissionMapApply(self.preview, self.commit, self.paths, self.profiles, clock=lambda: NOW,
                                        capabilities=capabilities)
         before = self.snapshot()
@@ -113,7 +113,7 @@ class GuardRefusalTests(ApplyFixture):
         verified = self.service
         self.service = MissionMapApply(self.preview, self.commit, self.paths, self.profiles, clock=lambda: NOW,
                                        capabilities=lambda mission: dataclasses.replace(read_capabilities(mission),
-                                                                                        terrain_id="enoch"))
+                                                                                        terrain_id="deerisle"))
         with self.assertRaises(FamilyNotVerified):
             self.run_apply()
         self.service = verified

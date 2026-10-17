@@ -14,7 +14,7 @@ from typing import Any
 from ..adapters.windows.shared_files import replace_file
 from ..domain.backups import (
     BACKUP_ID, BACKUP_SCHEMA_VERSION, BackupManifest, BackupManifestError,
-    ManifestEntry, RESTORE_COMPATIBLE, restore_compatibility,
+    ManifestEntry, RESTORE_COMPATIBLE, entry_path_key, restore_compatibility,
 )
 from .backup_archives import (
     BackupArchiveError, FutureBackupArchive, materialize_archive, read_archive_manifest,
@@ -31,6 +31,7 @@ from .backup_verification import (
 
 
 from .backup_errors import BackupStorageError
+from .backup_editor_records import EditorArchive, stage_editor_files
 from .backup_publication import _available_id, _verify_staging, _verify_zip, _write_manifest, _summary, _diagnostic
 
 class BackupStorage:
@@ -74,14 +75,14 @@ class BackupStorage:
         runtime_profile: str, sources: Sequence[BackupSource],
         checkpoint: Callable[[str, int], None],
         *, reconstruction: dict | None = None, directories: tuple[str, ...] = (),
-        validate_context: Callable[[], None] | None = None,
+        validate_context: Callable[[], None] | None = None, editor: EditorArchive | None = None,
     ) -> BackupManifest:
-        """Create, verify, and publish one backup archive."""
+        """Create, verify, and publish one backup archive; editor records make it schema 4 (D18)."""
         destination = self._root(root)
         checkpoint("DISCOVER", 10)
         self._phase_hook("DISCOVER")
         # Require twice the payload size plus one MiB of headroom for staging
-        required = (sum(item.size for item in sources) * 2) + 1_048_576
+        required = ((sum(item.size for item in sources) + (editor.size if editor else 0)) * 2) + 1_048_576
         if self._disk_usage(destination).free < required:
             raise BackupStorageError("INSUFFICIENT_SPACE", "The backup root does not have enough free space.")
         # Reserve a free identifier and private staging names
@@ -107,14 +108,19 @@ class BackupStorage:
                 ManifestEntry(item.entry_path, item.size, sha256_file(staging / item.entry_path))
                 for item in sources
             )
+            # Editor entries take their digests from the staged bytes, in the one manifest order
+            if editor is not None:
+                entries = tuple(sorted((*entries, *stage_editor_files(editor, staging)),
+                                       key=lambda entry: entry_path_key(entry.path)))
             checkpoint("HASH", 55)
             self._phase_hook("HASH")
             # Sign the staging manifest and verify the staged tree
             manifest = BackupManifest(
                 selected_id, profile_id, profile_revision, settings_revision, created_at, entries,
                 semantic_profile_digest=semantic_profile_digest, runtime_profile=runtime_profile,
-                schema_version=3 if reconstruction is not None else 2,
+                schema_version=4 if editor is not None else 3 if reconstruction is not None else 2,
                 reconstruction=reconstruction, directories=directories,
+                editor=editor.field if editor is not None else None,
             ).signed()
             _write_manifest(staging / "manifest.json", manifest)
             checkpoint("WRITE_MANIFEST", 70)

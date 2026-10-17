@@ -1,4 +1,8 @@
-"""Expose only implemented, profile-bound calls to one mission-map editor."""
+"""Expose only implemented, profile-bound calls to one mission-map editor.
+
+Three lane reads name no profile and no path (8.18; Architect 2026-10-15 15:46:42, ruling 4). They read the
+operation events, one operation record and the mission map recovery state of the installation.
+"""
 
 from __future__ import annotations
 
@@ -15,6 +19,15 @@ _REGISTER_CODES = {"over_budget": ErrorCode.UNSUPPORTED_SNAPSHOT_CONTENT,
                    "unsupported_image_type": ErrorCode.UNSUPPORTED_SNAPSHOT_CONTENT}
 # File types of the native image dialog
 IMAGE_FILE_TYPES = ("Map images (*.png;*.jpg;*.jpeg)",)
+# The only methods that the editor calls without the bound profile; one dispatch path checks this allowlist
+UNBOUND_METHODS = frozenset(("get_operation", "read_operation_events", "inspect_mission_map_recovery"))
+# Kinds whose full record reaches the editor. A record of another kind keeps only REDUCED_FIELDS. So no result
+# of another operation, for example a backup path, reaches the editor document
+MAP_OPERATION_KINDS = frozenset(("APPLY_MISSION_MAP", "RESTORE_MISSION_MAP_ORIGINAL", "RESTORE_MISSION_MAP_PREVIOUS",
+                                 "APPLY_MEDICAL_FEATURE", "ADOPT_MISSION_MAP"))
+REDUCED_FIELDS = ("operation_id", "kind", "state", "revision", "progress_phase")
+# Page size of the editor follower (ruling 4)
+EVENT_PAGE = 100
 
 
 class MissionMapEditorApi:
@@ -64,6 +77,30 @@ class MissionMapEditorApi:
     def restore_mission(self, mode: object, preview_fingerprint: object) -> dict[str, Any]:
         """Queue the reviewed restore of the mission files; the answer is an operation handle."""
         return self._invoke("restore_mission_map", {"mode": mode, "preview_fingerprint": preview_fingerprint})
+
+    def preview_adoption(self) -> dict[str, Any]:
+        """Review the adoption of the bound profile's mission (10.13); nothing is written."""
+        return self._invoke("preview_mission_map_adoption", {})
+
+    def adopt_mission(self, preview_fingerprint: object) -> dict[str, Any]:
+        """Queue the reviewed adoption (10.35); the answer is an operation handle."""
+        return self._invoke("adopt_mission_map", {"preview_fingerprint": preview_fingerprint})
+
+    def operation_events(self, after_sequence: object) -> dict[str, Any]:
+        """Read the lane events after a cursor; the answer is the read_operation_events answer unchanged."""
+        return self._invoke_unbound("read_operation_events", {"after_sequence": after_sequence, "maximum": EVENT_PAGE})
+
+    def operation(self, operation_id: object) -> dict[str, Any]:
+        """Read one operation record: in full for a map-affecting kind, else only the reduced fields."""
+        answer = self._invoke_unbound("get_operation", {"operation_id": operation_id})
+        value = answer.get("value")
+        if answer.get("success") is True and isinstance(value, dict) and value.get("kind") not in MAP_OPERATION_KINDS:
+            answer = {**answer, "value": {name: value.get(name) for name in REDUCED_FIELDS}}
+        return answer
+
+    def check_recovery(self) -> dict[str, Any]:
+        """Check the installation-wide mission map recovery (8.5); the answer is unchanged."""
+        return self._invoke_unbound("inspect_mission_map_recovery", {})
 
     def inspect(self, plan: object, target: object) -> dict[str, Any]:
         """Start an Inspect read of a point or an object; plan is the draft, or None for the saved plan (4.6)."""
@@ -135,6 +172,14 @@ class MissionMapEditorApi:
         with self._lock:
             self._counter += 1
             return f"editor-{self._counter}"
+
+    def _invoke_unbound(self, method: str, parameters: dict[str, object]) -> dict[str, Any]:
+        """Send one request without a profile, only for a method of the fixed allowlist."""
+        if method not in UNBOUND_METHODS:
+            raise ValueError(f"{method} is not an unbound editor method")
+        return self._bridge.dispatch({
+            "contract_version": 1, "request_id": self._next_request_id(), "method": method, "parameters": parameters,
+        })
 
     def _invoke(self, method: str, parameters: dict[str, object]) -> dict[str, Any]:
         """Send one named, versioned request with the host-owned profile binding."""

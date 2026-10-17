@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .map_command_table import MAP_COMMANDS
 from .registry import CommandSpec, Confirm, Form, Kind, OptionSpec, ProfileRule
 
 # Options that several commands share
@@ -184,4 +185,5 @@ COMMANDS: tuple[CommandSpec, ...] = (
           OptionSpec("item", Form.APPEND, "--item", group="items", metavar="ID"),
           OptionSpec("all_items", Form.FLAG, "--all-items", group="items"),
           confirm=Confirm.REVIEW, prestep="commands.migrate:item_selection", handler="commands.migrate:apply"),
+    *MAP_COMMANDS,
 )

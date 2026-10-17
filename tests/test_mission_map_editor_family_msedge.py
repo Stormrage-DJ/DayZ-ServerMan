@@ -7,16 +7,16 @@ import unittest
 
 from dayz_serverman.domain.mission_map_families import family_gate
 from tests.test_mission_map_editor_tools_msedge import TOOLS
-from tests.test_mission_map_families import ENOCH_TEXT
+from tests.test_mission_map_families import UNVERIFIED_TEXT
 from tests.ui_harness_support import EDGE, run_editor_harness
 
 
 # The backend family fields of an unverified, a verified and an unknown family; the window shows only their text
 FAMILY = TOOLS + r'''
-const unverified=''' + json.dumps(family_gate("enoch").to_dict()) + r''';
+const unverified=''' + json.dumps(family_gate("deerisle").to_dict()) + r''';
 const verified=''' + json.dumps(family_gate("Pripyat").to_dict()) + r''';
 const unknown=''' + json.dumps(family_gate(None).to_dict()) + r''';
-const poText=''' + json.dumps(ENOCH_TEXT) + r''';
+const poText=''' + json.dumps(UNVERIFIED_TEXT) + r''';
 const sleep=(ms)=>new Promise(resolve=>setTimeout(resolve,ms)),reason=document.getElementById("map-family-reason");
 const withFamily=(family,document=plan())=>{const current=value(document);current.capabilities.family=family;return current};
 const shown=()=>!reason.hidden&&getComputedStyle(reason).display!=="none"&&reason.getBoundingClientRect().height>0;
@@ -28,7 +28,7 @@ class MissionMapEditorFamilyEdgeTests(unittest.TestCase):
     """Use synthetic plans and family fields from the backend gate, fake save answers and isolated headless profiles."""
 
     def test_unverified_family_shows_the_reason_and_keeps_editing_and_saving(self) -> None:
-        """enoch shows the backend text below the identity; a circle still autosaves; verified hides the text."""
+        """deerisle shows the backend text below the identity; a circle still autosaves; verified hides the text."""
         self.assertEqual(run_editor_harness(FAMILY + r'''
 check(reason.hidden&&reason.textContent==="","no family field: no reason and no claim");
 check(unverified.verified===false&&unverified.text===poText,"backend text is the Product Owner text");

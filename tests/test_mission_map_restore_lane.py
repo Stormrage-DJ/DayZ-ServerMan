@@ -68,6 +68,10 @@ class Service:
             raise self.failure
         return {"operation_id": operation_id, "result": "COMMITTED"}
 
+    def commit_point(self, _operation_id: str) -> None:
+        """No journal reached the commit point, so each failure keeps its code (AR-4)."""
+        return None
+
 
 class RestoreLaneTests(unittest.TestCase):
     """Submission under the restore kind of the mode, the request shape and the failures of the work."""
@@ -111,7 +115,7 @@ class RestoreLaneTests(unittest.TestCase):
 
     def test_family_refusal_keeps_the_6_11_envelope_and_text(self) -> None:
         """UNSUPPORTED_SNAPSHOT_CONTENT with the gate text and operation restore_original, shown unchanged."""
-        for terrain, text in (("enoch", NOT_VERIFIED_TEXT.format(family="enoch")), (None, FAMILY_UNKNOWN_TEXT)):
+        for terrain, text in (("deerisle", NOT_VERIFIED_TEXT.format(family="deerisle")), (None, FAMILY_UNKNOWN_TEXT)):
             with self.subTest(terrain=terrain):
                 failure, lane = self.failure(FamilyNotVerified(family_gate(terrain), "restore_original"))
                 self.assertEqual((failure.code, failure.safe_message, failure.retryable, lane.context_blocks,
@@ -121,9 +125,9 @@ class RestoreLaneTests(unittest.TestCase):
                 self.assertEqual(error_text(failure.code, failure.safe_message, kind=kind), text)
                 self.assertNotEqual(error_text(failure.code, failure.safe_message, kind=kind),
                                     ERROR_TEXTS[failure.code])
-        envelope = apply_error(FamilyNotVerified(family_gate("enoch"), "restore_original"))
+        envelope = apply_error(FamilyNotVerified(family_gate("deerisle"), "restore_original"))
         self.assertEqual(envelope.details, {"reason": "family_not_verified", "operation": "restore_original",
-                                            "terrain_id": "enoch"})
+                                            "terrain_id": "deerisle"})
 
     def test_failures_map_to_existing_codes_and_recovery_blocks_under_the_editor_kind(self) -> None:
         """Stale review, refused review, a late edit and recovery; the block is lifted by the 8.5 recovery."""

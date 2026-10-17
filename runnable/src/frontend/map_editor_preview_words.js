@@ -1,24 +1,39 @@
 // Window texts of the Apply and Restore preview dialog (8.10). Backend texts of the answer are never copied here.
 "use strict";
 
-// Product Owner texts of 2026-10-15 15:57:10 (decisions 3, 4, 5 and 10) and 16:03:40 in evidence 8.10, word for word
+// Product Owner texts of 2026-10-15 15:57:10 (decisions 3, 4, 5 and 10), 16:03:40 and 18:04:08 in evidence 8.10,
+// word for word
 const mapPreviewWordsFixed = Object.freeze({
-  titles: Object.freeze({apply: "Apply map plan", previous: "Restore previous state", original: "Restore original"}),
-  confirm: Object.freeze({apply: "Apply", previous: "Restore previous state", original: "Restore original"}),
+  titles: Object.freeze({apply: "Apply map plan", previous: "Restore previous state", original: "Restore original",
+    adopt: "Adopt mission"}),
+  confirm: Object.freeze({apply: "Apply", previous: "Restore previous state", original: "Restore original", adopt: "Adopt"}),
   cancel: "Cancel", close: "Close", again: "Preview again",
   stop: Object.freeze({
     apply: "Stop the DayZ server before you apply. DayZ-ServerMan does not apply while the server runs.",
-    restore: "Stop the DayZ server before you restore. DayZ-ServerMan does not restore while the server runs."}),
+    restore: "Stop the DayZ server before you restore. DayZ-ServerMan does not restore while the server runs.",
+    // ADOPT-19 is empty: adoption writes no mission file, and the frame draws no empty stop paragraph
+    adopt: ""}),
   stale: Object.freeze({
     apply: "The mission files or the map editor records can have changed after this preview. Preview again before you apply.",
-    restore: "The mission files or the map editor records can have changed after this preview. Preview again before you restore."}),
+    restore: "The mission files or the map editor records can have changed after this preview. Preview again before you restore.",
+    adopt: "The mission files or the map editor records can have changed after this preview. Preview again before you adopt."}),
   headings: Object.freeze({
     refusals: "Apply is not possible", notices: "Check before you apply", external: "Files changed outside the map editor",
     encounterChoices: "Unavailable encounters", changes: "Map plan changes", encounters: "Encounters",
     loot: "Loot report", files: "Mission files",
     restoreRefusals: "Restore is not possible", restoreNotices: "Check before you restore",
     writes: "What the restore writes", overwritten: "Outside changes that the restore overwrites",
-    kept: "Outside changes that the restore keeps"}),
+    kept: "Outside changes that the restore keeps",
+    // ADOPT-10, ADOPT-11, ADOPT-14 and ADOPT-17 (Product Owner 2026-10-16 14:26:38 in evidence 10.1)
+    adoptRefusals: "Adoption is not possible", adoptHappened: "What happened", adoptWrites: "What adoption writes",
+    adoptUnchanged: "What stays unchanged"}),
+  // ADOPT-1: the label of the action and of the second Apply button. ADOPT-2: its busy reason. ADOPT-3: the reading
+  // line. Last, the ADOPT-15 label of the record list.
+  adopt: "Adopt mission…", adoptBusy: "Wait until the adoption preview is ready.",
+  adoptReading: "Preparing the adoption preview",
+  // ADOPT-30 and ADOPT-33 (Product Owner 2026-10-17 13:07:29 in evidence 10.16)
+  adoptNotOpened: "The adoption preview did not open because the map editor could not save the current draft.",
+  adoptReload: (reason) => `Not adopted: ${reason} Reload plan shows its current state.`, adoptRecords: "Records that adoption writes",
   bounds: "The terrain bounds of this plan are not confirmed. Apply cannot write loot tiers until you confirm the " +
     "bounds under Terrain bounds.",
   outline: "The outline you are drawing is not finished. It is not part of the plan, so Apply does not write it.",
@@ -38,6 +53,10 @@ const mapPreviewWordsFixed = Object.freeze({
   added: "Added", changed: "Changed", removed: "Removed",
   written: "Infected encounters that Apply writes",
   excluded: "Excluded in the plan. Apply does not write these encounters.",
+  // Loot report list labels (Product Owner 2026-10-15 18:04:08, PO-1a, PO-1b and PO-2)
+  lootUnavailable: "Zones and encounters with a loot tier that Apply cannot write",
+  lootCapacity: "Building groups with a capacity that Apply changes",
+  lootKept: "Buildings that do not get the capacity of this plan",
   affected: "Files that Apply changes",
   coordinated: "Changes made by other DayZ-ServerMan settings, for example medical loot zones. Apply keeps them.",
   restoreAffected: "Files that the restore changes",

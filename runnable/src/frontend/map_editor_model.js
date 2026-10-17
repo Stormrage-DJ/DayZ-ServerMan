@@ -72,12 +72,12 @@ function mapModelCheck(before, after, added = 0, removed = null) {
 function mapModelCreate(changed, review) {
   // Saved content and metadata stay outside the undoable draft snapshots.
   const history = window.ServerManMapHistory.create();
-  let draft = null, saved = null, metadata = null, enabled = false, epoch = 0, loads = 0;
+  let draft = null, saved = null, metadata = null, enabled = false, paused = false, epoch = 0, loads = 0;
   const equal = (left, right) => JSON.stringify(left) === JSON.stringify(right);
   // Local equality determines whether the saved comparison still describes this draft.
   const dirty = () => !equal(draft, saved);
-  // Ordinary edits require a current writable association and usable object list.
-  const writable = () => Boolean(enabled && metadata && !metadata.read_only && metadata.association?.mission_key);
+  // Ordinary edits require a current writable association and usable object list; an own Apply or restore pauses them (8.18).
+  const writable = () => Boolean(enabled && !paused && metadata && !metadata.read_only && metadata.association?.mission_key);
   const listAvailable = () => Array.isArray(draft?.objects) && draft.objects.every((item) =>
     item && typeof item.id === "string" && typeof item.name === "string" && Boolean(mapModelPatterns[item.kind]));
   const editable = () => writable() && listAvailable() && !document.querySelector("dialog");
@@ -85,7 +85,7 @@ function mapModelCreate(changed, review) {
   const snapshot = () => structuredClone(draft);
   const status = () => ({...structuredClone(metadata), plan: snapshot(), dirty: dirty(),
     draft_identifier: saved?.plan_id ?? null,
-    enabled, writable: writable(), object_list_available: listAvailable(),
+    enabled, paused, writable: writable(), object_list_available: listAvailable(),
     draft_changes: dirty() ? null : metadata?.draft_changes ?? null, history: history.state()});
   const notify = () => changed(status());
   // Commit one guarded object action at the administrator's current history branch.
@@ -181,8 +181,9 @@ function mapModelCreate(changed, review) {
     // A placement enters at the top of the list (index 0); a load or close changes the epoch, only a load the loads
     add: (label, object) => action(label, (plan) => plan.objects.unshift(structuredClone(object)), 1),
     remove: (label, id) => action(label, (plan) => { plan.objects = plan.objects.filter((item) => item.id !== id); }, -1, id),
-    epoch: () => epoch, loads: () => loads,
-    visible: (id) => flag(id, "visible"), lock: (id) => flag(id, "locked"),
+    // pause: an own Apply or restore runs; refresh: adopt loaded non-plan fields, keep the draft and its history (8.18)
+    epoch: () => epoch, loads: () => loads, pause: (value) => { paused = value; epoch += 1; notify(); },
+    refresh: (fields) => { metadata = {...metadata, ...structuredClone(fields)}; notify(); }, visible: (id) => flag(id, "visible"), lock: (id) => flag(id, "locked"),
     undo: () => traverse(-1), redo: () => traverse(1),
     enabled: (value) => { enabled = value; epoch += 1; notify(); },
     editable, nextName: (kind) => mapModelNextName(kind, draft?.objects ?? []),

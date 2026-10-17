@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import unittest
 
+from dayz_serverman.application.mission_map_preview import PreviewStale
 from dayz_serverman.domain.mission_map_loot_report_texts import CAPACITY_EXPLANATION
+from dayz_serverman.domain.mission_map_plan import canonical_json
+from dayz_serverman.domain.mission_map_preview_changes import excluded_encounters
 from dayz_serverman.domain.mission_map_preview_texts import ZOMBIE_MAX_COUNT_ZERO_TEXT, ZONE_SPAWN_DIST_ZERO_TEXT
 from tests.mission_map_mapgroup_support import INSIDE_SHED, zone
 from tests.mission_map_preview_support import GLOBALS, PreviewFixture
@@ -89,6 +93,55 @@ class EncounterChoicePreviewTests(PreviewFixture):
         answer = self.preview.preview("main")
         self.assertEqual(answer["encounters"]["unavailable"][0]["reason"], "territory_not_registered")
         self.assertEqual((answer["encounters"]["written"], answer["affected_files"]), ([], []))
+
+
+class ExcludedEncounterTests(PreviewFixture):
+    """`encounters.excluded`: every encounter that the plan excludes (Architect 2026-10-15 18:04:57, ruling A-1)."""
+
+    def objects(self) -> list[dict]:
+        """Return, in plan order: an unavailable plan-excluded encounter, an included one, an available plan-excluded
+        one, an unavailable included one and a loot zone."""
+        return [encounter("b", provider="ai_bandits", x=700.0, z=700.0, excluded=True), INFECTED,
+                encounter("x", x=800.0, z=800.0, radius=40.0, excluded=True),
+                encounter("u", "Unzoned", x=500.0, z=500.0, radius=50.0), zone("rich")]
+
+    def test_the_rule_lists_plan_exclusions_only_in_plan_order_with_the_exact_keys(self) -> None:
+        """Available or not, in plan order; no included encounter and no loot object, also one marked excluded."""
+        loot = dict(zone("rich"), id="loot", excluded=True)
+        self.assertEqual(excluded_encounters([*self.objects(), loot]), [
+            {"id": "b", "name": "Encounter b", "kind": "encounter", "provider": "ai_bandits"},
+            {"id": "x", "name": "Encounter x", "kind": "encounter", "provider": "native_infected"}])
+        self.assertEqual(excluded_encounters([INFECTED, zone("rich")]), [])
+
+    def test_the_answer_lists_both_and_keeps_the_unavailable_list(self) -> None:
+        """The unavailable plan-excluded encounter is in both lists and needs no choice."""
+        self.save(self.objects())
+        encounters = self.preview.preview("main")["encounters"]
+        self.assertEqual([item["id"] for item in encounters["excluded"]], ["b", "x"])
+        self.assertEqual([set(item) for item in encounters["excluded"]], [{"id", "name", "kind", "provider"}] * 2)
+        unavailable = {item["id"]: item for item in encounters["unavailable"]}
+        self.assertEqual(sorted(unavailable), ["b", "u"])
+        self.assertEqual((unavailable["b"]["excluded"], unavailable["b"]["choice_required"]), (True, False))
+        self.assertEqual((unavailable["u"]["excluded"], unavailable["u"]["choice_required"]), (False, True))
+        self.assertEqual(encounters["written"], ["e1"])
+
+    def test_the_fingerprint_binds_the_list(self) -> None:
+        """The fingerprint is the digest of the answer with the list; a review without it is stale."""
+        self.save(self.objects())
+        review = self.review()
+        bound = {name: value for name, value in review.answer.items() if name != "fingerprint"}
+
+        def digest(answer: dict) -> str:
+            """Return the preview fingerprint of an answer: version, DayZ root and answer, as canonical JSON."""
+            return hashlib.sha256(canonical_json({"version": 1, "dayz_root": str(review.context.root),
+                                                  "answer": answer})).hexdigest()
+
+        self.assertEqual(review.fingerprint, digest(bound))
+        hidden = dict(bound, encounters=dict(bound["encounters"], excluded=[]))
+        self.assertNotEqual(digest(hidden), review.fingerprint)
+        with self.assertRaises(PreviewStale):
+            self.preview.revalidate("main", digest(hidden))
+        self.assertEqual(self.preview.revalidate("main", review.fingerprint).fingerprint, review.fingerprint)
 
 
 class LootReportPreviewTests(PreviewFixture):

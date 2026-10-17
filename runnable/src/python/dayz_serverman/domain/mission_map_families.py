@@ -1,7 +1,7 @@
 """Reviewed list of verified mission families and the Apply and Restore original gate (leaf 6.11).
 
 A family is the terrain family of a mission folder: the template suffix after the last dot. Only the families
-in VERIFIED_FAMILIES passed the native CE probe (6.10).
+in VERIFIED_FAMILIES passed the native CE probe (6.10 or 6.12).
 
 On every other family, and without a known family, Apply and Restore original are refused. Planning, saving,
 import, export and Inspect stay available (Product Owner Q5, evidence 2.1).
@@ -24,6 +24,14 @@ RAW_EVIDENCE_SET = "probe-runs-2026-10-14"
 RAW_EVIDENCE_SHA256 = "cdc31c3d43e8bbf2be681713a9fd4b25620e0a4ba477bb4556edd6d811176e16"
 _RAW_EVIDENCE = (f"Raw evidence: the set {RAW_EVIDENCE_SET} (aggregate SHA-256 {RAW_EVIDENCE_SHA256[:16]}, "
                  "Operations 2026-10-14 17:00:24; location in evidence 6.10, Vigil 2026-10-14 17:02:45).")
+
+# Raw probe evidence of 6.12: the set name and its aggregate SHA-256 (QA 2026-10-16 16:57:11 checked the aggregate;
+# Vigil 2026-10-17 00:52:42 records the location)
+RAW_EVIDENCE_612_SET = "probe-runs-2026-10-16-612"
+RAW_EVIDENCE_612_SHA256 = "40a2bb72e1ebdf37e43dbb173973dab56626aa4b23752a63694a7b21d3a7e5be"
+_RAW_EVIDENCE_612 = (f"Raw evidence: the set {RAW_EVIDENCE_612_SET} "
+                     f"(aggregate SHA-256 {RAW_EVIDENCE_612_SHA256[:16]}, QA 2026-10-16 16:57:11; location in "
+                     "evidence 6.12, Vigil 2026-10-17 00:52:42).")
 
 # Operations that the gate refuses on an unverified family; Restore previous state is not one of them
 APPLY = "apply"
@@ -67,22 +75,26 @@ _FIXED_DISPATCH = ("Fixed dispatch items are not governed by lootmax, so a group
                    "dispatch parts.")
 _WRITER_PIN = "The candidates came from the 16 repository writer files pinned at commit f343e48."
 
-# The reviewed list (6.11); it starts with the families that passed 6.10 (QA 2026-10-14 16:53:03)
+# The reviewed list (6.11); it starts with the families that passed 6.10 (QA 2026-10-14 16:53:03).
+# Then come the optional families that passed 6.12 (QA 2026-10-16 16:57:11; Architect 2026-10-16 17:13:21)
 VERIFIED_FAMILIES = (
     VerifiedFamily(
         "chernarusplus",
         "Verified by the 6.10 probe (evidence 6.10; QA 2026-10-14 16:53:03; Architect 2026-10-14 15:45:25).",
         _RAW_EVIDENCE,
-        "Probe: runs R0 to R4 with global abundance +50 and four zones; medical off, on and the toggle after Apply "
-        "were CE-loaded.",
-        (_LIVE_QUANTITIES, _ALIAS_PAIR, _FIXED_DISPATCH, _WRITER_PIN)),
+        "Probe: runs R0 to R4 with global abundance +50 and four zones, on DayZ server 1.29.163709; medical off, "
+        "on and the toggle after Apply were CE-loaded.",
+        (_LIVE_QUANTITIES, _ALIAS_PAIR, _FIXED_DISPATCH, _WRITER_PIN,
+         "DayZ server 1.30 changed the chernarusplus files mapgroupproto.xml, mapgrouppos.xml and cfgeconomycore.xml "
+         "after the probe. The writer forms were CE-loaded on 1.30 on enoch; the changed chernarusplus content stays "
+         "under the per-mission checks.")),
     VerifiedFamily(
         "Pripyat",
         "Verified by the 6.10 probe (evidence 6.10; QA 2026-10-14 16:53:03; Architect 2026-10-14 15:11:54, 15:45:25 "
         "and 17:00:50).",
         _RAW_EVIDENCE,
-        "Probe: runs R0, R1 and R4 with global abundance 0 and four zones, loaded with "
-        "@PripyatDelta;@GSCAssets2026.",
+        "Probe: runs R0, R1 and R4 with global abundance 0 and four zones, on DayZ server 1.29.163709, loaded "
+        "with @PripyatDelta;@GSCAssets2026.",
         ("Pripyat was probed in its installed state, where medical off equals on, because its stored original is "
          "unmappable (evidence 6.4). The off form with generated groups was not CE-loaded on Pripyat; medical off, "
          "on and the toggle after Apply were CE-loaded on chernarusplus only.",
@@ -92,6 +104,18 @@ VERIFIED_FAMILIES = (
          "it becomes possible only after the duplicates are removed outside the editor.",
          "Only the terrain mods were loaded; the other eight mods of the real profile are not part of the proof.",
          _LIVE_QUANTITIES, _ALIAS_PAIR, _FIXED_DISPATCH, _WRITER_PIN)),
+    VerifiedFamily(
+        "enoch",
+        "Verified by the 6.12 probe (evidence 6.12; QA 2026-10-16 16:57:11; Architect 2026-10-16 17:13:21).",
+        _RAW_EVIDENCE_612,
+        "Probe: runs R0 to R4 with global abundance +50 and four zones, on DayZ server 1.30.164078.38; medical off, on "
+        "and the toggle after Apply were CE-loaded.",
+        ("enoch has no stored medical baseline, so the probe used the installed file as the medical off state, as "
+         "DayZ-ServerMan does without a baseline. No enoch mission with a stored medical baseline was probed.",
+         _LIVE_QUANTITIES, _ALIAS_PAIR, _FIXED_DISPATCH, _WRITER_PIN,
+         "The group Land_Underground_Storage_POX2 has a point without range and height, which CE counts as a group "
+         "with wrong points. A generated copy keeps the points of its source group, so a zone over it adds one more "
+         "such group to that CE count; no probe candidate copied it.")),
 )
 
 
