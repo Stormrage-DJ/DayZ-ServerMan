@@ -12,7 +12,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runnable" / "src" / "python"))
 
 from dayz_serverman.cli import help_wording as help_texts  # noqa: E402
+from dayz_serverman.application.mission_map_transfer_coordinator import REFUSAL_TEXTS  # noqa: E402
+from dayz_serverman.cli import map_inspect_wording as inspect_texts  # noqa: E402
 from dayz_serverman.cli import map_wording as cli_texts  # noqa: E402
+from dayz_serverman.domain.mission_map_terrain import (  # noqa: E402
+    OPERATION_TERRAIN_IDENTITY, TERRAIN_FAMILY_UNKNOWN,
+)
 from dayz_serverman.domain import mission_map_adoption_texts as adoption_texts  # noqa: E402
 from dayz_serverman.domain import restore_editor_texts as restore_texts  # noqa: E402
 from tests import wording_pins as pins  # noqa: E402
@@ -48,6 +53,14 @@ class WordingPinTests(unittest.TestCase):
         for name, text in pins.CLI_OPTIONS.items():
             with self.subTest(option=name):
                 self.assertEqual(help_texts.OPTION_TEXTS[name], text)
+
+    def test_f3_residual_texts(self) -> None:
+        """The seven texts that the first pins missed: headings, evidence line, reasons and hidden forms."""
+        self.check(cli_texts, pins.CLI_SHOW)
+        self.assertEqual(cli_texts.unsupported_reason(OPERATION_TERRAIN_IDENTITY, TERRAIN_FAMILY_UNKNOWN),
+                         pins.TERRAIN_IDENTITY_REASON)
+        self.assertEqual(REFUSAL_TEXTS[("mission_path_changed", "destination")], pins.TRANSFER_DESTINATION_READ_ONLY)
+        self.check(inspect_texts, pins.INSPECT_HIDDEN)
 
 
 if __name__ == "__main__":

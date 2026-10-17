@@ -23,20 +23,13 @@ function mapPreviewApplyReason(entry, object, capabilities) {
   return object ? encounters.status(object, capabilities).reason : encounters.provider(capabilities, entry.provider).reason;
 }
 
-// One radio with its label; stacked, never checked at the start (R17: an explicit choice)
-function mapPreviewApplyRadio(name, value, label) {
-  const dom = window.ServerManMapDom, row = dom.element("label", "", {class: "check-row"});
-  const input = dom.element("input", "", {type: "radio", name, value});
-  row.append(input, dom.element("span", label));
-  return {row, input};
-}
-
 // One fieldset for each external change: the path, Keep the change with its refusal text, and Replace the file
 function mapPreviewApplyFile(change, noteId) {
   const dom = window.ServerManMapDom, words = window.ServerManMapPreviewWords;
   const fieldset = dom.element("fieldset"), name = window.ServerManMapPreviewDialog.id("map-preview-file");
-  const keep = mapPreviewApplyRadio(name, "incorporate", words.keep);
-  const replace = mapPreviewApplyRadio(name, "replace", words.replace);
+  // The radios come from the shared choice controls, never checked at the start (R17)
+  const keep = window.ServerManMapPreviewControls.radio(name, "incorporate", words.keep);
+  const replace = window.ServerManMapPreviewControls.radio(name, "replace", words.replace);
   fieldset.append(dom.element("legend", change.path), keep.row);
   if (change.incorporate?.available === false) {
     keep.input.disabled = true;

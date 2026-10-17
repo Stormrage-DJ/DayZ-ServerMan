@@ -61,6 +61,15 @@ window.ServerManMapBridge = Object.freeze({
     const generation = mapLoadGeneration, value = await mapApiCall("load_plan", []);
     return generation === mapLoadGeneration ? {stale: false, value} : {stale: true};
   },
+  // Export plan and Import plan (9.1): the host opens the native dialogs and keeps the file; no path reaches the page
+  exportPlan: (plan) => mapApiCall("export_plan", [plan]),
+  selectImportFile: () => mapApiCall("select_import_file", []),
+  previewImport: (selection) => mapApiCall("preview_import", [selection]),
+  importPlan: (selection, mode, revision, confirmed) => mapApiCall("import_plan", [selection, mode, revision, confirmed]),
+  // Copy from another profile (9.2): the page names only the source profile; the host binds the destination
+  copySources: () => mapApiCall("copy_sources", []),
+  previewCopy: (source) => mapApiCall("preview_copy", [source]),
+  copyPlan: (source, mode, revision, confirmed) => mapApiCall("copy_plan", [source, mode, revision, confirmed]),
   // Full-screen affects only this document's native editor window.
   toggleFullScreen: () => mapApiCall("toggle_full_screen", []),
   // Stop a late load from replacing the closing state.

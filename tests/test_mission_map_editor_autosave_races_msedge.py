@@ -98,10 +98,10 @@ check(status()==="Saved"&&model.status().revision===5&&!model.status().dirty,"th
         """QA-5.2-F4 (R8) and Q08: an unconfirmed answer and NOT_FOUND stop autosave and offer Reload plan."""
         self.assertEqual(run_editor_harness(RACES + r'''
 await fresh();click(500,400);await sleep(900);await answer({success:true,value:{revision:"x"}});
-check(status()==="Not saved: The save result could not be confirmed. Reload plan discards your unsaved changes."&&!reload().hidden,"unconfirmed result offers the reload");
+check(status()==="Not saved: The save result could not be confirmed. Reload plan discards your unsaved changes. To keep your unsaved changes, choose Export plan first."&&!reload().hidden,"unconfirmed result offers the reload");
 click(600,400);await sleep(1500);check(saved.length===1&&text("map-draft-changes")==="Not available","no autosave with an unconfirmed revision");
 await fresh();click(500,400);await sleep(900);await answer(failure("NOT_FOUND","profile_not_found","The selected profile no longer exists."));
-check(status().startsWith("Not saved: ")&&status().endsWith(" Reload plan discards your unsaved changes.")&&!reload().hidden,"NOT_FOUND offers the reload");
+check(status().startsWith("Not saved: ")&&status().endsWith(" Reload plan discards your unsaved changes. To keep your unsaved changes, choose Export plan first.")&&!reload().hidden,"NOT_FOUND offers the reload");
 click(600,400);await sleep(1500);check(saved.length===1,"no autosave after NOT_FOUND");
 check(reload().getAttribute("aria-describedby")==="map-save-notice"&&text("map-save-notice")===status(),"the reload names the notice");
 ''', budget=20000), "PASS")

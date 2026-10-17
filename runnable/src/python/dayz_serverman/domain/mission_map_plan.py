@@ -136,6 +136,14 @@ def to_portable(plan: dict[str, Any]) -> dict[str, Any]:
     return portable
 
 
+def portable_text(plan: dict[str, Any]) -> str:
+    """Return the portable form of a stored plan as indented canonical JSON with a final newline.
+
+    `map export` and the editor window write these bytes, so both give the same file for the same plan.
+    """
+    return json.dumps(to_portable(plan), ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False) + "\n"
+
+
 def canonical_json(value: object) -> bytes:
     """Return the canonical UTF-8 JSON bytes: sorted keys, no whitespace, no NaN (D3)."""
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")

@@ -140,17 +140,18 @@ class RestoreLaneTests(unittest.TestCase):
         late = MissionMapPublicationError("REVISION_CONFLICT", TARGET_CHANGED_TEXT.format(path="mapgroupdirt.xml"))
         late.details, late.retryable = {"reason": "target_changed"}, True  # type: ignore[attr-defined]
         failure, lane = self.failure(late, "previous")
-        self.assertEqual((failure.code, failure.retryable, lane.context_blocks, failure.recovery_owner),
-                         ("REVISION_CONFLICT", True, [], None))
+        self.assertEqual((failure.code, failure.retryable, lane.context_blocks, failure.recovery_owner,
+                          failure.recovery_reason), ("REVISION_CONFLICT", True, [], None, None))
         recovery = MissionMapPublicationError("RECOVERY_REQUIRED", "Mission map records require recovery.",
                                               recovery_required=True)
         for mode in ("original", "previous"):
             with self.subTest(mode=mode):
                 failure, lane = self.failure(recovery, mode)
                 self.assertEqual((failure.code, failure.recovery_required), ("RECOVERY_REQUIRED", True))
-                # Both blocks belong to the editor kind: the coordinator's and the lane's of the failure owner
-                self.assertEqual((lane.blocks, lane.context_blocks), ([], [(RECOVERY_UNRESOLVED, EDITOR_KIND)]))
-                self.assertEqual(failure.recovery_owner, EDITOR_KIND)
+                # The coordinator sets no block; the lane sets the one block with this owner and reason (8.11 F1)
+                self.assertEqual((lane.blocks, lane.context_blocks), ([], []))
+                self.assertEqual((failure.recovery_owner, failure.recovery_reason), (EDITOR_KIND, RECOVERY_UNRESOLVED))
+                self.assertEqual(failure.safe_message, "Mission map records require recovery.")
 
     def test_activity_view_shows_the_restore_refusals(self) -> None:
         """Refusals of a restore show their own sentence under both kinds, never the request text."""

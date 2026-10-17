@@ -25,6 +25,9 @@ function mapAutosaveShow(text, notice = null, announce = false, reason = "") {
   if (state.paused) return;
   window.ServerManMapLayout.status(text, {notice, announce});
   document.getElementById("map-save-reload").hidden = !state.blocked;
+  // Export plan shows before Reload plan while autosave is stopped, and Import shows why it waits (9.1)
+  document.getElementById("map-plan-export").hidden = !state.blocked;
+  window.ServerManMapTransfer.render();
   window.ServerManMapLayout.draftChanges(mapAutosaveDraft(state.model.status()));
   // The effective capacity texts follow the save state: Updating, Not evaluated or the backend values (5.1)
   window.ServerManMapAbundance.render();
@@ -136,6 +139,7 @@ function mapAutosaveReset() {
   Object.assign(state, {delayed: null, saved: false, failed: false, late: false, blocked: false, paused: false,
     text: "", notice: null, reason: ""});
   document.getElementById("map-save-reload").hidden = true;
+  document.getElementById("map-plan-export").hidden = true;
 }
 
 // A cancelled close shows the current save state again: a running save, a refusal that needs a reload,

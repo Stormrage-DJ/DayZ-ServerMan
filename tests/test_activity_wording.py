@@ -172,6 +172,11 @@ class ActivityFormatterTests(unittest.TestCase):
         self.assertEqual(wording.error_text("MUTATION_CONFLICT", "Mutations are blocked by unresolved restore recovery."),
                          "Changes are blocked until recovery is resolved. A backup restore did not finish cleanly. "
                          "Open Backups; DayZ-ServerMan checks the unfinished restore again there.")
+        # 8.11 F1: the refused submission after an editor recovery-required failure (Product Owner 2026-10-17 14:50:44)
+        self.assertEqual(wording.error_text("MUTATION_CONFLICT", "Mutations are blocked by unresolved mission map recovery."),
+                         "Changes are blocked until recovery is resolved. A mission map change did not finish, and its "
+                         "files cannot be recovered safely. Check Manager diagnostics. Then select Check again in the map "
+                         "editor, or restart DayZ-ServerMan; it checks again when it starts.")
         self.assertEqual(activity("schedule.saved", {"profile_id": "alpha", "action": "stop", "hour": 4, "minute": 5}),
                          "Daily schedule saved: save and stop at 04:05.")
         self.assertEqual(activity("schedule.saved", {"profile_id": "alpha", "action": None}), "Daily schedule turned off.")

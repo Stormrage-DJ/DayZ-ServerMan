@@ -64,9 +64,13 @@ function mapPreviewDialogStops(dialog) {
     .filter((element) => !element.disabled && !element.closest("[hidden]") && element.tabIndex >= 0);
 }
 
-// Open one preview. spec: {kind: "apply" | "restore" | "adopt", title, sections, refused, confirm (label), count
-// (missing choices), first (the first control without a choice), value (the resolved value), opener}. A refused
-// answer can also have `second`: the label of a button before Close that resolves {adopt: true}.
+// Open one preview. spec: {kind, title, sections, refused, confirm (label), count (missing choices), first (the
+// first control without a choice), value (the resolved value), opener}. kind: "apply", "restore", "adopt",
+// "import", "copy" or "copy-source". A refused answer can also have `second`: the label of a button before Close
+// that resolves {adopt: true}. A kind without its own words (import, copy) gives `remaining` and `stale`, and has
+// no stop sentence.
+//
+// A spec can give `check(value)` and `checking`. A refusal text of the check keeps the dialog open.
 function mapPreviewDialogOpen(spec) {
   const dom = window.ServerManMapDom, words = window.ServerManMapPreviewWords;
   const opener = spec.opener ?? document.activeElement, headingId = mapPreviewDialogId("map-preview-title");
@@ -77,7 +81,7 @@ function mapPreviewDialogOpen(spec) {
     "aria-labelledby": headingId});
   body.append(...spec.sections.filter(Boolean));
   const footer = dom.element("div", "", {class: "map-preview-footer"});
-  const remaining = spec.kind === "apply" && !spec.refused ?
+  const remaining = (spec.kind === "apply" || spec.remaining) && !spec.refused ?
     dom.element("p", "", {id: mapPreviewDialogId("map-preview-remaining")}) : null;
   const status = dom.element("p", "", {role: "status", class: "map-preview-status"});
   const actions = dom.element("div", "", {class: "action-row"});
@@ -87,15 +91,16 @@ function mapPreviewDialogOpen(spec) {
   dialog.append(heading, body, footer);
   return new Promise((resolve) => {
     const active = {stale: null, marked: false};
-    // Resolve once, remove the modal and return the focus to the opener, or to the map when the opener is gone
+    let done = false, checking = false, confirm = null; // finished; a check runs; the confirm button
+    // Resolve once, remove the modal, return the focus to the opener (or the map when it is gone)
     const finish = (value) => {
+      done = true;
       if (mapPreviewDialogState.active === active) mapPreviewDialogState.active = null;
       document.removeEventListener("serverman:operation-change", gate);
       dialog.close(); dialog.remove();
       (opener?.isConnected ? opener : document.getElementById("map-viewport"))?.focus();
       resolve(value);
     };
-    let confirm = null;
     if (spec.refused) {
       if (spec.second) actions.append(mapPreviewDialogButton(spec.second, "button", () => finish({adopt: true})));
       actions.append(mapPreviewDialogButton(words.close, "button", () => finish(null)));
@@ -104,7 +109,9 @@ function mapPreviewDialogOpen(spec) {
         // A missing choice moves the focus to it; a confirm that is aria-disabled for another reason does nothing
         const first = spec.count() ? spec.first() : null;
         if (first) first.focus();
-        else if (confirm.getAttribute("aria-disabled") !== "true") finish(spec.value());
+        else if (confirm.getAttribute("aria-disabled") !== "true" && !checking) {
+          if (spec.check) void verify(); else finish(spec.value());
+        }
       });
       if (remaining) confirm.setAttribute("aria-describedby", remaining.id);
       actions.append(mapPreviewDialogButton(words.cancel, "button", () => finish(null)), confirm);
@@ -116,19 +123,32 @@ function mapPreviewDialogOpen(spec) {
     // (UI-UX section 4; Architect 2026-10-16 16:50:12 in evidence 8.19).
     function gate() {
       const count = spec.count();
-      if (remaining) remaining.textContent = count ? words.remaining(count) : "";
+      if (remaining) remaining.textContent = count ? (spec.remaining ?? words.remaining)(count) : "";
       if (!confirm) return;
       if (count) confirm.setAttribute("aria-disabled", "true");
       else if (!("busyLocked" in confirm.dataset)) confirm.removeAttribute("aria-disabled");
     }
-    body.addEventListener("change", gate);
+    // The check of a spec; a stale or closed dialog ignores its answer
+    async function verify() {
+      const value = spec.value();
+      checking = true;
+      confirm.setAttribute("aria-disabled", "true");
+      status.textContent = spec.checking;
+      const text = await spec.check(value);
+      checking = false;
+      if (done || active.marked) return;
+      status.textContent = text ?? "";
+      gate();
+      if (!text) finish(value);
+    }
+    body.addEventListener("change", () => { if (!checking && !active.marked) status.textContent = ""; gate(); });
     // After the busy helper, which listens first: an end of the lock gives the choice gate back its state
     document.addEventListener("serverman:operation-change", gate);
     // Stale: the choices lock, and Preview again takes the place of the confirm button (UI-UX section 6)
     active.stale = () => {
       if (active.marked) return;
       active.marked = true;
-      status.textContent = words.stale[spec.kind];
+      status.textContent = spec.stale ?? words.stale[spec.kind];
       status.classList.add("map-preview-stale");
       if (remaining) remaining.textContent = "";
       const locked = body.contains(document.activeElement) && document.activeElement.matches("input");

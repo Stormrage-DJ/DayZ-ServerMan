@@ -41,10 +41,12 @@ class EditorWindowRegistry:
     def __init__(self, webview: Any, main_window: Any, profiles: Any, bridge: Any,
                  frontend_root: Path, logger: Any, *, hidden: bool = False,
                  work_area: Callable[[Any], tuple[int, int, int, int]] = window_work_area,
-                 selections: Any = None) -> None:
+                 selections: Any = None, dialogs: tuple[Any, Any] | None = None,
+                 protected: Callable[[], Any] | None = None) -> None:
         """Bind the composition services without creating an editor before start.
 
-        `selections` is the image selection service that each editor's image dialog registers with.
+        `selections` is the image selection service that each editor's image dialog registers with. `dialogs`
+        and `protected` are the open and save dialog constants and the protected roots of Export plan (9.1).
         """
         self._webview = webview
         self._main_window = main_window
@@ -55,6 +57,7 @@ class EditorWindowRegistry:
         self._hidden = hidden
         self._work_area = work_area
         self._selections = selections
+        self._dialogs, self._protected = dialogs, protected
         self._lock = threading.RLock()
         self._entries: dict[str, EditorWindowEntry] = {}
         self._deleting: set[str] = set()
@@ -86,7 +89,8 @@ class EditorWindowRegistry:
             if not self._started:
                 raise RuntimeError("webview has not started")
             # Size the new document on the main window's monitor and bind only its profile
-            api = MissionMapEditorApi(self._bridge, identifier, self._selections)
+            api = MissionMapEditorApi(self._bridge, identifier, self._selections, dialogs=self._dialogs,
+                                      protected=self._protected)
             window = self._webview.create_window(
                 f"Map editor - {profile.values.display_name}",
                 html=compose_editor_html(self._frontend_root), js_api=api,
@@ -135,7 +139,8 @@ class EditorWindowRegistry:
         entry.window.show()
 
     def _remove(self, profile_id: str, entry: EditorWindowEntry) -> None:
-        """Remove only the closed generation and unblock its settle waiters."""
+        """Remove only the closed generation, drop its pending import file and unblock its settle waiters."""
+        entry.api._forget_import()
         entry.close.on_closed()
         with self._lock:
             if self._entries.get(profile_id) is entry:

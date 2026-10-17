@@ -197,25 +197,78 @@ Bridge changes are additive: new methods and new response fields only.
 `CONTRACT_VERSION` stays 1, and every handler requires the exact request field
 set. The command line did not change this rule.
 
-The mission-map editor adds
-`load_mission_map` (observer read), `save_mission_map_plan` (owner method),
-the Inspect methods `inspect_mission_map`, `continue_mission_map_inspection`
-and `cancel_mission_map_inspection` (observer reads), and
-`set_aside_mission_map_plan` (owner method). Set aside renames invalid saved
-plan data to its dated name and deletes nothing.
-The owner methods `preview_mission_map`, `apply_mission_map`,
-`preview_mission_map_restore`, `restore_mission_map` and
-`inspect_mission_map_recovery` preview and apply a plan, preview and restore
-the original or the previous state, and run the editor recovery. Apply and
-the restores are operations of the lane.
-`tests/test_bridge_contracts.py` pins 73 bridge methods. The main-window host
-API remains pinned separately in `tests/test_readonly_host_api.py`. These
-eleven editor methods have pending task 10 entries for `map show`,
-`map save`, `map inspect`, `map set-aside`, `map preview`, `map apply`,
-`map restore` and `map recover`.
-The display reads `read_mission_map_tier_layer` and
-`read_mission_map_background` are owner methods and permanent command-line
-exclusions: they carry only display-only rendering data.
+The mission-map editor adds 20 bridge methods.
+
+- Observer reads: `load_mission_map`, `inspect_mission_map`,
+  `continue_mission_map_inspection`, `cancel_mission_map_inspection` and
+  `export_mission_map_plan`.
+- Owner methods for plan data: `save_mission_map_plan` and
+  `set_aside_mission_map_plan`.
+- Owner methods for display: `read_mission_map_tier_layer` and
+  `read_mission_map_background`.
+- Owner previews: `preview_mission_map`, `preview_mission_map_restore`,
+  `preview_mission_map_import`, `preview_mission_map_copy` and
+  `preview_mission_map_adoption`.
+- Owner writers: `apply_mission_map`, `restore_mission_map`,
+  `import_mission_map_plan`, `copy_mission_map_plan` and `adopt_mission_map`.
+- Owner recovery: `inspect_mission_map_recovery` runs the editor recovery.
+
+Set aside renames invalid saved plan data to its dated name and deletes
+nothing. Apply and the restores are operations of the lane.
+
+### Method count and pins
+
+The owner allowlist has 80 bridge methods. How to count them again:
+
+1. Build a composition with `build_composition` on an empty manager folder.
+2. Read `composition.bridge.allowed_methods`. It is the key set of the handler
+   table that `composition.py` gives to `BridgeFacade`.
+3. Count its members. Of these, 20 names hold `mission_map`.
+
+`bridge_composition.py` divides the same 80 names: 26 in
+`OBSERVER_READ_METHODS` and 54 in `OWNER_ONLY_METHODS`. The two sets share no
+name. An observer session holds only the 26 reads.
+
+These tests pin the numbers and the names:
+
+- `tests/test_bridge_contracts.py` pins the owner allowlist name by name.
+- `tests/test_cli_parity_matrix.py` asserts that the allowlist has 80 methods.
+- `tests/test_split_sizes.py` pins the order of the handler table, with the 20
+  editor methods at their coordinator position.
+- `tests/test_mission_map_editor_api.py` pins the public methods of the editor
+  window API and the bridge methods that they call.
+- The main-window host API is pinned separately in
+  `tests/test_readonly_host_api.py`.
+
+Do not write a method count in this guide as a fixed claim without the count
+steps above. When you add a method, change these pins in the same change.
+
+### Parity reasons and the pending rule
+
+Every method of the allowlist has exactly one disposition in
+`cli/registry.py`. `tests/test_cli_parity_matrix.py` checks this:
+
+- 71 methods are used by a command.
+- 4 methods are in `INTERNAL_METHODS`: `get_operation`,
+  `read_operation_events`, `request_operation_cancellation` and
+  `request_shutdown`. Only the command-line machinery calls them.
+- 5 methods are in `EXCLUSION_REASONS`, each with a reason in words:
+  - `save_selected_profile`: window selection memory;
+  - the two legacy backup reference methods: never called by the window, so
+    not parity;
+  - the two display reads of the map editor. They carry only display-only
+    rendering data. Inspect and the capability read give the same facts as
+    text.
+- 0 methods are pending. `PENDING_TASK_10` is empty, and the test pins
+  `EXPECTED_PENDING_TASK_10` as empty too. `test_parity_gap_list_is_closed`
+  also requires that no command is pending and that each of the 12 `map`
+  commands has a handler and a bridge method.
+
+The pending rule stays in the code. A method whose command comes later goes
+into `PENDING_TASK_10` as `"pending task 10: <planned command>"`. A pending
+method is not an exclusion. A method cannot be pending and internal or
+excluded. The test pins each pending entry, so a new entry needs a change in
+both places.
 The command line has its own `cli_version`, which also grows only by new fields.
 
 ### Command line and sessions
@@ -416,6 +469,136 @@ File hashes and engine readiness do not prove client persistence behavior.
 Use a disposable populated server fixture to verify known player/object state
 and representative mod persistence before accepting persistence portability.
 
+### Mission-map editor
+
+The editor is a second window with its own document. It edits the map plan of
+one profile. It writes no game file by itself. Apply and the restores do that
+in the operation lane.
+
+**Mission-map builder.** `mission_map_composition.build_mission_map` builds
+the editor services. `composition.py` calls it once and passes the logger.
+It returns a `MissionMapParts` value. The value holds:
+
+- the shared association locks;
+- the plan service, the transfer service and the coordinator;
+- the Inspect reader port and the image selection service;
+- the display reads and the recovery services.
+
+- One `AssociationLocks` instance serves the plan saves and the commit step.
+  They must meet on the same lock.
+- An owner session recovers inside the builder, before it returns the
+  services. An observer session creates no folder and runs no recovery.
+- `logger` is optional. With `None`, the recovery logs nothing.
+
+**Key spelling helper.** `repositories/mission_map_layout.ordinal_spelling`
+gives the comparison form of a path text. The editor uses it for target keys
+and for every comparison of a mission root.
+
+- It works on UTF-16 code units and maps each non-surrogate unit through the
+  table `domain/ordinal_upcase.txt`. This is the upper-case table that Windows
+  uses for an ordinal, case-blind comparison. `tools/generate_ordinal_upcase.py`
+  makes the table.
+- Separators become `/`. There is no case folding and no Unicode
+  normalization, so NTFS names that differ stay different.
+- A lone surrogate raises `ValueError`. Such a path has no key and no
+  comparison form.
+- `target_key` is the first 32 hex digits of SHA-256 over the target class,
+  the table version `windows-ordinal-1` and this form. The table has a pinned
+  SHA-256, and a changed table is refused when it loads.
+
+Do not compare mission roots with `str.lower` or `casefold`. Use the helper.
+`tests/test_mission_map_ordinal.py` checks it.
+
+**Editor document.** `host/editor_assets.compose_editor_html` composes the
+document from `frontend/editor.html`, `EDITOR_STYLES` and `EDITOR_SCRIPTS`.
+The document needs exactly one style marker and one script marker, and the
+composer refuses any other count. The list order is the load order. Add a new
+editor script to `EDITOR_SCRIPTS` and to the list in
+`tests/test_mission_map_editor_static.py`. That test also checks that each
+global name is declared once.
+
+The window API is `host/map_editor_window_api.MissionMapEditorApi`. It binds
+one profile and takes no profile ID and no path from the page. Only
+`UNBOUND_METHODS` (`get_operation`, `read_operation_events`,
+`inspect_mission_map_recovery` and `list_profiles`) run without the bound
+profile. `tests/test_mission_map_editor_api.py` pins the public methods.
+`open_map_editor` is a host method, not a bridge method. It opens or focuses
+the editor window of a profile.
+
+**Editor harness.** Edge tests start the composed editor in headless Edge.
+`run_editor_harness` in `tests/ui_harness_support.py` replaces
+`window.pywebview.api` with a fake. The test body sets the answers of the
+fake.
+
+- Support modules such as `tests/mission_map_transfer_support.py` and
+  `tests/mission_map_copy_support.py` add the fake answers of a larger flow.
+- Use neutral sample data.
+- The rules of "Interface tests in headless Edge" apply. Close Edge first.
+  Treat a lock-file cleanup error as an environment failure.
+
+**Window file transfer (9.1, 9.2).** Export plan, Import plan and Copy from
+another profile are in the "Plan file" section of the editor window.
+
+- `host/map_editor_transfer_api.py` holds the methods `export_plan`,
+  `select_import_file`, `preview_import`, `import_plan`, `copy_sources`,
+  `preview_copy` and `copy_plan`. `MissionMapEditorApi` inherits them.
+- The page never gets a path. Answers name only the base file name. The
+  host keeps the text of an import file in one pending slot, behind a random
+  selection ID. Copy names only the source profile. The host binds the
+  destination and only reads the source plan.
+- Export does not call the bridge. It writes the draft that the page sends.
+- `adapters/windows/user_files.py` holds the steps without wording: the
+  target check, the staged write, the read-back check and the bounded read.
+  `map export`, `map import`, `map save` and the window share them. A refusal
+  is `UserFileError` with one closed reason. The command line and the window
+  map the reason to their own texts.
+
+**Journal and recovery.** Apply, the restores and the adoption publish files
+through one journal for each operation.
+
+- Journals live in `data/operations/mission-map-journals/`. A journal holds
+  the per-file groups, the manager-folder record entries and a phase. The
+  phases are `PREPARED`, `PUBLISHING`, `PUBLISHED`, `COMMITTING`,
+  `COMPENSATING`, `ROLLED_BACK` and `COMMITTED`.
+- `COMMITTING` is the commit point. After it, recovery only rolls forward.
+- `repositories/journaled_publication.py` is the shared engine. Backup
+  restore uses it too. `repositories/mission_map_publication.py` sets the
+  editor policy.
+- `application/mission_map_recovery.MissionMapRecovery` resolves the journals.
+  It first proves that the server is stopped (`InstallationGuard`), then takes
+  the folder writer and the association locks. If a file is in a third state,
+  it refuses and keeps the journal.
+- `MissionMapRecoveryCoordinator` runs recovery once at owner startup, before
+  the handlers exist. It also serves `inspect_mission_map_recovery`: Check
+  again in the editor and `map recover`. It defers while the lane is busy. It
+  sets and lifts only the blocks of its own owner, `APPLY_MISSION_MAP`.
+
+*Recovery log lines (8.12).* The coordinator writes these lines to the
+manager log, `data/logs/manager.jsonl`. They are hidden from Manager activity
+and show in Logs, Manager diagnostics.
+
+| Event | Level | When | Fields |
+|---|---|---|---|
+| `mission_map.recovery_resolved` | WARNING | A journal is resolved | `operation_kind`, `phase`, `result`, `trigger` |
+| `mission_map.recovery_blocked` | WARNING | A journal stays, or journals cannot be read | `operation_kind`, `phase`, `reason`, `trigger`; for unreadable journals `reason`, `unreadable` (the count), `trigger` |
+| `operation_lane.recovery_block_cleared` | INFO | A lane call removes at least one block | `reasons`, and `owner` when one owner is cleared |
+
+- `operation_id` is the top-level field of a line. It is the ID of the
+  interrupted operation. A line for unreadable journals has none.
+- `phase` is the phase found before recovery. `result` is `COMMITTED` when the
+  journal was rolled forward and `ROLLED_BACK` when it was rolled back. A
+  journal that stays active has no result.
+- `trigger` is `STARTUP` or `ON_DEMAND`.
+- A line holds no path, root, profile ID or mission key.
+- A clean start writes no recovery line.
+- Operation records live in the memory of one session. After a restart,
+  `get_operation` gives `NOT_FOUND` for the old ID. Use the log line to
+  find the result of the interrupted operation.
+
+Tests: `tests/test_mission_map_recovery_log_lines.py`,
+`tests/test_recovery_block_cleared_log.py` and
+`tests/test_mission_map_recovery_phases.py`.
+
 ## Frontend rules
 
 ### Section registry
@@ -513,6 +696,30 @@ rule by review.
 Some older Python modules are still above 300 lines. Such a file must
 not grow: split it before you add to it. A change that keeps its line count
 needs a real simplification, never removed comments or joined statements.
+
+The editor scripts in `EDITOR_SCRIPTS` have a tighter bound.
+`tests/test_mission_map_editor_static.py` allows 200 lines for each editor
+script and 212 for `map_editor_model.js`. `tests/test_split_sizes.py` checks
+300 lines for `composition.py`, `composition_model.py`,
+`bridge_composition.py` and every `application/lifecycle*.py` file.
+
+The mission-map work made these splits before it added code. Each split moved
+code without a change of behavior:
+
+- `host/legacy_import_api.py` took the legacy-import methods from
+  `host/api.py`.
+- `repositories/journaled_publication.py` took the publication engine from
+  `repositories/restore_storage.py`, so the editor journal can reuse it.
+- `operation_results.js` and `operation_failures.js` took parts of the
+  operation wording (see Wording catalogues).
+- `application/restore_recovery.py` and `application/restore_validation.py`
+  came out of `application/restores.py`. `domain/backup_entries.py` came out
+  of `domain/backups.py`. `domain/mission_map_record_checks.py` came out of
+  `domain/mission_map_records.py`.
+- `adapters/windows/user_files.py` took the file steps from `cli/map_files.py`.
+  `host/map_editor_transfer_api.py` holds the window transfer methods, and
+  `map_editor_transfer_import.js` holds the import flow, so each file stays in
+  its bound.
 
 ## Change checklist
 

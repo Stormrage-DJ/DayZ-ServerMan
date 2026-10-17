@@ -50,8 +50,9 @@ class EditorLaneReadTests(unittest.TestCase):
             ("inspect_mission_map_recovery", {})])
         self.assertTrue(all("profile_id" not in item["parameters"] for item in requests))
         self.assertEqual(len({item["request_id"] for item in requests}), 3)
+        # The profile list is the fourth unbound read (9.2); the host reduces its records
         self.assertEqual(UNBOUND_METHODS, frozenset(("get_operation", "read_operation_events",
-                                                     "inspect_mission_map_recovery")))
+                                                     "inspect_mission_map_recovery", "list_profiles")))
         for name, parameters in (("operation_events", ("self", "after_sequence")),
                                  ("operation", ("self", "operation_id")), ("check_recovery", ("self",))):
             self.assertEqual(tuple(inspect.signature(getattr(MissionMapEditorApi, name)).parameters), parameters)

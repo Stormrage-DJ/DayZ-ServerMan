@@ -15,6 +15,8 @@ function mapDraftChanged(value) {
   window.ServerManMapTools.refresh(value);
   // After the tools, so the tier control sees the current tool availability (QA-4.6-F7)
   window.ServerManMapProperties.render();
+  // Export plan and Import plan follow the plan state; an edit ends the placement reminder of an import (9.1)
+  window.ServerManMapTransfer.changed(value);
   if (!mapEditorState.loaded) return;
   const current = {...mapEditorState.loaded, ...value};
   const terrain = JSON.stringify(value.plan?.terrain ?? null);
@@ -165,11 +167,13 @@ async function mapLoad() {
 function mapStart() {
   window.ServerManMapLayout.init();
   window.ServerManMapViewportUi.init();
+  window.ServerManMapFullScreen.init();
   mapInitModel();
   // Apply and Restore, the lane follower and the refresh after an operation (8.18)
   window.ServerManMapRefresh.init(mapEditorState);
   window.ServerManMapPublish.init(mapEditorState);
   window.ServerManMapAdopt.init(mapEditorState);
+  window.ServerManMapTransfer.init(mapEditorState);
   if (window.pywebview?.api) mapLoad();
 }
 

@@ -27,7 +27,11 @@ class MissionMapEditorApiTests(unittest.TestCase):
                                    "read_background", "select_background", "set_aside_plan", "inspect",
                                    "continue_inspection", "cancel_inspection", "preview_plan", "apply_plan",
                                    "preview_restore", "restore_mission", "operation_events", "operation",
-                                   "check_recovery", "preview_adoption", "adopt_mission"})
+                                   "check_recovery", "preview_adoption", "adopt_mission",
+                                   # Export plan and Import plan (9.1): no path, no profile and no destination
+                                   "export_plan", "select_import_file", "preview_import", "import_plan",
+                                   # Copy from another profile (9.2): the page names only the source profile
+                                   "copy_sources", "preview_copy", "copy_plan"})
         self.assertEqual(tuple(inspect.signature(MissionMapEditorApi.save_plan).parameters),
                          ("self", "plan", "expected_revision", "background_selection_id"))
         # The display reads name the mission key; none takes a profile ID or a path
@@ -49,7 +53,15 @@ class MissionMapEditorApiTests(unittest.TestCase):
                                  ("preview_restore", ("self", "mode")),
                                  ("restore_mission", ("self", "mode", "preview_fingerprint")),
                                  # Adoption names no mode, path or case: the host binds the profile (10.16)
-                                 ("preview_adoption", ("self",)), ("adopt_mission", ("self", "preview_fingerprint"))):
+                                 ("preview_adoption", ("self",)), ("adopt_mission", ("self", "preview_fingerprint")),
+                                 # The export names the draft; the import names only the host token (9.1)
+                                 ("export_plan", ("self", "plan")), ("select_import_file", ("self",)),
+                                 ("preview_import", ("self", "selection_id")),
+                                 ("import_plan", ("self", "selection_id", "mode", "expected_revision", "confirmed")),
+                                 # The copy names the source profile; the destination is the bound profile (9.2)
+                                 ("copy_sources", ("self",)), ("preview_copy", ("self", "source_profile_id")),
+                                 ("copy_plan", ("self", "source_profile_id", "mode", "expected_revision",
+                                                "confirmed"))):
             self.assertEqual(tuple(inspect.signature(getattr(MissionMapEditorApi, name)).parameters), parameters)
         api = MissionMapEditorApi(Mock(), "alpha", None)
         with self.assertRaises(TypeError):

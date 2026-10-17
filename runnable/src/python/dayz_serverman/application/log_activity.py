@@ -23,6 +23,8 @@ HIDDEN_EVENTS = frozenset((
     "steamcmd.guard_waited", "instance_lock.unsupported_folder",
     # A6: the ownership record could not be read or written; the lifecycle result does not change
     "server_ownership.unreadable", "server_ownership.unwritable", "server_ownership.write_failed",
+    # 8.12: recovery detail lines stay in Manager diagnostics; the view keeps the lane block sentence only
+    "mission_map.recovery_resolved", "mission_map.recovery_blocked", "operation_lane.recovery_block_cleared",
 ))
 # Sentence shown for an event whose details stay in the diagnostics
 DETAIL_HINT = "Details are in Manager diagnostics."

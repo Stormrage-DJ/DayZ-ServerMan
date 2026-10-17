@@ -135,7 +135,7 @@ def build_composition(
     installation_guard = InstallationGuard(lifecycle, mutex)
     # Editor recovery finishes before handlers, using the plan service's shared association lock set
     mission_map = build_mission_map(paths, profiles, settings, staging=staging, guard=installation_guard,
-                                    folder_writer=folder_writer, operations=operations)
+                                    folder_writer=folder_writer, operations=operations, logger=logger)
     # One commit step on the same locks for Apply, the restores, the zone toggle (8.13) and adoption (10.35)
     mission_map_commit = build_mission_map_commit(paths, mission_map, installation_guard, folder_writer,
                                                   create_root=not observer)

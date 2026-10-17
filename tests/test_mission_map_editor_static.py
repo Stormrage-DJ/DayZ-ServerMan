@@ -61,11 +61,14 @@ class MissionMapEditorStaticTests(unittest.TestCase):
                          "map_editor_properties.js", "map_editor_encounter_properties.js", "map_editor_linked_loot_properties.js",
                          "map_editor_inspect_wording.js", "map_editor_inspect_read.js",
                          "map_editor_tier_control.js", "map_editor_inspect.js", "map_editor_abundance.js", "map_editor_keys.js",
-                         "map_editor_set_aside.js", "map_editor_close_dialog.js", "map_editor_close.js",
-                         "map_editor_preview_words.js", "map_editor_preview_dialog.js", "map_editor_preview_apply.js",
+                         "map_editor_fullscreen.js", "map_editor_set_aside.js", "map_editor_close_dialog.js", "map_editor_close.js",
+                         "map_editor_preview_words.js", "map_editor_preview_dialog.js",
+                         "map_editor_preview_controls.js", "map_editor_preview_apply.js",
                          "map_editor_preview_restore.js", "map_editor_preview_adopt.js", "map_editor_publish_words.js",
                          "map_editor_publish_status.js", "map_editor_follow.js", "map_editor_refresh.js",
-                         "map_editor_adopt.js", "map_editor_publish.js", "map_editor_app.js"))
+                         "map_editor_adopt.js", "map_editor_publish.js", "map_editor_transfer_words.js",
+                         "map_editor_transfer_review.js", "map_editor_transfer.js", "map_editor_transfer_import.js",
+                         "map_editor_copy_source.js", "map_editor_copy.js", "map_editor_app.js"))
         composed = compose_editor_html(FRONTEND)
         self.assertNotIn(STYLE_MARKER, composed)
         self.assertNotIn(SCRIPT_MARKER, composed)
@@ -104,6 +107,7 @@ class MissionMapEditorStaticTests(unittest.TestCase):
                     "map_editor_encounter_properties.js": "ServerManMapEncounterProperties",
                     "map_editor_drag.js": "ServerManMapDrag",
                     "map_editor_properties.js": "ServerManMapProperties", "map_editor_keys.js": "ServerManMapKeys",
+                    "map_editor_fullscreen.js": "ServerManMapFullScreen",
                     "map_editor_inspect_wording.js": "ServerManMapInspectWording",
                     "map_editor_inspect_read.js": "ServerManMapInspectRead",
                     "map_editor_tier_control.js": "ServerManMapTierControl", "map_editor_inspect.js": "ServerManMapInspect",
@@ -112,6 +116,7 @@ class MissionMapEditorStaticTests(unittest.TestCase):
                     "map_editor_close_dialog.js": "ServerManMapCloseDialog", "map_editor_close.js": "ServerManMapClose",
                     "map_editor_preview_words.js": "ServerManMapPreviewWords",
                     "map_editor_preview_dialog.js": "ServerManMapPreviewDialog",
+                    "map_editor_preview_controls.js": "ServerManMapPreviewControls",
                     "map_editor_preview_apply.js": "ServerManMapPreviewApply",
                     "map_editor_preview_restore.js": "ServerManMapPreviewRestore",
                     "map_editor_preview_adopt.js": "ServerManMapPreviewAdopt",
@@ -120,13 +125,19 @@ class MissionMapEditorStaticTests(unittest.TestCase):
                     "map_editor_publish_status.js": "ServerManMapPublishStatus",
                     "map_editor_follow.js": "ServerManMapFollow", "map_editor_refresh.js": "ServerManMapRefresh",
                     "map_editor_publish.js": "ServerManMapPublish",
+                    "map_editor_transfer_words.js": "ServerManMapTransferWords",
+                    "map_editor_transfer_review.js": "ServerManMapTransferReview",
+                    "map_editor_transfer.js": "ServerManMapTransfer",
+                    "map_editor_transfer_import.js": "ServerManMapTransferImport",
+                    "map_editor_copy_source.js": "ServerManMapCopySource", "map_editor_copy.js": "ServerManMapCopy",
                     "map_editor_app.js": "ServerManMapEditor"}
         names = []
         for filename, global_name in expected.items():
             script = (FRONTEND / filename).read_text(encoding="utf-8")
             self.assertEqual(re.findall(r"window\.(ServerMan\w+)\s*=", script), [global_name])
             self.assertLess(len(script.splitlines()), 300)
-            self.assertLessEqual(len(script.splitlines()), 200)
+            # The model holds the one import undo step of 9.1 (Architect 2026-10-17 17:10:42 in evidence 9.1)
+            self.assertLessEqual(len(script.splitlines()), 212 if filename == "map_editor_model.js" else 200)
             top = re.findall(r"^(?:const|let|function|async function)\s+(\w+)", script, re.MULTILINE)
             self.assertTrue(all(name.startswith("map") for name in top))
             names.extend(top)

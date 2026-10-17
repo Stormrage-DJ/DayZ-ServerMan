@@ -10,11 +10,16 @@ except ModuleNotFoundError:
     from ui_harness_support import ROOT
 
 from dayz_serverman.application import activity_wording as wording
+from dayz_serverman.application.mission_map_recovery import EDITOR_KIND, RECOVERY_UNRESOLVED
 from dayz_serverman.application.restores import RESTORE_KIND
 
 
 # A restore block reason that has its own catalogue sentence
 INSPECTED = "Mutations are blocked until restore recovery is inspected."
+# Product Owner 2026-10-17 14:50:44 in evidence 8.11, word for word: the unresolved mission map recovery sentence
+UNRESOLVED_TEXT = ("A mission map change did not finish, and its files cannot be recovered safely. Check Manager "
+                   "diagnostics. Then select Check again in the map editor, or restart DayZ-ServerMan; it checks "
+                   "again when it starts.")
 
 PACKAGE = ROOT / "runnable" / "src" / "python" / "dayz_serverman"
 
@@ -106,6 +111,14 @@ class BlockReasonTests(unittest.TestCase):
             self.assertEqual(wording.block_reason_text(reason), sentence, reason)
         # The four profile restore causes and the two SteamCMD causes are six different sentences
         self.assertEqual(len(set(map(wording.block_reason_text, cases))), len(cases))
+
+    def test_unresolved_mission_map_recovery_names_check_again_and_the_restart(self) -> None:
+        """8.11 F1: one sentence for every editor kind, true in both windows and at startup, in both catalogues."""
+        self.assertEqual(wording.block_reason_text(RECOVERY_UNRESOLVED), UNRESOLVED_TEXT)
+        self.assertEqual(wording.block_reason_text(RECOVERY_UNRESOLVED, EDITOR_KIND), UNRESOLVED_TEXT)
+        script = (ROOT / "runnable" / "src" / "frontend" / "host_sentences.js").read_text(encoding="utf-8")
+        self.assertIn(f'  ["unresolved mission map recovery", "{UNRESOLVED_TEXT}"],', script)
+        self.assertFalse(wording.leaks_identifier(UNRESOLVED_TEXT))
 
     def test_missing_folder_sentences_name_the_settings_repair(self) -> None:
         """(t) QF-069: the three no-folder sentences, first match wins, both catalogues agree in order."""

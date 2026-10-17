@@ -132,7 +132,10 @@ class LaneTests(unittest.TestCase):
                                               recovery_required=True)
         failure, lane = self.failure(recovery)
         self.assertEqual((failure.code, failure.recovery_required, lane.blocks),
-                         ("RECOVERY_REQUIRED", True, [RECOVERY_UNRESOLVED]))
+                         ("RECOVERY_REQUIRED", True, []))
+        # The lane sets the one editor block with the unresolved reason; the record keeps the message (8.11 F1)
+        self.assertEqual((failure.recovery_owner, failure.recovery_reason, failure.safe_message),
+                         (EDITOR_KIND, RECOVERY_UNRESOLVED, "Mission map records require recovery."))
         self.assertEqual(apply_error(MissionMapPublicationError("PATH_INVALID", "unsafe")).code, ErrorCode.PATH_INVALID)
 
 

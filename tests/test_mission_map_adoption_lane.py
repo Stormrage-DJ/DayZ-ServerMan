@@ -9,7 +9,7 @@ from typing import Any
 
 from dayz_serverman.application.mission_map_adoption_coordinator import MissionMapAdoptionCoordinator
 from dayz_serverman.application.mission_map_apply_choices import ApplyRefused
-from dayz_serverman.application.mission_map_recovery import EDITOR_KIND
+from dayz_serverman.application.mission_map_recovery import EDITOR_KIND, RECOVERY_UNRESOLVED
 from dayz_serverman.application.operations.models import OperationFailure
 from dayz_serverman.repositories.mission_map_layout import association_folder, has_invalidated, invalidated_name
 from dayz_serverman.repositories.mission_map_records import AssociationRecordStore
@@ -251,7 +251,9 @@ class LaneTests(unittest.TestCase):
         self.assertEqual((failure.code, lane.blocks), ("INVALID_REQUEST", []))
         lane, failure = self.failure("active")
         self.assertEqual((failure.code, failure.recovery_required), ("RECOVERY_REQUIRED", True))
-        self.assertEqual(lane.blocks[0][1], EDITOR_KIND)
+        # The lane sets the one editor block with the unresolved reason (8.11 F1)
+        self.assertEqual((lane.blocks, failure.recovery_owner, failure.recovery_reason),
+                         ([], EDITOR_KIND, RECOVERY_UNRESOLVED))
         lane, failure = self.failure("retired")
         self.assertEqual((failure.code, lane.blocks), ("PUBLICATION_FAILED", []))
 

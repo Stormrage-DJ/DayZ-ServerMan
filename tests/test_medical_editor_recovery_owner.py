@@ -5,6 +5,9 @@ recover handler lifts every block it set. An ordinary medical failure and a fail
 block under their own kind, as before. A failed toggle carries the code, the message and the retry flag
 of `_error` in the lane record. A cancellation at a safe point ends CANCELLED (Architect 2026-10-15
 15:02:04 in evidence 8.13).
+
+The editor block has the reason of unresolved recovery, and the record keeps the commit-step message
+(8.11 F1).
 """
 
 from __future__ import annotations
@@ -21,10 +24,11 @@ from dayz_serverman.application.medical_feature_coordinator import MedicalFeatur
 from dayz_serverman.application.mission_map_recovery import EDITOR_KIND, MissionMapRecovery
 from dayz_serverman.application.mission_map_recovery_coordinator import MissionMapRecoveryCoordinator
 from dayz_serverman.application.operations.manager import OperationManager
-from dayz_serverman.application.operations.models import OperationFailure, OperationState, QueueUnavailable
+from dayz_serverman.application.operations.models import OperationFailure, OperationState
 from dayz_serverman.application.operations.store import OperationStore
 from dayz_serverman.domain.medical_editor_texts import FINGERPRINT_STALE_TEXT
 from tests.medical_editor_support import PROTO, ZONES, ToggleFixture
+from tests.mission_map_block_reason_support import assert_one_unresolved_block
 
 KIND = "APPLY_MEDICAL_FEATURE"
 FIELDS = ("profile_id", "feature", "enabled", "expected_profile_revision", "expected_settings_revision",
@@ -93,10 +97,9 @@ class ToggleOwnerTests(LaneFixture):
         record = self.finished(self.zone_apply(True))
         self.assertEqual(record.state, OperationState.RECOVERY_REQUIRED)
         self.assertEqual((record.terminal_error.code, record.terminal_error.retryable), ("RECOVERY_REQUIRED", False))
-        self.assertTrue(self.blocks())
-        self.assertEqual({owner for _reason, owner in self.blocks()}, {EDITOR_KIND})
-        with self.assertRaises(QueueUnavailable):
-            self.lane.submit(KIND, lambda _context: {})
+        # 8.11 F1: one block with the unresolved reason; the toggle and Apply are both refused
+        assert_one_unresolved_block(self, self.lane, record, KIND)
+        assert_one_unresolved_block(self, self.lane, record, EDITOR_KIND)
         broken[0] = False
         self.assertFalse(self.recover()["blocked"])
         self.assertEqual(self.blocks(), [])
@@ -120,7 +123,8 @@ class OtherOwnerTests(LaneFixture):
         record = self.finished(self.coordinator.apply(parameters)["operation_id"])
         self.assertEqual((record.state, record.terminal_error.code), (OperationState.RECOVERY_REQUIRED,
                                                                       "RECOVERY_REQUIRED"))
-        self.assertEqual({owner for _reason, owner in self.blocks()}, {KIND})
+        # The one block keeps the failure's own message, not the editor reason (8.11 F1)
+        self.assertEqual(self.blocks(), [(record.terminal_error.message, KIND)])
 
     def test_failure_without_and_with_an_owner(self) -> None:
         """Without an owner the lane kind owns the block; a named owner owns it instead."""

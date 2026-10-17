@@ -2,6 +2,9 @@
 
 The adoption lane runs for real. The fault hook of the commit step raises after the commit point. The retire hook
 raises after the journal was retired as committed. A runner test uses the real command line.
+
+A late failure holds one editor block with the reason of unresolved recovery, and the 8.5 recover handler lifts
+it (8.11 F1).
 """
 
 from __future__ import annotations
@@ -11,17 +14,26 @@ import re
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from map_adopt_fixtures import AdoptCliFixture  # noqa: E402
 from map_cli_fixtures import PROFILE_ID, MapFixture  # noqa: E402
+from mission_map_block_reason_support import assert_one_unresolved_block  # noqa: E402
 from test_cli_confirm import FakeTerminal  # noqa: E402
+from test_mission_map_commit_fixture import RecordingPorts  # noqa: E402
 
 from dayz_serverman.application import mission_map_adoption  # noqa: E402
 from dayz_serverman.application.activity_wording import KIND_TEXTS  # noqa: E402
+from dayz_serverman.application.installation_guard import InstallationGuard  # noqa: E402
 from dayz_serverman.application.mission_map_apply_choices import ApplyRefused  # noqa: E402
+from dayz_serverman.application.mission_map_apply_coordinator import RECOVERY_MESSAGE  # noqa: E402
+from dayz_serverman.application.mission_map_recovery import EDITOR_KIND, MissionMapRecovery  # noqa: E402
+from dayz_serverman.application.mission_map_recovery_coordinator import (  # noqa: E402
+    MissionMapRecoveryCoordinator,
+)
 from dayz_serverman.cli.interrupts import Interrupts  # noqa: E402
 from dayz_serverman.domain.lifecycle import LifecycleFailure  # noqa: E402
 from dayz_serverman.domain.mission_map_adoption_texts import (  # noqa: E402
@@ -83,7 +95,17 @@ class ExitTests(AdoptCliFixture):
         error = run.json()["error"]
         self.assertEqual((run.code, error["code"], error["details"]["operation"]["state"]),
                          (6, "RECOVERY_REQUIRED", "RECOVERY_REQUIRED"))
-        self.assertEqual({entry[1] for entry in self.lane._recovery_blocks._entries}, {"APPLY_MISSION_MAP"})
+        # 8.11 F1: one editor block with the unresolved reason; adoption and Apply are both refused
+        record = self.lane.get(error["details"]["operation"]["operation_id"])
+        assert_one_unresolved_block(self, self.lane, record, KIND, RECOVERY_MESSAGE)
+        assert_one_unresolved_block(self, self.lane, record, EDITOR_KIND, RECOVERY_MESSAGE)
+        # The 8.5 recover handler, after the operator stopped the server, rolls forward and lifts the block
+        self.faults = lambda _phase, _index: None
+        ports = RecordingPorts([])
+        service = MissionMapRecovery(self.paths, SimpleNamespace(load=lambda: self.settings),
+                                     InstallationGuard(ports, ports), ports, self.plans._locks)  # type: ignore[arg-type]
+        self.assertFalse(MissionMapRecoveryCoordinator(service, self.lane).inspect_mission_map_recovery({})["blocked"])
+        self.assertEqual(self.lane._recovery_blocks._entries, [])
 
     def test_refusal_after_retirement_exits_1_with_the_kind_text(self) -> None:
         """PUBLICATION_FAILED: the kind line, then the Product Owner text of evidence 10.35."""

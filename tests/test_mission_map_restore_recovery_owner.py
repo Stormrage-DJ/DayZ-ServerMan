@@ -1,7 +1,9 @@
-"""The recovery owner of a failed restore on the real operation lane (8.13 Architect finding F1, leaf 8.8).
+"""The recovery owner of a failed restore or Apply on the real operation lane (8.13 F1 of leaf 8.8, 8.11 F1).
 
-A restore that needs recovery blocks only under the map editor kind, so the 8.5 recover handler lifts
-every block that it set and the lane admits work again. A failure without recovery sets no block.
+A restore or an Apply that needs recovery blocks only under the map editor kind, so the 8.5 recover handler
+lifts every block that it set and the lane admits work again. The lane holds one block, with the reason of
+unresolved recovery, and the record keeps the commit-step message (8.11 F1). A failure without recovery sets
+no block.
 """
 
 from __future__ import annotations
@@ -12,13 +14,16 @@ from types import SimpleNamespace
 from typing import Any
 
 from dayz_serverman.application.installation_guard import InstallationGuard
+from dayz_serverman.application.mission_map_apply_coordinator import MissionMapApplyCoordinator
 from dayz_serverman.application.mission_map_recovery import EDITOR_KIND, MissionMapRecovery
 from dayz_serverman.application.mission_map_recovery_coordinator import MissionMapRecoveryCoordinator
 from dayz_serverman.application.mission_map_restore_coordinator import MissionMapRestoreCoordinator
 from dayz_serverman.application.operations.manager import OperationManager
-from dayz_serverman.application.operations.models import OperationState, QueueUnavailable
+from dayz_serverman.application.operations.models import OperationState
 from dayz_serverman.application.operations.store import OperationStore
 from dayz_serverman.domain.mission_map_restore_texts import LANE_KINDS
+from tests.mission_map_apply_support import NO_CHOICES
+from tests.mission_map_block_reason_support import assert_one_unresolved_block
 from tests.mission_map_restore_support import PLAN, RestoreFixture
 
 TERMINAL = (OperationState.SUCCEEDED, OperationState.FAILED, OperationState.CANCELLED, OperationState.RECOVERY_REQUIRED)
@@ -65,28 +70,48 @@ class RestoreOwnerTests(RestoreFixture):
                                      self.ports, self.plans._locks)
         return MissionMapRecoveryCoordinator(service, self.lane).inspect_mission_map_recovery({})
 
+    def broken_publication(self) -> list[bool]:
+        """Fail every record publication while the returned flag is true."""
+        broken = [True]
+
+        def fail_publish(phase: str, _index: int) -> None:
+            """Fail every record publication while the operation runs."""
+            if phase == "AFTER_PUBLISH_RECORD" and broken[0]:
+                raise OSError("record publication fault")
+        self.fault = fail_publish
+        return broken
+
     def test_failed_restore_blocks_under_the_editor_kind_and_recovery_lifts_it(self) -> None:
         """Record publication fails after COMMITTING; recovery finishes it, and the lane admits a new restore."""
         for mode in ("previous", "original"):
             with self.subTest(mode=mode):
-                broken = [True]
-
-                def fail_publish(phase: str, _index: int) -> None:
-                    """Fail every record publication while the operation runs."""
-                    if phase == "AFTER_PUBLISH_RECORD" and broken[0]:
-                        raise OSError("record publication fault")
-                self.fault = fail_publish
+                broken = self.broken_publication()
                 record = self.finished(self.submit(mode))
-                self.assertEqual((record.state, record.kind), (OperationState.RECOVERY_REQUIRED, LANE_KINDS[mode]))
-                self.assertTrue(self.blocks())
-                self.assertEqual({owner for _reason, owner in self.blocks()}, {EDITOR_KIND})
-                with self.assertRaises(QueueUnavailable):
-                    self.lane.submit(LANE_KINDS[mode], lambda _context: {})
+                self.assertEqual(record.kind, LANE_KINDS[mode])
+                # 8.11 F1: one block with the unresolved reason; the restore kind and Apply are both refused
+                assert_one_unresolved_block(self, self.lane, record, LANE_KINDS[mode])
+                assert_one_unresolved_block(self, self.lane, record, EDITOR_KIND)
                 broken[0] = False
                 self.assertFalse(self.recover()["blocked"])
                 self.assertEqual(self.blocks(), [])
                 self.assertEqual(self.records()[2][0]["operation_kind"], f"restore_{mode}")
         # The lane admits a new submission: Restore previous state commits
+        self.fault = None
+        self.assertEqual(self.finished(self.submit("previous")).state, OperationState.SUCCEEDED)
+
+    def test_failed_apply_shows_the_unresolved_reason_and_recovery_lifts_it(self) -> None:
+        """8.11 F1: Apply again fails after COMMITTING; one editor block with the unresolved reason, then recovery."""
+        apply = MissionMapApplyCoordinator(self.service, self.lane)
+        # A changed plan, so Apply writes and publishes its records again
+        self.save(PLAN, 50, expected=0)
+        broken = self.broken_publication()
+        record = self.finished(apply.apply_mission_map({"profile_id": "main", "choices": NO_CHOICES,
+                                                        "preview_fingerprint": self.review().fingerprint})["operation_id"])
+        self.assertEqual(record.kind, EDITOR_KIND)
+        assert_one_unresolved_block(self, self.lane, record, EDITOR_KIND)
+        broken[0] = False
+        self.assertFalse(self.recover()["blocked"])
+        self.assertEqual(self.blocks(), [])
         self.fault = None
         self.assertEqual(self.finished(self.submit("previous")).state, OperationState.SUCCEEDED)
 

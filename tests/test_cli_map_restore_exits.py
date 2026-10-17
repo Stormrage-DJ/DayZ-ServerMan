@@ -34,9 +34,10 @@ FAILED = {mode: KIND_TEXTS[kind][2] for mode, kind in LANE_KINDS.items()}
 # Product Owner 2026-10-17 02:14:51 in evidence 10.32: PUBLICATION_FAILED under both restore kinds
 COMMITTED_FAILURE = ("The restore reached its commit point, but a later step failed. The mission files can have "
                      "changed. Preview the restore again to see what is left to restore.")
-# The block reason of a running server under the editor kind (6c), with the CLI way out
-NOT_STOPPED = ("A mission map change did not finish. Stop the DayZ server, then restart DayZ-ServerMan to check the "
-               "unfinished change.")
+# The block reason of a running server under the editor kind (6c); Product Owner 2026-10-17 16:18:22 in evidence 8.12
+NOT_STOPPED = ("A mission map change did not finish and must be checked. This is possible only while the server is "
+               "stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then select Check "
+               "again in the map editor, or restart DayZ-ServerMan.")
 
 
 class ChangeDuringQuestion(FakeTerminal):

@@ -103,7 +103,7 @@ await sleep(900);check(saved.length===3,"nothing is left to save after the retur
         self.assertEqual(run_editor_harness(AUTOSAVE + r'''
 await load(value(plan()));tool("circle");click(500,400);await sleep(900);
 await answer(failure("REVISION_CONFLICT","stale_revision","changed"));
-check(status()==="Not saved: The saved map plan changed. Reload plan loads it and discards your unsaved changes."&&text("map-announcement")===status(),"conflict reason shown and announced");
+check(status()==="Not saved: The saved map plan changed. Reload plan loads it and discards your unsaved changes. To keep your unsaved changes, choose Export plan first."&&text("map-announcement")===status(),"conflict reason shown and announced");
 check(text("map-save-notice")===status()&&document.getElementById("map-save-notice").classList.contains("map-save-error")&&text("map-draft-changes")==="Not available","failure on the map; no Draft value after a conflict stop");
 check(!reload().hidden&&reload().textContent==="Reload plan"&&getComputedStyle(reload()).display!=="none","Reload plan offered");
 click(600,400);await sleep(2500);check(saved.length===1&&status().startsWith("Not saved: The saved map plan changed"),"no autosave after a conflict");

@@ -44,6 +44,10 @@ TEXTS = {
     "reloaded": "The saved map plan changed, so the map editor loaded it again. Undo and Redo start again from this plan.",
     "late_apply": PREVIEW_STALE_TEXT, "late_restore": RESTORE_LATE, "stale_restore": RESTORE_STALE_TEXT,
     "apply_late_host": APPLY_LATE, "recovery_unresolved": RECOVERY_UNRESOLVED,
+    # Product Owner 2026-10-17 14:50:44 in evidence 8.11: the catalogue sentence of the unresolved recovery block
+    "unresolved_text": "A mission map change did not finish, and its files cannot be recovered safely. Check Manager "
+                       "diagnostics. Then select Check again in the map editor, or restart DayZ-ServerMan; it checks "
+                       "again when it starts.",
 }
 
 # The fake lane and the page helpers; TOOLS gives the loaded plan, clicks and the model

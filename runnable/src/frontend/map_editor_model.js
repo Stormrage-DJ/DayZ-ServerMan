@@ -142,6 +142,16 @@ function mapModelCreate(changed, review) {
     history.reset();
     notify();
   };
+  const replace = (label, value) => {
+    // A saved import result is one named undo step. The old draft goes into the history. The loaded plan becomes
+    // the draft and the saved snapshot, and the new epoch voids a pending undo review (Architect 17:10:42, P3).
+    history.push(label, draft, value.plan);
+    epoch += 1;
+    metadata = structuredClone(value);
+    draft = structuredClone(value.plan);
+    saved = snapshot();
+    notify();
+  };
   const adopt = (submitted, result) => {
     // The saved snapshot remains exactly what was submitted, not the newer object draft; its evaluation goes with it.
     saved = structuredClone(submitted);
@@ -176,7 +186,7 @@ function mapModelCreate(changed, review) {
     notify();
     return true;
   };
-  return Object.freeze({load, snapshot, status, action, edit, move, acceptBounds, adopt, withdraw,
+  return Object.freeze({load, replace, snapshot, status, action, edit, move, acceptBounds, adopt, withdraw,
     setBackground: (label, value) => setPlan(label, "background", value), setGlobal: (label, value) => setPlan(label, "global_abundance", value),
     // A placement enters at the top of the list (index 0); a load or close changes the epoch, only a load the loads
     add: (label, object) => action(label, (plan) => plan.objects.unshift(structuredClone(object)), 1),

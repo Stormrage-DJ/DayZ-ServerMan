@@ -13,6 +13,7 @@ from .api import HostApi
 from .assets import compose_shell_html, resolve_frontend_root
 from .shutdown import SafeCloseController
 from .editor_windows import EditorWindowRegistry
+from .map_editor_transfer_api import protected_roots
 from .webview2 import find_webview2_version, show_native_error
 
 
@@ -108,12 +109,6 @@ def launch_application(
     )
     if window is None:
         raise RuntimeError("pywebview did not create a window")
-    # Bind the owner guard before native callbacks can open or delete a profile
-    editors = EditorWindowRegistry(webview, window, composition.profiles,
-                                   composition.host_bridge, assets, composition.logger, hidden=hidden,
-                                   selections=composition.mission_map.images)
-    composition.editor_guard.bind(editors)
-    host_api._set_map_editor_opener(editors.open)
     # Resolve dialog constants for both pywebview API generations
     dialog_types = getattr(webview, "FileDialog", None)
     folder_dialog = (
@@ -122,6 +117,16 @@ def launch_application(
     open_dialog = (
         dialog_types.OPEN if dialog_types is not None else webview.OPEN_DIALOG
     )
+    # A host without a save constant gets None; its Export plan then fails as a dialog failure
+    save_dialog = dialog_types.SAVE if dialog_types is not None else getattr(webview, "SAVE_DIALOG", None)
+    # Bind the owner guard before native callbacks can open or delete a profile; Export plan gets the dialogs
+    # and the protected roots of `map export` (9.1)
+    editors = EditorWindowRegistry(webview, window, composition.profiles,
+                                   composition.host_bridge, assets, composition.logger, hidden=hidden,
+                                   selections=composition.mission_map.images, dialogs=(open_dialog, save_dialog),
+                                   protected=lambda: protected_roots(composition.paths.root, composition.settings))
+    composition.editor_guard.bind(editors)
+    host_api._set_map_editor_opener(editors.open)
     def select_legacy_folder() -> str | None:
         """Ask the operator for a legacy DayZ root folder."""
         selected = window.create_file_dialog(folder_dialog, allow_multiple=False)

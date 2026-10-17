@@ -164,7 +164,7 @@ for(const [reason,text] of Object.entries(expected)){
   await load(value(plan()));if(document.getElementById("map-tool-circle").getAttribute("aria-pressed")!=="true")tool("circle");
   click(500,400);await sleep(900);check(pending.length===1,`${reason}: one save waits`);
   await answer(failure("PROFILE_CONTEXT_MISMATCH",reason,"The map editor names another mission. Reload the plan."));
-  check(status()===`Not saved: ${text} Reload plan discards your unsaved changes.`&&!reload().hidden,`${reason}: ${status()}`);
+  check(status()===`Not saved: ${text} Reload plan discards your unsaved changes. To keep your unsaved changes, choose Export plan first.`&&!reload().hidden,`${reason}: ${status()}`);
 }
 ''', budget=20000), "PASS")
 

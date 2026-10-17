@@ -13,6 +13,8 @@ EDITOR_STYLES = ("tokens.css", "controls.css", "styles.css", "map_editor.css", "
 # Shared wording has no shell lifecycle dependency; editor modules use unique globals. The operation
 # results and failures follow the messages in this one script element, so the result lookup resolves (8.14).
 # The busy helper locks Apply and Restore while the lane is busy; the editor follower publishes the state (8.18)
+#
+# The choice controls follow the dialog frame; Export plan, Import plan and Copy load after the publication flow (9.1, 9.2)
 EDITOR_SCRIPTS = (
     "operation_labels.js", "diagnostic_labels.js", "host_sentences.js", "operation_messages.js",
     "operation_results.js", "operation_failures.js", "busy_controls.js",
@@ -27,11 +29,14 @@ EDITOR_SCRIPTS = (
     "map_editor_encounter_wording.js", "map_editor_encounters.js", "map_editor_linked_loot.js", "map_editor_encounter_draw.js",
     "map_editor_encounter_tool.js", "map_editor_drag.js", "map_editor_properties.js", "map_editor_encounter_properties.js", "map_editor_linked_loot_properties.js", "map_editor_inspect_wording.js", "map_editor_inspect_read.js",
     "map_editor_tier_control.js", "map_editor_inspect.js", "map_editor_abundance.js", "map_editor_keys.js",
-    "map_editor_set_aside.js", "map_editor_close_dialog.js", "map_editor_close.js",
-    "map_editor_preview_words.js", "map_editor_preview_dialog.js", "map_editor_preview_apply.js",
+    "map_editor_fullscreen.js", "map_editor_set_aside.js", "map_editor_close_dialog.js", "map_editor_close.js",
+    "map_editor_preview_words.js", "map_editor_preview_dialog.js", "map_editor_preview_controls.js",
+    "map_editor_preview_apply.js",
     "map_editor_preview_restore.js", "map_editor_preview_adopt.js", "map_editor_publish_words.js",
     "map_editor_publish_status.js", "map_editor_follow.js", "map_editor_refresh.js", "map_editor_adopt.js",
-    "map_editor_publish.js", "map_editor_app.js",
+    "map_editor_publish.js", "map_editor_transfer_words.js", "map_editor_transfer_review.js",
+    "map_editor_transfer.js", "map_editor_transfer_import.js", "map_editor_copy_source.js", "map_editor_copy.js",
+    "map_editor_app.js",
 )
 
 

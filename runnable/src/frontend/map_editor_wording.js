@@ -176,11 +176,11 @@ window.ServerManMapWording = Object.freeze({
   // Save Status and Close Dialogs: a save waits for an apply or restore that holds the association lock
   savingDelayed: "Saving takes longer than usual. An apply or restore of this mission can delay it.", reloadPlan: "Reload plan",
   updating: "Updating", saveUnconfirmed: "The save result could not be confirmed.",
-  // Plan-save refusals that offer Reload plan name the loss of the draft (UI-UX 2026-10-13 00:01:25, item 4)
-  reloadStale: "Not saved: The saved map plan changed. Reload plan loads it and discards your unsaved changes.",
-  reloadInvalid: "Not saved: The saved map plan is not valid. Reload plan shows it read only and discards your unsaved changes.",
+  // Plan-save refusals that offer Reload plan name the loss of the draft, then Export plan (UI-UX 2026-10-13 00:01:25, item 4; XFER-13)
+  reloadStale: "Not saved: The saved map plan changed. Reload plan loads it and discards your unsaved changes. To keep your unsaved changes, choose Export plan first.",
+  reloadInvalid: "Not saved: The saved map plan is not valid. Reload plan shows it read only and discards your unsaved changes. To keep your unsaved changes, choose Export plan first.",
   savedPlanChanged: "The saved map plan changed.", savedPlanInvalid: "The saved map plan is not valid.",
-  reloadReason: (reason) => `Not saved: ${reason} Reload plan discards your unsaved changes.`,
+  reloadReason: (reason) => `Not saved: ${reason} Reload plan discards your unsaved changes. To keep your unsaved changes, choose Export plan first.`,
   notSaved: (reason) => `Not saved: ${reason}`,
   // Set aside of invalid saved data (5.3): the file is renamed, never deleted
   setAside: "Set aside invalid plan", setAsideTitle: "Set aside the invalid plan?", setAsideCancel: "Cancel",

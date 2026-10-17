@@ -9,7 +9,7 @@ from typing import Any
 from ..domain.mission_map_merge import (
     Availability, Candidate, TransferMode, combine, compatibility, read_candidate,
 )
-from ..domain.mission_map_plan import PlanForm, parse_plan, to_portable
+from ..domain.mission_map_plan import PlanForm, parse_plan, portable_text
 from ..domain.mission_map_prototype import is_prototype_export, migrate
 from ..domain.mission_map_values import (
     MAX_DOCUMENT_BYTES, document_error, refuse_json_constant, unique_json_keys,
@@ -58,10 +58,8 @@ class MissionMapTransferService:
         loaded = self._plans.load(profile_id)
         if loaded["state"] != "VALID":
             raise TransferRefused(f"there is no valid plan to export ({loaded['state']})", "no_valid_plan", "export")
-        # The portable form has no stored-only field and no local image path
-        text = json.dumps(to_portable(loaded["plan"]), ensure_ascii=False, sort_keys=True, indent=2,
-                          allow_nan=False) + "\n"
-        return {"text": text, "revision": loaded["revision"]}
+        # The portable form has no stored-only field and no local image path; the window writes the same bytes
+        return {"text": portable_text(loaded["plan"]), "revision": loaded["revision"]}
 
     def preview_import(self, profile_id: object, text: str | bytes, mode: object,
                        availability: Availability | None = None) -> dict[str, Any]:

@@ -117,8 +117,8 @@ await start();
 lane.refusal=fail("MUTATION_CONFLICT",T.recovery_unresolved,{reason:"RECOVERY_BLOCK",owner:"APPLY_MISSION_MAP"});
 activate("apply");await opened();element("map-announcement").textContent="";action("Apply").click();await wait();await wait();
 const refused=window.ServerManOperationMessages.error(lane.refusal.error,undefined,"APPLY_MISSION_MAP");
-check(slot()===refused&&refused.includes(window.ServerManHostSentences.blockReason(T.recovery_unresolved,"APPLY_MISSION_MAP")),
-  `the block reason: ${slot()}`);
+check(slot()===refused&&refused.includes(window.ServerManHostSentences.blockReason(T.recovery_unresolved,"APPLY_MISSION_MAP"))
+  &&refused.includes(T.unresolved_text),`the block reason: ${slot()}`);
 check(looks()==="map-operation-error"&&notice()===refused&&noticeLook()==="map-operation-recovery"&&text("map-announcement")===refused,
   "error slot, recovery notice, announced");
 check(!element("map-check-again").hidden&&element("map-check-again").textContent===T.check
@@ -130,7 +130,7 @@ check(slot()===T.deferred&&notice()===T.deferred&&!button.hidden&&document.activ
   "deferred: the text in the slot and the notice; the action and the focus stay");
 lane.recovery={success:true,value:{blocked:true,reason:T.recovery_unresolved,diagnostics:[]}};button.click();await wait();
 const reason=window.ServerManHostSentences.blockReason(T.recovery_unresolved,"APPLY_MISSION_MAP");
-check(reason.startsWith("A mission map change did not finish")&&slot()===reason&&notice()===reason&&!button.hidden,
+check(reason===T.unresolved_text&&slot()===reason&&notice()===reason&&!button.hidden,
   `still blocked: the block reason: ${slot()}`);
 lane.hold=true;button.click();button.click();await wait();
 check(lane.calls.filter(call=>call[0]==="check").length===3,"a second activation while a check runs does nothing");

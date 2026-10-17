@@ -217,3 +217,15 @@ CLI_OPTIONS = {'keep_change': 'Keep the change in this mission file when you app
                 'for more files.',
  'replace_file': 'Replace this mission file when you apply, by its path as the review prints it. Repeat it for more '
                  'files.'}
+
+# The seven texts of the QA-10.31-F3 residual, typed from the Product Owner entry 2026-10-16 14:26:38 in evidence 10.01
+CLI_SHOW = {'UNSUPPORTED_HEADING': 'Not available on this mission',
+            'PATH_CHANGE_HEADING': 'Earlier mission paths with a map plan',
+            'INTERRUPTED_EVIDENCE': 'Interrupted save files in the plan folder: {names}. DayZ-ServerMan keeps them as '
+                                    'evidence.',
+            'OBJECT_HEADINGS': ('ID', 'Name', 'Kind', 'Tier', 'Zone capacity', 'Availability')}
+TERRAIN_IDENTITY_REASON = 'The terrain family of this mission is not known.'
+TRANSFER_DESTINATION_READ_ONLY = ('The mission path of this profile changed, so its map plan is read only. Adopt the '
+                                  'mission before you import or copy.')
+INSPECT_HIDDEN = {'HIDDEN_ONE': '1 hidden object also sets this point.',
+                  'HIDDEN_MANY': '{count} hidden objects also set this point.'}

@@ -8,6 +8,7 @@ from pathlib import Path
 from ..domain.lifecycle import LifecycleFailure
 from ..domain.models import RepositoryError
 from ..repositories.mission_map_commit_records import CommitRecords
+from ..repositories.mission_map_journal import RESULTS, MapJournal
 from ..repositories.mission_map_journal_store import MissionMapJournalRepository
 from ..repositories.mission_map_journal_paths import journal_paths_safe
 from ..repositories.mission_map_publication import MissionMapPublication
@@ -28,6 +29,8 @@ RECOVERY_NO_ROOT = "Mission map recovery requires a configured DayZ root."
 RECOVERY_NOT_STOPPED = "Mutations are blocked by an interrupted mission map publication while the server is not proven stopped."
 RECOVERY_UNRESOLVED = "Mutations are blocked by unresolved mission map recovery."
 RECOVERY_UNREADABLE = "Mission map journals could not be read."
+# One read of the active journals: each file with its journal, or None when it cannot be trusted
+JournalRead = tuple[tuple[Path, MapJournal | None], ...]
 
 
 class MissionMapRecovery:
@@ -50,14 +53,62 @@ class MissionMapRecovery:
             return True
 
     def inspect(self, *, wait_seconds: float | None = None) -> dict[str, object]:
-        """Resolve safe journals, refusing every precondition before any recovery write."""
+        """Resolve safe journals, refusing every precondition before any recovery write.
+
+        After a journal read, the envelope has the internal key `journals` for the coordinator's log lines
+        (8.12 Architect decision 1). The coordinator removes it before any caller sees the envelope.
+        """
+        reads: list[JournalRead] = []
+        result = self._resolve(reads, wait_seconds)
+        if reads:
+            # The last read is the state that recovery acted on, or that a refusal kept
+            result["journals"] = self._outcomes(reads[-1])
+        return result
+
+    def _read(self, reads: list[JournalRead]) -> JournalRead:
+        """Read the active journals and keep the read for the outcome items; a failed read is not kept."""
+        pending = self.journals.records()
+        reads.append(pending)
+        return pending
+
+    def _outcomes(self, pending: JournalRead) -> list[dict[str, object]]:
+        """Describe each journal by its phase before recovery and its durable result now; unreadable ones by count."""
+        items: list[dict[str, object]] = [
+            {"operation_id": journal.operation_id, "operation_kind": journal.operation_kind,
+             "phase": journal.phase, "result": self._result_now(journal)}
+            for _path, journal in pending if journal is not None]
+        unreadable = sum(1 for _path, journal in pending if journal is None)
+        # An unreadable journal has no trusted id, so only the count is kept
+        if unreadable:
+            items.append({"unreadable": unreadable})
+        return items
+
+    def _result_now(self, journal: MapJournal) -> str | None:
+        """Return None while the journal is active; else its retired result, or the engine's fixed direction."""
         try:
-            pending = self.journals.records()
+            if self.journals.path_for(journal.operation_id).exists():
+                return None
+        except (OSError, ValueError, RuntimeError):
+            # An unknown state counts as active, so no line claims a result that did not happen
+            return None
+        try:
+            retired = self.journals.load(self.journals.retired_path_for(journal.operation_id)).result
+        except (OSError, ValueError, RuntimeError):
+            retired = None
+        if retired in RESULTS:
+            return retired
+        # The engine only rolls a COMMITTING or COMMITTED journal forward; every other journal rolls back
+        return "COMMITTED" if journal.phase in ("COMMITTING", "COMMITTED") else "ROLLED_BACK"
+
+    def _resolve(self, reads: list[JournalRead], wait_seconds: float | None) -> dict[str, object]:
+        """Run the guarded recovery; every successful journal read is appended to reads."""
+        try:
+            pending = self._read(reads)
         except (OSError, ValueError):
             return _blocked(RECOVERY_UNREADABLE)
         # With no journal, cleanup remains within manager-owned editor storage
         if not pending:
-            return self._clean_without_journals(wait_seconds)
+            return self._clean_without_journals(reads, wait_seconds)
         if any(journal is None for _path, journal in pending):
             return _blocked(RECOVERY_UNREADABLE)
         try:
@@ -70,7 +121,7 @@ class MissionMapRecovery:
                 with writer.held_for():
                     # The initial read may expire while the guard or writer waits; prove only current journals
                     try:
-                        pending = self.journals.records()
+                        pending = self._read(reads)
                     except (OSError, ValueError):
                         return _blocked(RECOVERY_UNREADABLE)
                     if any(journal is None for _path, journal in pending):
@@ -100,12 +151,12 @@ class MissionMapRecovery:
             return _blocked(RECOVERY_UNRESOLVED)
         return result
 
-    def _clean_without_journals(self, wait_seconds: float | None) -> dict[str, object]:
+    def _clean_without_journals(self, reads: list[JournalRead], wait_seconds: float | None) -> dict[str, object]:
         """Serialize manager-only cleanup with commits, checking for journals after the writer wait."""
         try:
             with WriterScope(self.folder_writer, wait_seconds).held_for():
                 try:
-                    pending = self.journals.records()
+                    pending = self._read(reads)
                 except (OSError, ValueError):
                     return _blocked(RECOVERY_UNREADABLE)
                 if pending:

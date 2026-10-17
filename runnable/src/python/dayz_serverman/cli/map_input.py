@@ -1,8 +1,9 @@
-"""The bounded read of the input file of `map save --from-file`, and later of `map import --from-file` (D17).
+"""The bounded read of the input file of `map save --from-file` and `map import --from-file` (D17).
 
-A12: the file is read through the shared-read opener. At most 8 MiB plus one byte is read, so a larger file
-is refused without a read of the whole file (DC-6). Every refusal is an argument error: exit 2 with the
-Product Owner text of its case (2026-10-16 16:25:27 in evidence 10.15), and nothing is changed.
+A12: the shared read of `adapters/windows/user_files.py` reads the file through the shared-read opener. It reads
+at most 8 MiB plus one byte, so a larger file is refused without a read of the whole file (DC-6). This module
+maps its closed reasons to the CLI texts. Every refusal is an argument error: exit 2 with the Product Owner text
+of its case (2026-10-16 16:25:27 in evidence 10.15), and nothing is changed.
 """
 
 from __future__ import annotations
@@ -11,27 +12,25 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ..adapters.windows.shared_files import open_shared
+from ..adapters.windows.user_files import UserFileError, read_text
 from ..domain.mission_map_values import MAX_DOCUMENT_BYTES, refuse_json_constant, unique_json_keys
 from . import map_wording as words
 from .exit_codes import USAGE
 from .output import CliFailure, Echo, sentence
 from .wording import invalid_file
 
+# The exit 2 text of each read reason of the shared read
+READ_TEXTS = {"unreadable": words.FILE_UNREADABLE, "too_large": words.FILE_TOO_LARGE,
+              "not_utf8": words.FILE_NOT_UTF8}
+
 
 def read_input_text(path: str) -> str:
     """Return the UTF-8 text of an input file; a missing, unreadable, too large or non-UTF-8 file exits 2."""
     try:
-        with open_shared(Path(path)) as stream:
-            data = stream.read(MAX_DOCUMENT_BYTES + 1)
-    except OSError as error:
-        raise _refused(words.FILE_UNREADABLE, path) from error
-    if len(data) > MAX_DOCUMENT_BYTES:
-        raise _refused(words.FILE_TOO_LARGE, path)
-    try:
-        return data.decode("utf-8")
-    except UnicodeDecodeError as error:
-        raise _refused(words.FILE_NOT_UTF8, path) from error
+        # The limit is read here at each call, so a test can make it small
+        return read_text(Path(path), MAX_DOCUMENT_BYTES)
+    except UserFileError as error:
+        raise _refused(READ_TEXTS[error.reason], path) from error
 
 
 def read_plan_object(path: str) -> dict[str, Any]:

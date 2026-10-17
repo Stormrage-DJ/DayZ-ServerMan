@@ -192,4 +192,7 @@ function mapPublishInit(editor) {
 // The app starts the flow and updates the family description after each load
 window.ServerManMapPublish = Object.freeze({init: mapPublishInit, family: mapPublishFamily,
   busy: () => mapPublishState.reading || Boolean(mapPublishState.own), changes: () => mapPublishState.changes,
-  pause: mapPublishPause});
+  pause: mapPublishPause,
+  // Export plan and Import plan share the reading guard, so two dialogs or reads never run together (9.1)
+  reading: () => mapPublishState.reading, claim: () => !mapPublishState.reading && (mapPublishState.reading = true),
+  release: () => { mapPublishState.reading = false; }});

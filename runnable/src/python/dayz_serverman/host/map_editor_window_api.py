@@ -1,17 +1,21 @@
 """Expose only implemented, profile-bound calls to one mission-map editor.
 
 Three lane reads name no profile and no path (8.18; Architect 2026-10-15 15:46:42, ruling 4). They read the
-operation events, one operation record and the mission map recovery state of the installation.
+operation events, one operation record and the mission map recovery state of the installation. The fourth
+unbound read lists the profiles for Copy from another profile; the host reduces each record (9.2).
 """
 
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable, Iterable
+from pathlib import Path
 from typing import Any
 
 from ..application.mission_map_images import ImageRefusal, ImageSelectionService
 from ..bridge.contracts import BridgeResult, ErrorCode
 from ..bridge.facade import BridgeFacade
+from .map_editor_transfer_api import MapEditorTransferMethods
 
 
 # Host codes of a refused dialog choice; budget and type refusals keep the display-read code
@@ -20,7 +24,8 @@ _REGISTER_CODES = {"over_budget": ErrorCode.UNSUPPORTED_SNAPSHOT_CONTENT,
 # File types of the native image dialog
 IMAGE_FILE_TYPES = ("Map images (*.png;*.jpg;*.jpeg)",)
 # The only methods that the editor calls without the bound profile; one dispatch path checks this allowlist
-UNBOUND_METHODS = frozenset(("get_operation", "read_operation_events", "inspect_mission_map_recovery"))
+UNBOUND_METHODS = frozenset(("get_operation", "read_operation_events", "inspect_mission_map_recovery",
+                             "list_profiles"))
 # Kinds whose full record reaches the editor. A record of another kind keeps only REDUCED_FIELDS. So no result
 # of another operation, for example a backup path, reaches the editor document
 MAP_OPERATION_KINDS = frozenset(("APPLY_MISSION_MAP", "RESTORE_MISSION_MAP_ORIGINAL", "RESTORE_MISSION_MAP_PREVIOUS",
@@ -30,17 +35,24 @@ REDUCED_FIELDS = ("operation_id", "kind", "state", "revision", "progress_phase")
 EVENT_PAGE = 100
 
 
-class MissionMapEditorApi:
+class MissionMapEditorApi(MapEditorTransferMethods):
     """Keep editor requests bound to the profile selected by the native host."""
 
-    def __init__(self, bridge: BridgeFacade, profile_id: str, selections: ImageSelectionService | None) -> None:
-        """Retain host dependencies without exposing profile or path selection."""
+    def __init__(self, bridge: BridgeFacade, profile_id: str, selections: ImageSelectionService | None, *,
+                 dialogs: tuple[Any, Any] | None = None,
+                 protected: Callable[[], Iterable[Path]] | None = None) -> None:
+        """Retain host dependencies without exposing profile or path selection.
+
+        `dialogs` holds the open and the save dialog constants of pywebview; `protected` returns the roots
+        that an export never writes into (9.1).
+        """
         self._bridge = bridge
         self._profile_id = profile_id
         self._selections = selections
         self._window: Any = None
         self._counter = 0
         self._lock = threading.Lock()
+        self._dialogs, self._protected, self._import_lock = dialogs, protected, threading.Lock()
 
     def _bind_window(self, window: object) -> None:
         """Bind the editor window after native creation."""

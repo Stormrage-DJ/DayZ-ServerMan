@@ -122,11 +122,13 @@ class RequestTests(unittest.TestCase):
                     lane.run()
                 self.assertEqual((failed.exception.code, failed.exception.recovery_owner),
                                  ("RECOVERY_REQUIRED", EDITOR_KIND))
-                self.assertEqual(lane.blocks, [(RECOVERY_UNRESOLVED, EDITOR_KIND)])
+                # The lane sets the one block with the unresolved reason (8.11 F1)
+                self.assertEqual((lane.blocks, failed.exception.recovery_reason), ([], RECOVERY_UNRESOLVED))
         lane, _service = self.submit(dict(REQUEST), ConfigurationFileError("layout"))
         with self.assertRaises(OperationFailure) as failed:
             lane.run()
-        self.assertEqual((failed.exception.recovery_required, failed.exception.recovery_owner), (True, None))
+        self.assertEqual((failed.exception.recovery_required, failed.exception.recovery_owner,
+                          failed.exception.recovery_reason), (True, None, None))
         self.assertEqual(lane.blocks, [])
 
 

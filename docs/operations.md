@@ -527,6 +527,136 @@ confirm button is locked. The backend still refuses a conflicting request.
 No page prints internal identifiers, phase names, or error codes. The raw
 records stay in **Logs → Manager diagnostics**.
 
+## Mission map editor
+
+The mission map editor is a separate window for one profile. Open it from the
+main window. It edits the loot tiers, the container capacity and the
+encounters of the mission of that profile. The editor writes no game file by
+itself. Apply and the restores write the files, as separate steps.
+
+### Coordinates and bounds
+
+The editor shows coordinates as X and Z in metres. A switch selects Grid,
+Native or Both. On a map of 20,480 m, grid (5,5) is native (10,240, 10,240).
+Zoom and pan never change a stored shape.
+
+The editor shows the detected terrain bounds for you to confirm. If detection
+fails, enter the bounds by hand. An unconfirmed state stays visible, and Apply
+refuses it. If you change confirmed bounds while shapes exist, the editor asks
+for a review of the placements first.
+
+### Map image
+
+DayZ-ServerMan ships no map image. A background image is optional. You choose
+a file on your own computer and calibrate it to the map. The image is a
+reference only. It does not change the stored coordinates, so the editor works
+the same without it.
+
+An image keeps the licence of its source. A public map website is not a
+permitted image source by default. Check the terms of the source before you
+use its image. DayZ-ServerMan does not download or copy images from a web
+site. A plan export and a profile backup do not carry the image.
+
+### Autosave and Draft changes
+
+The editor saves the plan of each profile by itself, shortly after each
+finished edit. The status shows **Saving**, **Saved**, a delay while a commit
+holds the plan, or a failure. **Saved** shows only when the saved plan equals
+the plan on screen. After a revision conflict, the editor offers a reload.
+Saved data that is not valid, and a changed mission path, open the plan read
+only, with the reason.
+
+**Draft changes** shows whether the plan differs from the last applied
+configuration. If you close the editor with a save that is pending or failed,
+it offers save, discard and cancel. Discard does not delete the saved plan.
+After a crash, the editor shows the last saved plan.
+
+### Preview, Apply and Restore
+
+Apply and Restore are explicit steps. Both need a stopped server.
+
+- The preview lists the changes, the files, the other profiles that use the
+  same files, the limits and the changes made outside the editor. It does not
+  promise exact item counts in the game.
+- A change made outside the editor needs a choice: **Keep the change** or
+  **Replace the file**. The preview preselects no choice. Replace first backs
+  up the outside version.
+- Each encounter that is not available needs a choice.
+- Apply makes a protected copy of the original files first. It completes the
+  whole file set, or it restores the previous valid state. It never reports
+  partial success.
+- **Restore previous state** returns the files to the state before the last
+  Apply. **Restore original** returns the files to the protected original. The
+  original copy is never overwritten.
+- Restore original is refused on a terrain family that is not verified.
+  Restore previous state is not refused for that reason.
+- Apply and Restore never write `env/wolf_territories.xml` or
+  `env/bear_territories.xml`.
+
+### Capability limits
+
+Apply and Restore original work only on terrain families that passed a test
+with a DayZ server. The family is the folder suffix after the last dot, for
+example `dayzOffline.chernarusplus`. Planning, saving, import, export and
+Inspect stay available on every family. The preview shows a notice when
+`ZombieMaxCount` or `ZoneSpawnDist` is 0. DayZ-ServerMan does not change
+these values.
+
+| Family or provider | Capability | Status and limits |
+|---|---|---|
+| chernarusplus | Loot tiers, container capacity, medical toggle | Verified on DayZ server 1.29.163709. The test shows that CE loads the files. It does not show live item counts. |
+| chernarusplus | Infected territories | Verified on 1.29.163709. Infected were observed in the editor zones with `ZombieMaxCount` 1000 and `ZoneSpawnDist` 300 in the test copy. The installed mission has both values at 0. With `ZoneSpawnDist` 0, infected spawned in installed zones that held the player, and none in zones whose edge was 100 m or more from the player, also not in the editor zones. The test did not place the player inside an editor zone. |
+| Pripyat | Loot tiers, container capacity, medical toggle | Verified with limits on 1.29.163709. Pripyat was tested in its installed state, where medical off equals on. The toggle was loaded on chernarusplus only. Pripyat was tested with global abundance 0 only, because its duplicate groups refuse any other global value. |
+| Pripyat | Infected territories | Verified on 1.29.163709. Infected were observed in the editor zones with `ZombieMaxCount` 2000 and `ZoneSpawnDist` 500. |
+| enoch | Loot tiers, container capacity, medical toggle | Verified on DayZ server 1.30.164078.38. enoch has no stored medical baseline, so the test used the installed file as the medical off state. |
+| enoch | Infected territories | Allowed, not probed on enoch; verified on chernarusplus and Pripyat. See the limits below the table. |
+| sakhal | Apply and Restore original | Not verified. Both are refused. |
+| Any other family, and a folder name without a family | Apply and Restore original | Not verified. Both are refused. |
+| AI_Bandits, every family | Bandit placement | Not available. |
+| Wolves and bears, every family | Wolf and bear territories | Not available. |
+
+The limits for enoch infected territories are:
+
+1. No infected probe ran on enoch.
+2. The editor writes the same territory element and marker comments on every
+   family. On chernarusplus and Pripyat, CE accepted them and infected were
+   observed in the editor zones, on DayZ server 1.29.163709 (evidence 7.6).
+3. On enoch, no test loaded the element in CE, and no infected were observed
+   in editor zones.
+4. No test loaded the element on DayZ server 1.30 on any family.
+5. The installed enoch mission has `ZombieMaxCount` 1000 and `ZoneSpawnDist`
+   300. These are the values with which infected were observed in the
+   chernarusplus probe copy (T3).
+6. The preview shows a notice when `ZombieMaxCount` or `ZoneSpawnDist` is 0,
+   and DayZ-ServerMan does not change these values.
+
+On enoch you can apply infected encounters, but no test with a DayZ server covered them on enoch. They were tested on chernarusplus and Pripyat.
+
+More limits:
+
+- The tests show that CE loads the written files. No test shows the number of
+  items in the live game.
+- Fixed dispatch items are not governed by the container capacity. A group
+  with ceiling 0 still shows its dispatch parts.
+- Several categories can share one capacity limit.
+- A generated copy keeps the points of its source group. A source group can
+  have a point without range or height. A zone over it then adds one group to
+  the CE count of groups with wrong points.
+- sakhal stays unverified. In its test, the count of groups with wrong points
+  rose from 12 to 15, and the classifier explains only part of it.
+- The editor detects AI_Bandits from the mod folder, the profile mod list and
+  the runtime-profile file. Placement is not offered, and the editor creates
+  no AI_Bandits encounter. AI_Bandits groups have no spawn radius, and the
+  linked-loot radius is not built. Bandit points of an imported prototype plan
+  are listed as not mapped.
+- Wolf and bear territories are not supported in this version. The pack
+  territory mapping is not verified.
+
+### Loot persistence
+
+Apply and Restore change mission files only. Native loot persistence can delay
+a visible change in the game, and no persistence wipe happens by itself.
+
 ## Backup behavior
 
 Backups are ZIP archives named with the profile ID and local creation time:
@@ -630,6 +760,39 @@ Recovery journals are stored under `data/operations/`. If an interrupted
 restore cannot be classified safely, the manager blocks conflicting mutations
 until recovery is resolved.
 
+### Editor records in backups and restores
+
+A profile backup carries the editor plan and the editor records of the active
+mission of the profile. A backup that holds editor records gets the archive
+schema 4. A backup without editor records keeps the older format. A map image
+is never in the archive.
+
+If an editor record or its content file is damaged, the backup is still made,
+without editor records, in the older format. The result tells you this.
+
+An older build cannot restore an archive that holds editor records. It refuses
+the archive. Restore such an archive with this build or a later one.
+
+- A restore into an existing profile also restores the editor records. Before
+  it replaces or removes an editor file, the manager copies the old file to
+  `<backup recovery>\<operation_id>\manager\`, in the same relative path. The
+  manager does not delete these copies (see
+  [known limits of the map editor recovery](#known-limits-of-the-map-editor-and-restore-recovery)).
+- A restore as a new profile gives the new profile its own editor records.
+  An interrupted deletion can leave editor records with the same profile ID.
+  The restore first moves them to the folder for deleted records, and it
+  reports this. It does not use them.
+- If the last applied record does not match the restored files, the manager
+  keeps it under a dated name. Then the editor asks you to adopt the mission.
+  This is expected after a restore of an old backup or a moved DayZ folder.
+  Do not delete the file with the dated name. It is evidence.
+- A new mission for a profile starts without the baseline of the old mission.
+  A rename of the mission keeps the records.
+
+Deleting a profile removes its editor folders before the profile record. The
+manager keeps shared original records and the ledger. A deletion that stopped
+early leaves no profile that points at removed records.
+
 ## Recovery blocks
 
 Four operations write into the DayZ installation through a journal:
@@ -665,6 +828,8 @@ written to the manager log.
 | A profile restore from a backup archive was interrupted and must be finished. | Stop the server, then restart DayZ-ServerMan. |
 | Creating a profile was interrupted and must be finished. | Stop the server, then restart DayZ-ServerMan. |
 | Applying mods to the server folder was interrupted and must be finished. | Stop the server, then restart DayZ-ServerMan. |
+| A mission map change did not finish and must be checked. | Stop the server and close any other DayZ-ServerMan on this installation. Then select **Check again** in the map editor, or restart DayZ-ServerMan. |
+| A mission map change did not finish, and its files cannot be recovered safely. | Check Manager diagnostics. Then select **Check again** in the map editor, or restart DayZ-ServerMan. See [Mission map recovery](#mission-map-recovery). |
 | A profile restore from a backup archive did not finish, and its restore records cannot be read | Restart DayZ-ServerMan to read them again. |
 | A profile restore from a backup archive did not finish, and it cannot be checked because no DayZ server folder is set. | In **Settings**, set the DayZ server folder that the restore used, change nothing else, and save. Then restart DayZ-ServerMan. See [No DayZ server folder is set](#no-dayz-server-folder-is-set). |
 | A profile restore from a backup archive did not finish, and DayZ-ServerMan cannot finish or undo it safely | If a drive or folder was unavailable, make it available again, then restart DayZ-ServerMan. |
@@ -749,6 +914,115 @@ correct folder by hand:
 
 If the file is not valid JSON after the edit, DayZ-ServerMan cannot read its
 settings.
+
+### Mission map recovery
+
+Apply, Restore previous state, Restore original and the adoption of a mission
+publish files through a journal. If one is interrupted, the manager finishes or
+undoes it when it starts, and when you select **Check again** in the map
+editor. The command `map recover` does the same check without the window.
+
+- Recovery needs a stopped server, and no other DayZ-ServerMan on the
+  installation. Otherwise it writes nothing and changes stay blocked.
+- A process end before the commit point loses the unfinished change. Apply it
+  again. A process end at or after the commit point keeps the change.
+- After any recovery, run a preview. It must list no change.
+- Recovery needs the DayZ root path. If it is missing, the manager shows its
+  own block. Fix the path.
+- A clean recovery leaves no journal and no `*.staged-*` file. Report any such
+  file that stays after a recovery with a stopped server.
+- While a block shows, do not edit or remove files in the manager mission map
+  data folder or in the DayZ mission files.
+- After a restart, the activity view does not list the interrupted operation.
+  Use the log lines below.
+
+Two Overview sentences belong to this recovery. The first shows when the
+journal waits for a stopped server or for the other DayZ-ServerMan:
+
+> A mission map change did not finish and must be checked. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then select Check again in the map editor, or restart DayZ-ServerMan.
+
+The second shows when the files cannot be recovered safely:
+
+> A mission map change did not finish, and its files cannot be recovered safely. Check Manager diagnostics. Then select Check again in the map editor, or restart DayZ-ServerMan; it checks again when it starts.
+
+*Support trace.* The manager writes these lines to `data/logs/manager.jsonl`.
+They show in **Logs → Manager diagnostics**, not in Manager activity. A clean
+start writes no recovery line. Log times are UTC.
+
+| Event | Level | Meaning |
+|---|---|---|
+| `mission_map.recovery_resolved` | WARNING | A journal is resolved. The `result` is `ROLLED_BACK` or `COMMITTED`. |
+| `mission_map.recovery_blocked` | WARNING | A journal stays, or journals cannot be read. The line has the `reason`. |
+| `operation_lane.recovery_block` | ERROR | A block is set. The line has the owner. |
+| `operation_lane.recovery_block_cleared` | INFO | A block is removed. The line has the owner and no operation ID. Join it to the other lines by owner and time. |
+
+The `mission_map` lines carry the operation ID of the lost operation, the
+kind, the phase, the trigger (`STARTUP` or `ON_DEMAND`) and the time. A line
+holds no path. Each **Check again** that stays blocked can add a new
+`recovery_blocked` line. This shows each try. A line for journals that cannot
+be read has a count and no ID.
+
+The activity view gives `NOT_FOUND` for the lost operation, because operation
+records live in the memory of one session. If a support tool asks for the
+lost operation, this also writes one WARNING `bridge.failure` line. Do not read
+it as a fault.
+
+### Interrupted profile restore with editor records
+
+The Overview shows only the generic block for a profile restore. Support can
+find the cause in the journal. Follow these steps:
+
+1. Stop the manager.
+2. Copy the journal and the editor area as evidence.
+3. Read the `phase` and the group with the role `editor` in the journal.
+4. Compare each file of the group with its `before` and `after` digest in the
+   journal.
+5. If a file that someone changed by hand blocks the recovery, put the file
+   back to the digest of the journal. Start the manager. Recovery then
+   finishes.
+
+Never edit the journal. Never delete a holding file before the journal is
+rolled back or committed, because rollback needs it. The leftover names
+contain the operation ID: `data\.serverman-restore-<operation_id>-editor.stage`
+and `.<file>.<operation_id>.restore-holding`. A file
+`.applied.json.<operation_id>.restore-stage` in the association folder is
+harmless. Remove it only when the journal of that operation is retired.
+
+An interrupted adoption on a running server keeps the editor block until the
+server stops. Stop the server, then start the manager. Recovery finishes by
+itself.
+
+### Undo a restore from a recovery copy
+
+Use this if you want the old state of an editor file back after a restore into
+an existing profile.
+
+1. Stop the manager.
+2. Keep a copy of the current file.
+3. Copy the file from `<backup recovery>\<operation_id>\manager\<relative path>`
+   to the same relative path below the manager root. A copy of a removed file
+   keeps its bytes, so you can undo a removal in the same way.
+4. Start the manager.
+
+Do one file at a time.
+
+### Known limits of the map editor and restore recovery
+
+- The manager does not prune `<backup recovery>`. It grows by one folder for
+  each restore. This holds for DayZ files and for editor files. A future limit
+  must cover both.
+- The recovery block message of a profile restore or a backup restore names no
+  operation, group, file or cause.
+- Recovery of an interrupted adoption needs a stopped server.
+- Two profiles on one mission see the output of each other as changes made
+  outside the editor.
+- A rollback before the commit can leave an empty key folder. It is harmless.
+- Tests did not cover a real window with a person, symbolic links, and full
+  disk or access-right failures on the real volume.
+- On server 1.30 and later, each server start writes an `error_<date>_<time>.log`
+  file and rewrites `filesystem.log` in the server root. The Steam client
+  writes `config\config.vdf` and `logs\*.txt`. These files are not a fault of
+  the manager.
 
 ## Instances and the command line
 

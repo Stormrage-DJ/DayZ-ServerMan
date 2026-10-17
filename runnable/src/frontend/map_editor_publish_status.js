@@ -24,6 +24,7 @@ function mapPublishStatusShow(text, look = "muted", {notice = null, announce = f
   for (const name of mapPublishStatusLooks) slot.classList.toggle(`map-operation-${name}`, name === look && name !== "muted");
   board.textContent = notice ? text : "";
   board.classList.toggle("map-operation-recovery", notice === "recovery");
+  board.classList.toggle("map-operation-success", notice === "success");
   if (announce && text) mapPublishStatusElement("map-announcement").textContent = text;
 }
 
