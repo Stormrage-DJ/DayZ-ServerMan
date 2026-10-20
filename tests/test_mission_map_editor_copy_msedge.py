@@ -49,7 +49,7 @@ check(JSON.stringify(host.calls.map(call=>call[0]))==='["sources","preview_copy"
 check(slot()==="Map plan copied as revision 5."&&notice()===slot(),`success: ${slot()}`);
 const after=model.status();
 check(after.revision===5&&!after.dirty&&after.history.length===1&&after.history.undo,"one undo step at the saved revision");
-check(window.ServerManMapLayers.selected()==="imp"&&document.activeElement===opener&&!opener.hasAttribute("aria-disabled"),"selected; focus back");
+check(window.ServerManMapLayers.selected()==="imp"&&document.activeElement===element("map-show-plan")&&!opener.hasAttribute("aria-disabled"),"selected; focus back");
 check(text("map-tool-notice")===""&&after.writable,"the pause ended");
 const saves=saved.length;element("map-undo").click();await sleep(1000);
 check(JSON.stringify(model.snapshot())===JSON.stringify(before)&&saved.length===saves+1&&saved.at(-1).revision===5,"undo saves the old plan at the next revision");

@@ -25,6 +25,7 @@ function mapViewportInput(element, view, cursor, allowed) {
     drag = null;
     if (pointer !== undefined && element.hasPointerCapture(pointer)) element.releasePointerCapture(pointer);
     element.classList.remove("map-panning");
+    window.ServerManMapViewportUi?.redraw();
   };
   const reset = () => {
     space = false;
@@ -58,6 +59,8 @@ function mapViewportInput(element, view, cursor, allowed) {
     if (!drag) suppressClick = false;
     if (!allowed() || !view.snapshot().bounds || drag ||
         !(event.button === 1 || (event.button === 0 && space))) return;
+    // Navigation takes ownership without retaining a geometry preview from an earlier press.
+    window.ServerManMapDrag?.cancel();
     drag = {pointer: event.pointerId, position: position(event)};
     suppressClick = true;
     element.setPointerCapture(event.pointerId);

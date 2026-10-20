@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import unittest
 
 from dayz_serverman.repositories.journaled_publication import JournaledPublication
 from dayz_serverman.repositories.mission_map_journal import MissionMapJournalError
@@ -119,3 +120,176 @@ class CommitRecoverySafetyTests(PublicationFixture):
         journal.publication_started = True
         self.repository.save(journal)
         self.assertTrue(self.publication().inspect(self.dayz, hooks)["blocked"])
+
+
+class ConfigurationPairTests(unittest.TestCase):
+    """Apply and recover real isolated profile/configuration pairs at durable boundaries."""
+
+    def setUp(self):
+        """Create two real repository targets without any live manager data."""
+        import tempfile
+        from dayz_serverman.repositories.profiles import ProfileRepository
+        from tests.test_configuration_workflow import profile
+        self.temporary = tempfile.TemporaryDirectory(prefix="configuration_pair_")
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.dayz = self.root / "dayz"
+        self.dayz.mkdir()
+        self.native = self.dayz / "serverDZ.cfg"
+        self.native.write_bytes(b'hostname = "Old";\nsteamQueryPort = 2305;\n')
+        self.repository = ProfileRepository(self.root / "profiles")
+        self.record = self.repository.save(profile().values, None)
+        self.profile_path = self.repository.root / "main.json"
+        self.old_profile = self.profile_path.read_bytes()
+        self.old_native = self.native.read_bytes()
+
+    def publisher(self, hook=None):
+        """Bind the configuration adapter to this fixture's exact manager roots."""
+        from dayz_serverman.repositories.configuration_publication import ConfigurationPublication
+        return ConfigurationPublication(self.repository.root, self.root / "operations", hook)
+
+    def publish(self, publisher):
+        """Request a real mixed change with one successor profile revision."""
+        from dayz_serverman.repositories.configuration_common import digest_bytes
+        return publisher.publish(self.dayz, self.record, 4, b'hostname = "New";\nsteamQueryPort = 2505;\n',
+                                 digest_bytes(self.old_native), 2502)
+
+    def test_faults_before_and_after_commit_choose_the_durable_direction(self):
+        """Precommit compensates; postcommit replay finishes once without revision rollback."""
+        from dayz_serverman.repositories.configuration_journal import ConfigurationPublicationError
+        for boundary in ("READY", "AFTER_PUBLISH", "BEFORE_COMMIT", "COMMITTING", "AFTER_PROFILE", "COMMITTED"):
+            with self.subTest(boundary=boundary):
+                self.native.write_bytes(self.old_native)
+                self.profile_path.write_bytes(self.old_profile)
+                def fail(phase, _index):
+                    if phase == boundary:
+                        raise OSError("injected " + boundary)
+                publication = self.publisher(fail)
+                with self.assertRaises(ConfigurationPublicationError) as caught:
+                    self.publish(publication)
+                committed = boundary in ("COMMITTING", "AFTER_PROFILE", "COMMITTED")
+                self.assertEqual(caught.exception.recovery_required, committed)
+                publication.fault = lambda *_args: None
+                self.assertFalse(publication.inspect(self.dayz)["blocked"])
+                self.assertFalse(publication.inspect(self.dayz)["blocked"])
+                current = self.repository.load("main")
+                self.assertEqual(current.values.game_port, 2502 if committed else 2302)
+                self.assertEqual(current.revision, self.record.revision + int(committed))
+                self.assertEqual(self.native.read_bytes(), b'hostname = "New";\nsteamQueryPort = 2505;\n'
+                                 if committed else self.old_native)
+                self.assertEqual(list(publication.store.records()), [])
+
+    def test_uncertain_commit_marker_uses_persisted_state_not_local_phase(self):
+        """A failed save may have durably crossed the commit point already."""
+        from dayz_serverman.repositories.configuration_journal import ConfigurationPublicationError
+        for after_write in (False, True):
+            with self.subTest(after_write=after_write):
+                self.native.write_bytes(self.old_native)
+                self.profile_path.write_bytes(self.old_profile)
+                publication = self.publisher()
+                save = publication.store.save
+                def fail(journal):
+                    if journal.phase == "COMMITTING":
+                        if after_write:
+                            save(journal)
+                        raise OSError("uncertain commit marker")
+                    save(journal)
+                publication.store.save = fail
+                with self.assertRaises(ConfigurationPublicationError) as caught:
+                    self.publish(publication)
+                self.assertEqual(caught.exception.recovery_required, after_write)
+                publication.store.save = save
+                self.assertFalse(publication.inspect(self.dayz)["blocked"])
+                self.assertEqual(self.repository.load("main").values.game_port, 2502 if after_write else 2302)
+
+    def test_unknown_bytes_and_changed_roots_block_without_overwriting(self):
+        """Recovery refuses unrelated profile/config edits and unsafe target mappings."""
+        from dayz_serverman.repositories.configuration_journal import ConfigurationPublicationError
+        def stop(phase, _index):
+            if phase == "COMMITTING":
+                raise OSError("interrupted")
+        publication = self.publisher(stop)
+        with self.assertRaises(ConfigurationPublicationError):
+            self.publish(publication)
+        new_native = self.native.read_bytes()
+        self.profile_path.write_bytes(b"external profile bytes")
+        self.assertTrue(publication.inspect(self.dayz)["blocked"])
+        self.assertEqual(self.profile_path.read_bytes(), b"external profile bytes")
+        self.profile_path.write_bytes(self.old_profile)
+        self.native.write_bytes(b"external configuration bytes")
+        self.assertTrue(publication.inspect(self.dayz)["blocked"])
+        self.assertEqual(self.native.read_bytes(), b"external configuration bytes")
+        self.native.write_bytes(new_native)
+        self.assertTrue(publication.inspect(self.root)["blocked"])
+        journal = publication.store.records()[0][1]
+        journal.groups[0].target_path = str(self.root / "outside.cfg")
+        publication.store.save(journal)
+        self.assertTrue(publication.inspect(self.dayz)["blocked"])
+        self.assertEqual(self.profile_path.read_bytes(), self.old_profile)
+
+    def test_apply_branches_use_one_operation_and_keep_native_profile_ownership(self):
+        """Game-only and mixed updates advance once and never emit a virtual assignment."""
+        from dayz_serverman.application.configuration import ConfigurationService
+        from dayz_serverman.application.profiles import ProfileService
+        from tests.test_configuration_workflow import FakeSettings
+        settings = FakeSettings(self.dayz)
+        service = ConfigurationService(ProfileService(self.repository, settings), settings)
+        service.bind_publication(self.publisher())
+        for updates in ({"game_port": 2502}, {"game_port": 2602, "steamQueryPort": 2605},
+                        {"game_port": 2602}):
+            loaded = service.load("main", "server")
+            before = self.repository.load("main")
+            service.apply("main", "server", before.revision, 4, loaded["digest"], None, updates, lambda *_args: None)
+            current = self.repository.load("main")
+            self.assertEqual(current.revision, before.revision + int(before.values.game_port != updates["game_port"]))
+            self.assertEqual(current.values.game_port, updates["game_port"])
+            self.assertNotIn(b"game_port", self.native.read_bytes())
+
+    def test_unknown_profile_stage_survives_precommit_and_postcommit_failure(self):
+        """Never delete or publish a successor stage whose bytes are no longer proven."""
+        from dayz_serverman.repositories.configuration_journal import ConfigurationPublicationError
+        for boundary in ("BEFORE_COMMIT", "COMMITTING"):
+            with self.subTest(boundary=boundary):
+                publication = self.publisher()
+                def tamper(phase, _index):
+                    if phase == boundary:
+                        journal = publication.store.records()[0][1]
+                        Path(journal.profile_stage).write_bytes(b"unknown stage")
+                        raise OSError("interrupted with unknown stage")
+                publication.fault = tamper
+                with self.assertRaises(ConfigurationPublicationError) as caught:
+                    self.publish(publication)
+                self.assertTrue(caught.exception.recovery_required)
+                journal = publication.store.records()[0][1]
+                self.assertTrue(publication.inspect(self.dayz)["blocked"])
+                self.assertEqual(Path(journal.profile_stage).read_bytes(), b"unknown stage")
+                self.assertEqual(self.profile_path.read_bytes(), self.old_profile)
+                # Resolve the deliberate fixture damage before exercising the next boundary.
+                from dayz_serverman.repositories.configuration_journal import successor_bytes
+                Path(journal.profile_stage).write_bytes(successor_bytes(journal.old_profile, journal.new_port))
+                self.assertFalse(publication.inspect(self.dayz)["blocked"])
+                self.native.write_bytes(self.old_native)
+                self.profile_path.write_bytes(self.old_profile)
+
+    def test_native_edits_at_profile_and_commit_hooks_never_report_success(self):
+        """Every observable finalization boundary must retain a mismatched pair for recovery."""
+        from dayz_serverman.repositories.configuration_journal import ConfigurationPublicationError
+        for boundary in ("BEFORE_PROFILE", "AFTER_PROFILE", "COMMITTED"):
+            with self.subTest(boundary=boundary):
+                fixture = ConfigurationPairTests()
+                fixture.setUp()
+                try:
+                    def tamper(phase, _index):
+                        if phase == boundary:
+                            fixture.native.write_bytes(b"external native bytes")
+                    publication = fixture.publisher(tamper)
+                    with self.assertRaises(ConfigurationPublicationError) as caught:
+                        fixture.publish(publication)
+                    self.assertTrue(caught.exception.recovery_required)
+                    self.assertEqual(fixture.native.read_bytes(), b"external native bytes")
+                    self.assertEqual(len(publication.store.records()), 1)
+                    self.assertTrue(publication.inspect(fixture.dayz)["blocked"])
+                    self.assertEqual(fixture.repository.load("main").values.game_port,
+                                     2302 if boundary == "BEFORE_PROFILE" else 2502)
+                finally:
+                    fixture.doCleanups()

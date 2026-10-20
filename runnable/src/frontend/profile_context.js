@@ -118,13 +118,14 @@ function selectGlobalProfile(profileId) {
 }
 
 // Load profiles and remembered preferences once, unless a reload is forced.
-async function initializeProfileContext(force = false) {
+async function initializeProfileContext(force = false, isCurrent = () => true) {
   // Reuse the loaded state unless the caller demands a refresh.
   if (profileContextState.initialized && !force) return { success: true };
   // Fetch the profile list and stored preferences together.
   const [profiles, preferences] = await Promise.all([
     window.pywebview.api.list_profiles(), window.pywebview.api.get_ui_preferences(),
   ]);
+  if (!isCurrent()) return { success: false, stale: true };
   if (!profiles.success) return profiles;
   // Adopt the returned profiles and backup-after-stop flags.
   profileContextState.profiles = profiles.value;

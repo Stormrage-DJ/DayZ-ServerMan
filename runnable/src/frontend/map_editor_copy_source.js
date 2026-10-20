@@ -28,7 +28,7 @@ function mapCopySourceOpen(profiles, options = {}) {
   const chosen = () => rows.find((row) => row.input.checked) ?? null;
   return dialog.open({kind: "copy-source", title: copy.pickerTitle, refused: !others.length, confirm: copy.pickerConfirm,
     sections: others.length ? [dom.element("p", copy.pickerIntro), fieldset] : [dialog.notice(copy.empty)],
-    opener: options.opener, remaining: () => copy.pickerRemaining, stale: copy.pickerStale,
+    opener: options.opener?.closest("#map-setup-parking") ? document.getElementById("map-show-plan") : options.opener, remaining: () => copy.pickerRemaining, stale: copy.pickerStale,
     count: () => chosen() ? 0 : 1, first: () => rows.find((row) => !row.input.disabled)?.input ?? null,
     checking: copy.checking, check: options.check, value: () => ({profile: chosen().profile})});
 }

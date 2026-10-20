@@ -13,6 +13,7 @@ function mapFullScreenShow() {
   button.textContent = label;
   button.title = label;
   button.setAttribute("aria-pressed", String(mapFullScreenState.on));
+  window.ServerManMapIcons.button(button, "fullscreen");
 }
 
 // One call at a time; a failure keeps the state and shows the host reason.

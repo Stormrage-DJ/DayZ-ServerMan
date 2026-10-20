@@ -32,6 +32,9 @@ function mapToolsRefresh(value) {
   const state = mapToolsState, words = window.ServerManMapWording;
   if (value !== undefined) state.value = value;
   const usable = mapToolsUsable("circle"), choice = window.ServerManMapEncounterTool.render(usable);
+  // Explain the bounds gate beside the tools without confirming or saving anything.
+  const needsBounds = Boolean(state.value?.writable && !state.value?.plan?.terrain?.bounds_confirmed);
+  document.getElementById("map-tools-bounds-help").hidden = !needsBounds;
   // A load or a refresh that makes the chosen encounter type unavailable ends the Encounter tool (QA-7.3-F2)
   if (state.tool === "encounter" && !choice.available) state.tool = null;
   for (const tool of mapToolsNames) {
@@ -40,6 +43,7 @@ function mapToolsRefresh(value) {
     button.setAttribute("aria-pressed", String(state.tool === tool));
   }
   document.getElementById("map-circle-radius").disabled = !usable;
+  window.ServerManMapWorkspaceDom.context(state.tool);
   window.ServerManMapOutlineDraft.render(usable);
   const count = window.ServerManMapOutlineDraft.count();
   // The footer stays one line high, so the map never resizes while the admin draws; its title names the encounter type
@@ -161,6 +165,13 @@ function mapToolsInit(model) {
   if (state.model) return;
   state.model = model;
   state.value = model.status();
+  // Focus the existing confirmation action, or manual entry when detection is unavailable.
+  document.getElementById("map-tools-bounds-jump").addEventListener("click", () => {
+    window.ServerManMapSetup.open("setup"); const detected = document.getElementById("map-bounds-detected");
+    const target = detected.disabled ? document.getElementById("map-bounds-x_min") : detected;
+    target.scrollIntoView({block: "center"});
+    target.focus({preventScroll: true});
+  });
   for (const [id, text] of [["map-tool-select", words.selectTool], ["map-tool-circle", words.circleTool], ["map-tool-polygon", words.polygonTool],
     ["map-circle-radius-label", words.circleRadius]]) {
     document.getElementById(id).textContent = text;

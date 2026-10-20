@@ -44,7 +44,7 @@ const status1=model.status();
 check(status1.revision===5&&!status1.dirty&&status1.history.length===1&&status1.history.undo,"one undo step at the saved revision");
 check(JSON.stringify(status1.plan.objects.map(item=>item.id))===JSON.stringify(["imp"]),"the imported plan is the draft");
 check(window.ServerManMapLayers.selected()==="imp"&&view.snapshot().scale>scale,"the imported object is selected and in view");
-check(document.activeElement===opener&&!opener.hasAttribute("aria-disabled"),"the focus is back on the opener");
+check(document.activeElement===element("map-show-plan")&&!opener.hasAttribute("aria-disabled"),"the focus is back on the opener");
 check(text("map-tool-notice")===""&&status1.writable,"the pause ended");
 const saves=saved.length;element("map-undo").click();await sleep(1000);
 check(JSON.stringify(model.snapshot())===JSON.stringify(before),"undo returns the old plan");
@@ -117,7 +117,7 @@ window.pywebview.api.save_plan=async()=>({success:false,error:{code:"INVALID_REQ
 model.add("Add circle",zone("bad"));opener.click();await sleep(300);
 check(!host.calls.length&&!dialog()&&slot()===`${W.not_opened} Zone bad: radius is too large`,`failed settle: ${slot()}`);
 await load(value(plan()));host.select={success:true,value:{cancelled:true}};opener.focus();opener.click();await sleep(200);
-check(slot()===""&&document.activeElement===opener&&!dialog(),"cancel: no text, the focus on the opener");
+check(slot()===""&&document.activeElement===element("map-show-plan")&&!dialog(),"cancel: no text, the focus on the opener");
 host.select={success:false,error:{code:"INVALID_REQUEST",message:"host",retryable:false,details:{reason:"import_file_refused",kind:"too_large",file_name:"big.json"}}};
 opener.click();await sleep(200);check(slot()==="big.json is larger than 8 MiB. Nothing was changed."&&notice()===slot(),`file problem: ${slot()}`);
 '''), "PASS")

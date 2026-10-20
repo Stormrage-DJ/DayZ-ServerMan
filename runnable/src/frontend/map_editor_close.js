@@ -188,5 +188,5 @@ function mapCloseGuard() {
 // The editor's host-facing settleForClose and releaseClose call these.
 window.ServerManMapClose = Object.freeze({
   init: (editor, display, load) => { Object.assign(mapCloseState, {editor, display, load}); mapCloseGuard(); },
-  settle: (reason, join) => mapCloseSettle(reason, join), release: () => mapCloseRelease(),
+  settle: (reason, join) => { void window.ServerManMapWorkspacePreferences.flush(); return mapCloseSettle(reason, join); }, release: () => mapCloseRelease(),
 });

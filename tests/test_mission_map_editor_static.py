@@ -44,11 +44,12 @@ class MissionMapEditorStaticTests(unittest.TestCase):
     def test_assets_are_exactly_the_implemented_offline_inventory(self) -> None:
         """Asset order follows the accepted contract without future module placeholders."""
         self.assertEqual(EDITOR_STYLES, ("tokens.css", "controls.css", "styles.css", "map_editor.css",
-                                         "map_editor_canvas.css"))
+                                         "map_editor_canvas.css", "map_editor_workspace.css", "map_editor_reports.css", "map_editor_toolbar.css"))
         self.assertEqual(EDITOR_SCRIPTS, ("operation_labels.js", "diagnostic_labels.js",
                          "host_sentences.js", "operation_messages.js", "operation_results.js",
                          "operation_failures.js", "busy_controls.js", "map_editor_dom.js",
                          "map_editor_wording.js", "map_editor_bridge.js", "map_editor_layout.js",
+                         "map_editor_toolbar.js", "map_editor_workspace_dom.js", "map_editor_workspace.js", "map_editor_workspace_resize.js", "map_editor_workspace_preferences.js", "map_editor_setup.js", "map_editor_report_rows.js", "map_editor_reports.js",
                          "map_editor_coordinates.js", "map_editor_viewport.js", "map_editor_viewport_render.js",
                          "map_editor_viewport_input.js", "map_editor_viewport_ui.js", "map_editor_bounds_plan.js",
                          "map_editor_bounds_save.js", "map_editor_bounds.js", "map_editor_raster.js",
@@ -131,6 +132,10 @@ class MissionMapEditorStaticTests(unittest.TestCase):
                     "map_editor_transfer_import.js": "ServerManMapTransferImport",
                     "map_editor_copy_source.js": "ServerManMapCopySource", "map_editor_copy.js": "ServerManMapCopy",
                     "map_editor_app.js": "ServerManMapEditor"}
+        expected.update({"map_editor_workspace_dom.js": "ServerManMapWorkspaceDom",
+            "map_editor_toolbar.js": "ServerManMapToolbar",
+                         "map_editor_workspace.js": "ServerManMapWorkspace",
+                         "map_editor_workspace_resize.js": "ServerManMapWorkspaceResize"})
         names = []
         for filename, global_name in expected.items():
             script = (FRONTEND / filename).read_text(encoding="utf-8")

@@ -86,29 +86,47 @@ function mapLayersRender() {
       return control;
     };
     const select = button("select", item.name, () => mapLayersSelect(item.id));
+    window.ServerManMapIcons.button(select, item.kind === "loot_circle" ? "circle" : item.kind === "encounter" ? "encounter" : "polygon");
+    select.title = item.name;
     // Selection can target a hidden or locked item without changing its content.
     select.setAttribute("aria-label", `${words.selectObject}: ${item.name}`);
     select.disabled = !status.enabled;
     select.setAttribute("aria-pressed", String(item.id === mapLayersSelected));
     const summary = document.createElement("p");
     summary.textContent = mapLayerSummary(item);
+    summary.id = `map-layer-summary-${item.id}`;
+    summary.hidden = true;
+    select.setAttribute("aria-describedby", summary.id);
     row.append(summary);
     // A screen reader reads the tags and the reason with the item name
     const note = mapLayerNote(item, status.capabilities);
     if (note) {
       row.append(note);
-      select.setAttribute("aria-describedby", note.id);
+      select.setAttribute("aria-describedby", `${summary.id} ${note.id}`);
     }
     // Visibility and lock are explicit flags, rather than mission exclusion or priority.
     const visible = button("visible", words.visible, () => model.visible(item.id));
     visible.setAttribute("aria-pressed", String(item.visible));
+    visible.title = `${words.visible}: ${item.name}`;
+    visible.classList.add("map-layer-icon-control");
+    window.ServerManMapIcons.button(visible, item.visible ? "visible" : "hidden");
     const locked = button("locked", words.locked, () => model.lock(item.id));
     locked.setAttribute("aria-pressed", String(item.locked));
+    locked.title = `${words.locked}: ${item.name}`;
+    locked.classList.add("map-layer-icon-control");
+    window.ServerManMapIcons.button(locked, item.locked ? "locked" : "unlocked");
     // Priority boundaries disable their corresponding controls without creating no-op actions.
     const up = button("up", words.moveUp, () => model.move(item.id, -1));
     const down = button("down", words.moveDown, () => model.move(item.id, 1));
     up.disabled ||= index === 0;
     down.disabled ||= index === plan.objects.length - 1;
+    // Only the selected object exposes precedence actions, with the same stable control IDs.
+    const priority = document.createElement("div");
+    priority.className = "map-layer-priority";
+    priority.hidden = item.id !== mapLayersSelected;
+    priority.setAttribute("role", "group");
+    priority.setAttribute("aria-label", `Priority: ${item.name}`);
+    priority.append(up, down); row.append(priority);
     list.append(row);
   });
   container.append(list);

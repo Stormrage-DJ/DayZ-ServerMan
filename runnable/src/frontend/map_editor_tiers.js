@@ -1,9 +1,16 @@
-// Show the original tiers of the mission as the bottom overlay, with one display-only toggle (R05).
+// Show the original mission tiers with display-only visibility and opacity controls.
 "use strict";
 
 // Display state lasts for this window; the plan and the mission files never change here.
-const mapTiersState = {shown: true, enabled: false, generation: 0, missionKey: null, tiers: [],
-  reason: null, layers: new Map(), failures: new Map(), reading: false};
+const mapTiersState = {shown: true, opacity: 100, enabled: false, generation: 0, missionKey: null, tiers: [],
+  reason: null, layers: new Map(), failures: new Map(), reading: false, visible: new Map()};
+
+// Unassigned and the actual named Tier1 start hidden; unusual flag names keep their real order and visibility.
+function mapTiersVisible(tier) {
+  const key = tier === null ? null : tier.toLowerCase(), choices = mapTiersState.visible;
+  if (!choices.has(key)) choices.set(key, key !== null && key !== "tier1");
+  return choices.get(key);
+}
 
 // The capability read names why a mission has no usable tier layer.
 function mapTiersReason(value) {
@@ -17,12 +24,15 @@ function mapTiersReason(value) {
 function mapTiersLegend() {
   const state = mapTiersState, words = window.ServerManMapWording;
   const status = document.getElementById("map-tiers-status"), legend = document.getElementById("map-tiers-legend");
+  const focused = document.activeElement?.matches("[data-map-tier-control]") ?
+    {tier: document.activeElement.dataset.mapTierControl, unassigned: document.activeElement.dataset.mapUnassigned} : null;
   document.getElementById("map-tiers-toggle").checked = state.shown;
   legend.hidden = !state.shown || Boolean(state.reason);
   legend.replaceChildren();
   status.textContent = !state.shown ? words.tiersHidden : (state.reason ?? (state.reading ? words.tiersReading : ""));
   if (legend.hidden) return;
-  state.tiers.forEach((tier, position) => {
+  [...state.tiers, null].forEach((tier, position) => {
+    const name = tier ?? "Unassigned", colour = tier === null ? 1 : position + 1;
     const item = document.createElement("li"), swatch = document.createElement("canvas");
     swatch.className = "map-tier-swatch";
     swatch.width = 18;
@@ -30,16 +40,30 @@ function mapTiersLegend() {
     swatch.setAttribute("aria-hidden", "true");
     const pen = swatch.getContext("2d");
     pen.globalAlpha = 0.55;
-    pen.fillStyle = window.ServerManMapRaster.colour(position + 1);
+    pen.fillStyle = window.ServerManMapRaster.colour(colour);
     pen.fillRect(0, 0, 18, 18);
     pen.globalAlpha = 1;
-    pen.fillStyle = window.ServerManMapRaster.pattern(pen, position + 1);
+    pen.fillStyle = window.ServerManMapRaster.pattern(pen, colour);
     pen.fillRect(0, 0, 18, 18);
     const failure = state.failures.get(tier);
-    item.dataset.mapTier = tier;
-    item.append(swatch, document.createTextNode(failure ? words.tierFailed(tier, failure) : tier));
+    item.dataset.mapTier = name;
+    const label = window.ServerManMapDom.element("span", failure ? words.tierFailed(name, failure) : name,
+      {class: "map-tier-name"});
+    const accessible = tier === null ? "Unassigned (no tier flags)" : name;
+    const shown = mapTiersVisible(tier), toggle = window.ServerManMapDom.element("button", "Visible", {
+      type: "button", class: "button map-tier-visibility", "data-map-tier-control": tier ?? "", "data-map-unassigned": String(tier === null),
+      "aria-label": `Visible: ${accessible}`, "aria-pressed": String(shown), title: `${shown ? "Hide" : "Show"} ${name}`});
+    window.ServerManMapIcons.button(toggle, shown ? "visible" : "hidden");
+    toggle.addEventListener("click", () => {
+      state.visible.set(tier === null ? null : tier.toLowerCase(), !mapTiersVisible(tier));
+      mapTiersLegend(); window.ServerManMapRaster.redraw(); mapTiersRead();
+    });
+    item.append(swatch, label, toggle);
     legend.append(item);
   });
+  // Async reads and display toggles retain keyboard focus on the same real tier.
+  if (focused) [...legend.querySelectorAll("button")].find((button) =>
+    button.dataset.mapTierControl === focused.tier && button.dataset.mapUnassigned === focused.unassigned)?.focus();
 }
 
 // Decode one answer and check that the image has exactly the header cell grid.
@@ -58,7 +82,7 @@ async function mapTiersRead() {
   state.reading = true;
   mapTiersLegend();
   try {
-    for (const tier of state.tiers) {
+    for (const tier of [...state.tiers, ...(mapTiersVisible(null) ? [null] : [])]) {
       if (state.layers.has(tier) || state.failures.has(tier)) continue;
       try {
         const value = await window.ServerManMapBridge.readTierLayer(state.missionKey, tier);
@@ -92,6 +116,8 @@ async function mapTiersRead() {
       state.reading = false;
       mapTiersLegend();
       window.ServerManMapRaster.redraw();
+      // A user may enable Unassigned while the named-tier batch is already running.
+      if (mapTiersVisible(null) && !state.layers.has(null) && !state.failures.has(null) && !state.reason) mapTiersRead();
     }
   }
 }
@@ -100,10 +126,12 @@ async function mapTiersRead() {
 function mapTiersDraw(frame) {
   const state = mapTiersState;
   if (!state.shown || state.reason) return false;
+  // Fade the complete tint and hatch together; the underlying image keeps its opacity.
+  frame.context.globalAlpha = state.opacity / 100;
   let drawn = false;
-  state.tiers.forEach((tier, position) => {
+  [...state.tiers, null].forEach((tier, position) => {
     const layer = state.layers.get(tier);
-    if (layer) drawn = window.ServerManMapRaster.mask(frame, layer.image, layer.world, position + 1) || drawn;
+    if (layer && mapTiersVisible(tier)) drawn = window.ServerManMapRaster.mask(frame, layer.image, layer.world, tier === null ? 1 : position + 1) || drawn;
   });
   return drawn;
 }
@@ -127,6 +155,15 @@ function mapTiersLoad(value) {
 window.ServerManMapTiers = Object.freeze({
   init: () => {
     const toggle = document.getElementById("map-tiers-toggle");
+    // Opacity is local display state, independent of draft changes and layer visibility.
+    const opacity = document.getElementById("map-tiers-opacity");
+    opacity.addEventListener("input", () => {
+      const value = Number(opacity.value);
+      if (!Number.isInteger(value) || value < 0 || value > 100 || value % 10 !== 0) return;
+      mapTiersState.opacity = value;
+      document.getElementById("map-tiers-opacity-value").textContent = `${value}%`;
+      window.ServerManMapRaster.redraw();
+    });
     document.getElementById("map-tiers-title").textContent = window.ServerManMapWording.originalTiers;
     document.getElementById("map-tiers-toggle-label").textContent = window.ServerManMapWording.originalTiers;
     document.getElementById("map-tiers-legend").setAttribute("aria-label", window.ServerManMapWording.tierLegend);
@@ -146,5 +183,6 @@ window.ServerManMapTiers = Object.freeze({
     if (!enabled) { mapTiersState.generation += 1; mapTiersState.reading = false; } else mapTiersRead();
   },
   shown: () => mapTiersState.shown,
-  loaded: () => [...mapTiersState.layers.keys()],
+  // Preserve the existing named-tier readiness contract; Unassigned reads lazily when shown.
+  loaded: () => [...mapTiersState.layers.keys()].filter((tier) => tier !== null),
 });

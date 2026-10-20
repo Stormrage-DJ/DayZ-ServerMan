@@ -8,7 +8,8 @@ from tests.ui_harness_support import EDGE, run_editor_harness
 
 
 # Cover accepted normal, minimum and maximized outer sizes with the real document.
-SIZES = ("1280,800", "960,600", "1920,1080")
+# Edge reserves 24 by 92 pixels for its Windows frame; exercise the accepted inner sizes.
+SIZES = ("1304,892", "984,692", "1944,1172", "1944,1101")
 
 # Measure visible containment rather than accepting hidden document overflow.
 GEOMETRY = r'''
@@ -22,7 +23,15 @@ const fits = () => {
       area.bottom <= innerHeight + 1, `visible region ${id}`);
   }
   const map = rect("map-viewport");
-  check(map.width >= innerWidth * .60 && map.height >= innerHeight * .50, "large central map");
+  const content = document.getElementById("map-panel-content");
+  if (document.getElementById("map-panel").open) {
+    check(content.clientHeight > 0 && content.scrollHeight >= content.clientHeight, "bounded panel scroll region");
+    content.scrollTop = content.scrollHeight;
+    const end = content.lastElementChild.getBoundingClientRect(), panel = rect("map-panel");
+    check(end.bottom <= panel.bottom + 1 && end.top >= panel.top, "last panel section reachable");
+    content.scrollTop = 0;
+  }
+  check(map.width >= 320 && map.height >= 240, `large central map ${map.width}x${map.height} at ${innerWidth}x${innerHeight}: ${[...document.getElementById("map-editor").children].map(e=>e.id+"="+e.clientHeight).join(";")}`);
   const terrain = document.getElementById("map-terrain-surface");
   if (terrain) {
     const area = terrain.getBoundingClientRect();
@@ -47,20 +56,34 @@ class MissionMapEditorLayoutEdgeTests(unittest.TestCase):
                 self.assertEqual(run_editor_harness(GEOMETRY + r'''
 await window.ServerManMapEditor.load(); await wait();
 const panel = document.getElementById("map-panel");
-const toggle = document.getElementById("map-panel-toggle");
+const toggle = document.getElementById("map-show-navigation");
+window.ServerManMapWorkspace.open("navigation", true); await wait();
 check(panel.open, "controls start expanded"); fits();
 const expandedWidth = rect("map-viewport").width;
-toggle.focus(); toggle.click(); await wait();
+document.getElementById("map-show-view").click(); toggle.focus(); toggle.click(); await wait();
 check(!panel.open && toggle.getAttribute("aria-expanded") === "false", "collapsed disclosure");
-check(toggle.getAttribute("aria-controls") === "map-panel-content", "disclosure target");
-check(document.activeElement === toggle, "toggle retains keyboard focus");
-check(getComputedStyle(toggle).outlineStyle !== "none", "visible keyboard focus");
-check(rect("map-viewport").width > expandedWidth + 200, "collapse enlarges map"); fits();
+check(toggle.getAttribute("aria-controls") === "map-panel", "disclosure target");
+check(document.activeElement.id === "map-show-view", "closed panel returns focus to the visible View opener");
+check(getComputedStyle(document.getElementById("map-show-view")).outlineStyle !== "none", "visible keyboard focus");
+check(rect("map-viewport").width > expandedWidth + 190, "collapse enlarges map"); fits();
 await window.ServerManMapEditor.load(); await wait();
 check(!panel.open && toggle.getAttribute("aria-expanded") === "false", "collapse survives load");
-toggle.focus(); toggle.click(); await wait();
+document.getElementById("map-show-view").click(); toggle.focus(); toggle.click(); await wait();
 await window.ServerManMapEditor.load(); await wait();
 check(panel.open && toggle.getAttribute("aria-expanded") === "true", "expanded state survives load");
+const resize = document.querySelector('#map-panel > [role="separator"]');
+const before = window.ServerManMapWorkspace.snapshot().navigation_width;
+resize.focus();
+resize.dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",bubbles:true,cancelable:true}));
+resize.dispatchEvent(new KeyboardEvent("keyup",{key:"ArrowRight",bubbles:true}));
+check(window.ServerManMapWorkspace.snapshot().navigation_width===before+10,"keyboard resize commits arbitrary width");
+resize.dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",bubbles:true,cancelable:true}));
+resize.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true}));
+check(window.ServerManMapWorkspace.snapshot().navigation_width===before+10,"Escape cancels resize preview");
+document.getElementById("map-show-report").click();await wait();
+check(!document.getElementById("map-reports").hidden,"report opens independently");fits();
+check(rect("map-edit-bar").bottom<=rect("map-viewport").top,"tools outside report scrolling");
+document.getElementById("map-show-report").click();await wait();
 const longName = "<img src=x onerror=alert(1)> & " + "Long safe identity ".repeat(80);
 editorAnswer = {success: true, value: {...editorValue,
   profile: {...editorValue.profile, display_name: longName}, mission_name: longName,
@@ -73,6 +96,39 @@ for (const id of ["map-profile", "map-mission", "map-terrain"]) {
 check(!document.querySelector("#map-identity img"), "identity is text only"); fits();
 check(editorCalls.every((call) => call === "load"), "display changes never save");
 ''', window_size=size), "PASS")
+
+    def test_late_layout_read_cannot_replace_local_dimensions(self) -> None:
+        """A layout read from startup loses authority after explicit local changes."""
+        self.assertEqual(run_editor_harness(r'''
+let answer;
+window.pywebview.api.get_editor_layout=()=>new Promise(resolve=>answer=resolve);
+await new Promise(resolve=>document.readyState==="loading"?document.addEventListener("DOMContentLoaded",resolve,{once:true}):resolve());
+window.ServerManMapWorkspace.change({navigation_width:287});
+answer({success:true,value:{editor_layout:{navigation_width:420},storage_status:"VALID"}});await wait();
+check(window.ServerManMapWorkspace.snapshot().navigation_width===287,"late preferences do not overwrite a local resize");
+'''), "PASS")
+
+    def test_layout_preferences_coalesce_and_keep_newer_edits(self) -> None:
+        """Preference failures stay independent of mission state and retry the newest patch."""
+        self.assertEqual(run_editor_harness(r'''
+await window.ServerManMapEditor.load();await wait();
+const missionStatus=document.getElementById("map-status").textContent;
+const writes=[];let finish;
+window.pywebview.api.save_editor_layout=patch=>{writes.push(structuredClone(patch));return new Promise(resolve=>finish=resolve)};
+window.ServerManMapWorkspace.change({navigation_width:277});
+window.ServerManMapWorkspace.change({inspector_width:411});
+const request=window.ServerManMapWorkspacePreferences.flush();
+check(writes.length===1&&writes[0].navigation_width===277&&writes[0].inspector_width===411,"combined partial patch");
+window.ServerManMapWorkspace.change({navigation_width:283});
+finish({success:false,error:{code:"STORAGE_FAILURE",message:"Cannot save"}});await request;
+check(document.getElementById("map-layout-notice").textContent.includes("Retry"),"nonblocking failure notice");
+const retry=window.ServerManMapWorkspacePreferences.flush();
+check(writes[1].navigation_width===283&&writes[1].inspector_width===411,"retry preserves newer patch");
+finish({success:true,value:{editor_layout:writes[1]}});await retry;
+check(document.getElementById("map-layout-notice").textContent===""&&document.getElementById("map-status").textContent===missionStatus,"layout is separate from plan state");
+window.ServerManMapWorkspace.restore({navigation_open:true,inspector_open:true,report_open:true,last_explicit_opened_region:"report"});
+check(!document.getElementById("map-reports").hidden&&document.getElementById("map-panel").hidden&&document.getElementById("map-inspector").hidden,"compact restore honors last explicitly opened region");
+''',window_size="984,692"), "PASS")
 
     def test_status_slots_backend_draft_states_and_announcements(self) -> None:
         """Display backend booleans and unavailable values without inventing Saved or coordinates."""
@@ -120,7 +176,7 @@ window.pywebview.api.load_plan = async () => ({success: true, value: {...editorV
 await window.ServerManMapEditor.load();
 finish({success: true, value: {...editorValue, draft_changes: false}}); await older;
 check(document.getElementById("map-draft-changes").textContent === "Yes", "drop stale draft status");
-document.getElementById("map-panel-toggle").click(); await wait();
+if(window.ServerManMapWorkspace.visible("navigation")) window.ServerManMapWorkspace.toggle("navigation"); await wait();
 const settle = window.ServerManMapEditor.settleForClose("application");
 check(settle instanceof Promise && await settle === "close", "close Promise unchanged");
 check(document.getElementById("map-status").textContent === "Closing", "exact Closing state");

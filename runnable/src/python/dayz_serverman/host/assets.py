@@ -72,6 +72,7 @@ def compose_shell_html(frontend_root: Path) -> str:
     tweaks_script += "\n" + (root / "tweaks_dialog.js").read_text(encoding="utf-8")
     configuration_edit_script = (root / "configuration_edit.js").read_text(encoding="utf-8")
     configuration_context_script = (root / "configuration_context.js").read_text(encoding="utf-8")
+    configuration_network_script = (root / "configuration_network.js").read_text(encoding="utf-8")
     configuration_script = (root / "configuration_fields.js").read_text(encoding="utf-8")
     configuration_script += "\n" + (root / "configuration.js").read_text(encoding="utf-8")
     backup_display_script = (root / "backup_display.js").read_text(encoding="utf-8")
@@ -124,6 +125,6 @@ def compose_shell_html(frontend_root: Path) -> str:
         STYLE_MARKER,
         f"<style>\n{tokens}\n{controls}\n{styles}\n{mods_styles}\n{overview_styles}\n{profiles_styles}\n{operation_bar_styles}\n</style>",
     )
-    script = f"{shell_ui_script}\n{workspace_script}\n{transition_script}\n{profile_context_script}\n{configuration_catalog_script}\n{tweaks_catalog_script}\n{tweaks_render_script}\n{tweaks_script}\n{configuration_edit_script}\n{configuration_context_script}\n{configuration_script}\n{backup_display_script}\n{backup_script}\n{restore_script}\n{profiles_mods_script}\n{profile_copy_mods_script}\n{profile_create_script}\n{profiles_script}\n{profile_delete_script}\n{migration_script}\n{settings_script}\n{update_status_script}\n{mods_script}\n{mods_display_script}\n{mod_publication_script}\n{overview_backup_script}\n{overview_schedule_script}\n{overview_readiness_script}\n{overview_dialog_script}\n{overview_script}\n{overview_status_script}\n{logs_script}\n{sections_script}\n{app_script}"
+    script = f"{shell_ui_script}\n{workspace_script}\n{transition_script}\n{profile_context_script}\n{configuration_catalog_script}\n{tweaks_catalog_script}\n{tweaks_render_script}\n{tweaks_script}\n{configuration_edit_script}\n{configuration_context_script}\n{configuration_network_script}\n{configuration_script}\n{backup_display_script}\n{backup_script}\n{restore_script}\n{profiles_mods_script}\n{profile_copy_mods_script}\n{profile_create_script}\n{profiles_script}\n{profile_delete_script}\n{migration_script}\n{settings_script}\n{update_status_script}\n{mods_script}\n{mods_display_script}\n{mod_publication_script}\n{overview_backup_script}\n{overview_schedule_script}\n{overview_readiness_script}\n{overview_dialog_script}\n{overview_script}\n{overview_status_script}\n{logs_script}\n{sections_script}\n{app_script}"
     # Substitute the script marker and return the composed document
     return document.replace(SCRIPT_MARKER, f"<script>\n{script}\n</script>")

@@ -85,6 +85,16 @@ class TierPngTests(unittest.TestCase):
             for (column, row), value in cells.items():
                 self.assertEqual(decoded[15 - row][column], value >> bit & 1)
 
+    def test_unassigned_exact_zero_north_up_and_transparent_padding(self) -> None:
+        """Zero differs from all positive values, including unnamed bits and odd-width padding."""
+        for bits in (4, 8):
+            cells = {(0, 0): 1, (1, 1): 8, (2, 0): 15, (4, 1): 0}
+            rows = rows_of(5, 2, bits, cells)
+            encoded = tier_png(rows, None)
+            self.assertEqual(pixels(encoded), [[1, 0, 1, 1, 1], [0, 1, 0, 1, 1]])
+            raw = zlib.decompress(dict(chunks(encoded))[b"IDAT"])
+            self.assertEqual([raw[1] & 7, raw[3] & 7], [0, 0])
+
     def test_partial_rows_are_refused(self) -> None:
         """A tier image always covers the whole value layer."""
         data = areaflags_bytes(2, 3, 10, 10, 8, 8)

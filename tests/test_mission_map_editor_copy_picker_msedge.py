@@ -40,7 +40,7 @@ button(C.continue).click();await wait();
 check(document.activeElement===radio("alpha")&&host.calls.length===1,"a missing choice takes the focus; no preview");
 check(opener.getAttribute("aria-disabled")==="true"&&element("map-import").getAttribute("aria-disabled")==="true","busy while the picker is open");
 button("Cancel").click();await wait();
-check(!dialog()&&document.activeElement===opener&&slot()===""&&JSON.stringify(host.calls)===JSON.stringify([["sources"]]),"cancel ends silently");
+check(!dialog()&&document.activeElement===element("map-show-plan")&&slot()===""&&JSON.stringify(host.calls)===JSON.stringify([["sources"]]),"cancel ends silently");
 '''), "PASS")
 
     def test_no_other_profile_shows_the_empty_text_and_close_only(self) -> None:
@@ -88,7 +88,7 @@ check(!radio("alpha").checked&&button(C.continue).getAttribute("aria-disabled")=
 await start();host.sources=refusal("storage","Profiles are not readable.","STORAGE_FAILURE");
 copyButton().focus();copyButton().click();await sleep(300);
 check(!dialog()&&slot()!==""&&notice()===slot(),`list failure: ${slot()}`);
-check(!copyButton().hasAttribute("aria-disabled")&&document.activeElement===copyButton(),"the opener is free and has the focus");
+check(!copyButton().hasAttribute("aria-disabled")&&document.activeElement===element("map-show-plan"),"the opener is free and has the focus");
 '''), "PASS")
 
 

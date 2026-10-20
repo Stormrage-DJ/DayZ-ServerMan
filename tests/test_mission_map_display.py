@@ -90,12 +90,25 @@ class TierLayerTests(DisplayFixture):
         self.assertFalse(self.area.exists())
         self.assertEqual((self.mission / "areaflags.map").read_bytes(), self.areaflags)
 
+    def test_unassigned_is_a_null_display_read_without_mutation(self) -> None:
+        """Null selects exact zero, including when unnamed positive bits occur."""
+        self.cells[(2, 3)] = 8
+        self.areaflags = areaflags_bytes(8, 8, 1000, 1000, 16, 4, self.cells)
+        (self.mission / "areaflags.map").write_bytes(self.areaflags)
+        answer = self.tier(None)
+        self.assertIsNone(answer["tier"])
+        header = header_of(self.areaflags)
+        rows = ValueRows(header, 0, 8, self.areaflags[header.value_offset:])
+        self.assertEqual(base64.b64decode(answer["png"]), tier_png(rows, None))
+        self.assertFalse(self.area.exists())
+        self.assertEqual((self.mission / "areaflags.map").read_bytes(), self.areaflags)
+
     def test_unknown_and_unholdable_tiers(self) -> None:
         """A name outside the value flags, past the value bits or of another type is tier_unknown."""
         (self.mission / "cfglimitsdefinition.xml").write_text(
             limits_text("Tier1", "Tier2", "Tier3", "Tier4", "Tier5"), encoding="utf-8")
         self.assertEqual(self.tier("Tier4")["tier"], "Tier4")
-        for tier in ("Tier5", "Other", 2, None):
+        for tier in ("Tier5", "Other", 2):
             self.refused(lambda: self.tier(tier), ErrorCode.INVALID_REQUEST, "tier_unknown")
 
     def test_png_above_the_call_budget_is_refused_after_encoding(self) -> None:

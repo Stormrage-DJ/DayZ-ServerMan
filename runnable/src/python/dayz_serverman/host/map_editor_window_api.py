@@ -16,6 +16,7 @@ from ..application.mission_map_images import ImageRefusal, ImageSelectionService
 from ..bridge.contracts import BridgeResult, ErrorCode
 from ..bridge.facade import BridgeFacade
 from .map_editor_transfer_api import MapEditorTransferMethods
+from .map_editor_layout_api import MapEditorLayoutMethods
 
 
 # Host codes of a refused dialog choice; budget and type refusals keep the display-read code
@@ -25,7 +26,7 @@ _REGISTER_CODES = {"over_budget": ErrorCode.UNSUPPORTED_SNAPSHOT_CONTENT,
 IMAGE_FILE_TYPES = ("Map images (*.png;*.jpg;*.jpeg)",)
 # The only methods that the editor calls without the bound profile; one dispatch path checks this allowlist
 UNBOUND_METHODS = frozenset(("get_operation", "read_operation_events", "inspect_mission_map_recovery",
-                             "list_profiles"))
+                             "list_profiles", "get_editor_layout", "save_editor_layout"))
 # Kinds whose full record reaches the editor. A record of another kind keeps only REDUCED_FIELDS. So no result
 # of another operation, for example a backup path, reaches the editor document
 MAP_OPERATION_KINDS = frozenset(("APPLY_MISSION_MAP", "RESTORE_MISSION_MAP_ORIGINAL", "RESTORE_MISSION_MAP_PREVIOUS",
@@ -35,7 +36,7 @@ REDUCED_FIELDS = ("operation_id", "kind", "state", "revision", "progress_phase")
 EVENT_PAGE = 100
 
 
-class MissionMapEditorApi(MapEditorTransferMethods):
+class MissionMapEditorApi(MapEditorTransferMethods, MapEditorLayoutMethods):
     """Keep editor requests bound to the profile selected by the native host."""
 
     def __init__(self, bridge: BridgeFacade, profile_id: str, selections: ImageSelectionService | None, *,

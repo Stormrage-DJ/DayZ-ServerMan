@@ -5,8 +5,8 @@
 // suppress: the click that follows a drag must not place or select.
 const mapDragState = {model: null, pending: null, drag: null, suppress: false};
 
-// A pointer that moves 4 pixels or more is a drag (Keyboard Map); a handle takes a press within 12 CSS pixels
-// of its centre, a 24 px hit area around the drawn 8 px square (UI-UX 15:44:25)
+// A pointer must move 4 CSS pixels to begin a drag.
+// Each 8 px handle has a 12 CSS pixel reach from its centre, giving a 24 px hit area.
 const mapDragThreshold = 4;
 const mapDragReach = 12;
 
@@ -17,13 +17,18 @@ function mapDragGeometry(item) {
 
 // Screen points of the handles: the east edge point of a circle, or each outline vertex.
 // A locked zone and a draft that cannot change show no handles.
-function mapDragHandles(view, item) {
+function mapDragCandidates(view, item) {
   if (!item || item.locked || !mapDragState.model?.editable() || !window.ServerManMapVector.drawable(item)) return [];
   // An encounter without a spawn radius has no resize handle
   const circle = item.kind !== "loot_polygon", round = Number.isFinite(item.radius);
   const points = circle ? (round ? [{x: item.centre.x + item.radius, z: item.centre.z}] : []) : item.vertices;
   return points.map((point, index) => ({grip: circle ? "radius" : "vertex", index, ...view.toScreen(point)}))
     .filter((handle) => Number.isFinite(handle.x) && Number.isFinite(handle.y));
+}
+
+// Visible handles follow Control; raw candidates remain available for ordinary near-handle movement.
+function mapDragHandles(view, item) {
+  return window.ServerManMapDragInput.held() ? mapDragCandidates(view, item) : [];
 }
 
 // The wording key of the advisory D1 reason that refuses a shape, or null; the backend check stays authoritative
@@ -62,17 +67,18 @@ function mapDragDown(event) {
   const state = mapDragState, view = window.ServerManMapViewportUi.view();
   state.suppress = false;
   state.pending = null;
-  if (event.button !== 0 || state.drag || !state.model.editable() || window.ServerManMapCalibration.state().active) return;
+  if (event.button !== 0 || state.drag || !state.model.editable() || window.ServerManMapCalibration.state().active ||
+      document.querySelector("dialog") || document.getElementById("map-viewport").classList.contains("map-panning")) return;
   const plan = state.model.snapshot(), id = window.ServerManMapLayers.selected();
   const item = plan?.objects.find((object) => object.id === id), screen = mapDragPosition(event);
   const native = view?.toNative(screen);
   if (!item || !native || !window.ServerManMapVector.drawable(item)) return;
-  // The nearest handle within reach wins; else a press inside the zone moves it, also a zone below others
-  const handle = mapDragHandles(view, item).map((point) => ({...point, gap: Math.hypot(point.x - screen.x, point.y - screen.y)}))
+  // Control edits the nearest handle within reach. An ordinary press there moves the whole selected object.
+  const handle = mapDragCandidates(view, item).map((point) => ({...point, gap: Math.hypot(point.x - screen.x, point.y - screen.y)}))
     .filter((point) => point.gap <= mapDragReach).sort((first, second) => first.gap - second.gap)[0];
   const inside = item.kind === "encounter" ? window.ServerManMapEncounters.covers(item, native, view) :
     window.ServerManMapOutline.contains(item, native);
-  const kind = handle?.grip ?? (inside ? (item.locked ? "locked" : "move") : null);
+  const kind = event.ctrlKey && handle ? handle.grip : (inside || handle ? (item.locked ? "locked" : "move") : null);
   if (!kind) return;
   const bounds = plan.terrain.bounds;
   state.pending = {pointer: event.pointerId, screen, from: native, kind, index: handle?.index ?? null, item,
@@ -82,6 +88,7 @@ function mapDragDown(event) {
 // Past the threshold a press becomes a drag; each move replaces the preview and its advisory reason
 function mapDragMove(event) {
   const state = mapDragState, words = window.ServerManMapWording, element = document.getElementById("map-viewport");
+  mapDragSync();
   const current = state.drag ?? state.pending;
   if (!current || event.pointerId !== current.pointer) return;
   // A primary button that is up ends the press or the drag without an action (QA-4.5-F1)
@@ -124,9 +131,10 @@ function mapDragEnd() {
   return drag;
 }
 
-// Escape, a cancelled pointer, a release away from the map or a lost window focus end a press or a drag;
-// the geometry returns and no undo action is added
+// Escape, pointer cancellation, an outside release or lost focus cancels the gesture.
+// Stored geometry and undo history stay unchanged.
 function mapDragCancel() {
+  if (mapDragState.drag || mapDragState.pending) mapDragState.suppress = true;
   const drag = mapDragEnd();
   if (drag?.problem) window.ServerManMapTools.message("");
 }
@@ -134,6 +142,7 @@ function mapDragCancel() {
 // Release: one undo action holds the plan before and after the drag; no change adds none
 function mapDragUp(event) {
   const state = mapDragState, words = window.ServerManMapWording, model = state.model;
+  mapDragSync();
   if (state.pending?.pointer === event.pointerId) state.pending = null;
   if (state.drag?.pointer !== event.pointerId) return;
   const drag = mapDragEnd();
@@ -150,13 +159,16 @@ function mapDragUp(event) {
   }
 }
 
-// Each draft change: a load or a close (an epoch change), or another change of the zone, ends a press or a drag
-// and drops its preview, without an action (QA-4.5-F2)
+// A changed geometry, model epoch or edit gate cancels the gesture before commit.
+// The preview is discarded without adding an action (QA-4.5-F2).
 function mapDragSync() {
   const state = mapDragState, current = state.drag ?? state.pending, geometry = (item) => JSON.stringify(mapDragGeometry(item));
   if (!current) return;
   const item = state.model.snapshot()?.objects.find((object) => object.id === current.item.id);
-  if (current.epoch !== state.model.epoch() || !item || geometry(item) !== geometry(current.item)) mapDragCancel();
+  if (current.epoch !== state.model.epoch() || !item || geometry(item) !== geometry(current.item) ||
+      !state.model.editable() || !item.visible || (item.locked && current.kind !== "locked") ||
+      window.ServerManMapLayers.selected() !== item.id || window.ServerManMapCalibration.state().active ||
+      document.querySelector("dialog") || document.getElementById("map-viewport").classList.contains("map-panning")) mapDragCancel();
 }
 
 // Wire the map once; the pan handlers consume their own gestures before these listeners
@@ -164,31 +176,7 @@ function mapDragInit(model) {
   const state = mapDragState, element = document.getElementById("map-viewport");
   if (state.model) return;
   state.model = model;
-  element.addEventListener("pointerdown", mapDragDown);
-  element.addEventListener("pointermove", mapDragMove);
-  element.addEventListener("pointerup", mapDragUp);
-  element.addEventListener("pointercancel", (event) => { if (state.drag?.pointer === event.pointerId) mapDragCancel(); });
-  // A release anywhere else in the window ends the press or the drag; the map's own release comes first
-  window.addEventListener("pointerup", (event) => {
-    if ((state.drag ?? state.pending)?.pointer === event.pointerId) mapDragCancel();
-  });
-  window.addEventListener("blur", mapDragCancel);
-  // The click after a drag or a refused drag neither places nor selects
-  element.addEventListener("click", (event) => {
-    if (!state.suppress) return;
-    state.suppress = false;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-  }, true);
-  // During a drag only Escape acts, and it cancels the drag (Keyboard Map)
-  window.addEventListener("keydown", (event) => {
-    // Escape also ends a press that is not a drag yet; the selection then clears as usual (QA-4.5-F1)
-    if (!state.drag && event.key === "Escape") state.pending = null;
-    if (!state.drag) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    if (event.key === "Escape") mapDragCancel();
-  }, true);
+  window.ServerManMapDragInput.init(element);
 }
 
 // The vector layer draws the preview and the handles; the model owns the undo action.

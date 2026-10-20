@@ -48,7 +48,7 @@ class MissionMapDisplay:
     """Serve the tier-layer read and the background read of one profile's active mission."""
 
     def __init__(self, plans: MissionMapPlanService, images: ImageSelectionService, *,
-                 encode: Callable[[ValueRows, int], bytes] = tier_png) -> None:
+                 encode: Callable[[ValueRows, int | None], bytes] = tier_png) -> None:
         """Keep the plan service, the image selection service and the PNG encoder."""
         self._plans = plans
         self._images = images
@@ -70,17 +70,17 @@ class MissionMapDisplay:
             holdable = flags[:header.value_bits]
             tier = parameters["tier"]
             names = [name for name in holdable if isinstance(tier, str) and name.casefold() == tier.casefold()]
-            if not names:
+            if tier is not None and not names:
                 raise refusal(ErrorCode.INVALID_REQUEST, "tier_unknown", "This tier is not in the tier map of this mission.")
             offset, length = row_byte_span(header, 0, header.rows)
             rows = ValueRows(header, 0, header.rows, content[offset:offset + length])
-            png = self._encode(rows, tier_mask(holdable, names[0]))
+            png = self._encode(rows, None if tier is None else tier_mask(holdable, names[0]))
             # The budget check runs after the PNG encoding and before the base64 encoding
             if len(png) > CALL_BYTE_LIMIT:
                 raise refusal(ErrorCode.UNSUPPORTED_SNAPSHOT_CONTENT, "over_budget",
                               "The original tiers of this mission are too large to show on the map.",
                               limit=CALL_BYTE_LIMIT, size=len(png), unit="bytes")
-            return {"tier": names[0], "columns": header.columns, "rows": header.rows,
+            return {"tier": None if tier is None else names[0], "columns": header.columns, "rows": header.rows,
                     "world_width": header.world_width, "world_height": header.world_height,
                     "areaflags_sha256": hashlib.sha256(content).hexdigest(), "byte_size": len(png),
                     "png": base64.b64encode(png).decode("ascii")}

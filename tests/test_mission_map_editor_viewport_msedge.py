@@ -112,6 +112,17 @@ const resized=view.snapshot();check(resized.width>fitted.width,"ResizeObserver f
 const after=view.toNative({x:resized.width/2,y:resized.height/2});close(after.x,centre.x,"resize centre X");close(after.z,centre.z,"resize centre Z");
 check(document.querySelectorAll("#map-vector line").length===22,"complete terrain grid");
 check(document.querySelector("#map-vector text").textContent.includes("X"),"screen edge axis labels");
+for (const mode of ["Grid", "Native", "Both"]) {
+  for (const width of [580, 900]) {
+    view.resize(width, 600); view.fit();
+    window.ServerManMapViewportRender.draw(view, mode);
+    const labels=[...document.querySelectorAll(".map-grid-labels text")].map(label=>label.getBoundingClientRect());
+    for (let i=0;i<labels.length;i++) for (let j=i+1;j<labels.length;j++) {
+      const a=labels[i],b=labels[j];
+      check(a.right<=b.left||b.right<=a.left||a.bottom<=b.top||b.bottom<=a.top,"axis label separation");
+    }
+  }
+}
 check(!document.querySelector("[style]"),"static CSS only");
 check(editorCalls.every(call=>call==="load"),"navigation never saves");
 ''', window_size=size), "PASS")
@@ -131,6 +142,7 @@ for(const [mode,delta] of [[0,-100],[1,-2],[2,-.1]]) {
   check(wheel(delta,mode,true).defaultPrevented,"Ctrl wheel accepted");
   close(view.snapshot().scale,before*Math.pow(1.2,-pixels/100),"actual wheel mode conversion");
 }
+document.getElementById("map-show-view").click();
 const select=document.getElementById("map-coordinate-mode");select.focus();const before=view.snapshot().scale;
 check(!wheel(-100).defaultPrevented&&view.snapshot().scale===before,"focused select retains wheel");
 const key=new KeyboardEvent("keydown",{key:" ",code:"Space",bubbles:true,cancelable:true});select.dispatchEvent(key);

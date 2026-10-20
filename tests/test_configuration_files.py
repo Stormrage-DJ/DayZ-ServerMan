@@ -36,6 +36,66 @@ class ConfigurationFileTests(unittest.TestCase):
         """Remove the temporary configuration directory."""
         self.temporary.cleanup()
 
+    def test_unified_preview_validates_both_owners_without_writing(self) -> None:
+        """A complete review preserves native syntax and authoritative profile fields."""
+        from tests.test_configuration_workflow import FakeProfiles, FakeSettings, profile
+        from dayz_serverman.application.configuration import ConfigurationService
+        from dayz_serverman.application.configuration_prepare import prepare_configuration
+        from dayz_serverman.domain.profiles import ProfileValidationError
+
+        path = self.root / "serverDZ.cfg"
+        path.write_text('hostname = "Old";\nsteamQueryPort = 2305;\ncustom = 7;\n', encoding="utf-8")
+        original = path.read_bytes()
+        profiles = FakeProfiles(profile())
+        service = ConfigurationService(profiles, FakeSettings(self.root))
+        loaded = service.load("main", "server")
+        self.assertEqual(loaded["fields"][0]["value"], 2302)
+        for updates in ({"game_port": 1}, {"game_port": 65535}, {"steamQueryPort": 2505},
+                        {"game_port": 2502, "steamQueryPort": 2505, "hostname": "Mixed"}):
+            with self.subTest(updates=updates):
+                preview = service.preview("main", "server", 3, 4, loaded["digest"], None, updates)
+                self.assertEqual(set(preview["changed_fields"]), set(updates))
+                self.assertEqual({item["key"]: item["after"] for item in preview["changes"]}, updates)
+                prepared = prepare_configuration(profiles.profile, load_configuration_file(path, "server"), updates)
+                self.assertNotIn(b"game_port", prepared.proposed)
+                self.assertIn(b"custom = 7;", prepared.proposed)
+                self.assertEqual(prepared.candidate.mods, profiles.profile.values.mods)
+                self.assertEqual(prepared.candidate.server_config, profiles.profile.values.server_config)
+                self.assertEqual(path.read_bytes(), original)
+                self.assertEqual(profiles.profile.revision, 3)
+        same = prepare_configuration(profiles.profile, load_configuration_file(path, "server"), {"game_port": 2302})
+        self.assertFalse(same.profile_changed)
+        self.assertEqual(same.proposed, original)
+        for invalid in (0, 65536, True, "2502", 2.5, None):
+            with self.subTest(invalid=invalid), self.assertRaises(ProfileValidationError):
+                service.preview("main", "server", 3, 4, loaded["digest"], None, {"game_port": invalid})
+        with self.assertRaises(ConfigurationValidationError):
+            service.preview("main", "server", 3, 4, loaded["digest"], None, {})
+        self.assertEqual(list(self.root.iterdir()), [path])
+
+    def test_unified_preview_rejects_stale_proofs_and_wrong_target(self) -> None:
+        """Virtual values cannot bypass context guards or enter gameplay fields."""
+        from tests.test_configuration_workflow import FakeProfiles, FakeSettings, profile
+        from dayz_serverman.application.configuration import ConfigurationService
+        from dayz_serverman.application.configuration_prepare import prepare_configuration
+        from dayz_serverman.domain.models import RevisionConflict
+        from dayz_serverman.repositories.atomic_file import ContentChangedError
+
+        path = self.root / "serverDZ.cfg"
+        path.write_text('hostname = "Old";\n', encoding="utf-8")
+        service = ConfigurationService(FakeProfiles(profile()), FakeSettings(self.root))
+        loaded = service.load("main", "server")
+        for profile_rev, settings_rev in ((2, 4), (3, 2)):
+            with self.assertRaises(RevisionConflict):
+                service.preview("main", "server", profile_rev, settings_rev, loaded["digest"], None, {"game_port": 2502})
+        path.write_text('hostname = "External";\n', encoding="utf-8")
+        with self.assertRaises(ContentChangedError):
+            service.preview("main", "server", 3, 4, loaded["digest"], None, {"game_port": 2502})
+        gameplay = self.root / "cfgGameplay.json"
+        gameplay.write_text('{}', encoding="utf-8")
+        with self.assertRaises(ConfigurationValidationError):
+            prepare_configuration(profile(), load_configuration_file(gameplay, "gameplay"), {"game_port": 2502})
+
     def test_server_patch_preserves_bom_crlf_comments_and_unknown_lines(self) -> None:
         """Patch server settings without losing the BOM, CRLF endings, or unknown lines."""
         # Seed a UTF-8 BOM file with a comment and a custom line

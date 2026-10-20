@@ -120,7 +120,7 @@ const toggle=dialog().querySelector(".map-preview-list .link-button");
 check(lines().includes("Objects with problems: 2")&&toggle.getAttribute("aria-expanded")==="false","the collapsed list with its count");
 toggle.click();check(lines().includes("c1: radius must be positive")&&lines().includes("objects must be a list"),"rows");
 check(!confirmButton()&&button("Close")&&!radio("replace"),"Close only");
-button("Close").click();await wait();check(!dialog()&&!imports().length&&document.activeElement===element("map-import"),"focus on the opener");
+button("Close").click();await wait();check(!dialog()&&!imports().length&&document.activeElement===element("map-show-plan"),"focus on the opener");
 '''), "PASS")
 
 

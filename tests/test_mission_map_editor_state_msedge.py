@@ -5,6 +5,8 @@ from __future__ import annotations
 import unittest
 
 from tests.test_mission_map_editor_bounds_msedge import COMMON
+from tests.test_mission_map_editor_tools_msedge import TOOLS
+from tests.mission_map_gesture_harness import SELECT
 from tests.ui_harness_support import EDGE, run_editor_harness
 
 
@@ -198,4 +200,66 @@ undo.click();await wait();undo.click();await wait();
 check(JSON.stringify(model.snapshot())===after[98]&&!redo.disabled,"Undo button steps back twice");
 redo.click();await wait();check(JSON.stringify(model.snapshot())===after[99]&&model.status().history.position===99,"Redo button steps forward once");
 check(saved.length===0,"history buttons never save");
+'''), "PASS")
+
+    def test_compact_rows_keep_selected_priority_and_control_focus(self) -> None:
+        """Compact rows retain full names, semantic flags, selected priority and focused controls."""
+        self.assertEqual(run_editor_harness(STATE + r'''
+await load(value(mixed()));
+model.edit("Circle_A",{name:"A long object name that must remain accessible across a compact row"});
+control("Circle_A","select").click();
+window.ServerManMapWorkspace.open("navigation");await wait();
+for(const row of document.querySelectorAll("#map-list li")) {
+  const select=row.querySelector('[data-map-control$=":select"]');
+  check(Math.abs(select.getBoundingClientRect().height-36)<=2,"main object line remains compact");
+}
+check(document.querySelectorAll(".map-layer-priority:not([hidden])").length===1,"only selected object exposes priority strip");
+const visible=control("Circle_A","visible");visible.focus();visible.click();
+check(document.activeElement.dataset.mapControl==="Circle_A:visible","state rerender retains focused control");
+check(control("Circle_A","select").getAttribute("aria-label").includes("A long object name"),"full name remains accessible");
+check(control("Circle_A","visible").getAttribute("aria-pressed")==="false","hidden state remains explicit");
+'''), "PASS")
+
+    def test_custom_opacity_is_independent_and_keeps_selection_at_zero(self) -> None:
+        """Authored opacity changes only interiors while selection and original controls stay truthful."""
+        self.assertEqual(run_editor_harness(STATE + r'''
+await load(value(mixed()));control("Circle_A","select").click();
+const slider=document.getElementById("map-custom-opacity"),original=document.getElementById("map-tiers-opacity");
+const before=JSON.stringify(model.snapshot()),history=model.status().history.length;
+check(slider.value==="100"&&slider.min==="0"&&slider.max==="100"&&slider.step==="10","custom slider exposes actual supported values");
+for(const percent of [0,50,100]) {
+  slider.value=percent;slider.dispatchEvent(new Event("input"));
+  const wash=document.querySelector(".map-zone-wash"),hatch=document.querySelector(".map-zone-hatch");
+  check(Math.abs(Number(getComputedStyle(wash).fillOpacity)-.12*percent/100)<.001&&Number(getComputedStyle(hatch).fillOpacity)===percent/100,"only authored interior alpha changes");
+  check(original.value==="100"&&document.getElementById("map-custom-opacity-value").textContent===`${percent}%`,"original control is independent and custom output stays synchronized");
+}
+original.value=0;original.dispatchEvent(new Event("input"));
+check(window.ServerManMapLayerDisplay.fraction()===1,"original opacity cannot change authored state");
+slider.value=0;slider.dispatchEvent(new Event("input"));
+// Bypass native range rounding to exercise the display guard with an unsupported step.
+slider.step=1;slider.value=15;slider.dispatchEvent(new Event("input"));slider.step=10;
+check(slider.value==="0"&&window.ServerManMapLayerDisplay.fraction()===0,"invalid step restores actual display value");
+const selection=document.querySelector(".map-zone-selection"),backing=document.querySelector(".map-zone-selection-outer");
+check(getComputedStyle(selection).stroke==="rgb(198, 40, 40)"&&getComputedStyle(selection).strokeWidth==="3px"&&getComputedStyle(backing).strokeWidth==="5px","full red3px selection and white backing remain at zero opacity");
+check(getComputedStyle(document.querySelector(".map-layer-selected")).borderLeftColor==="rgb(198, 40, 40)","selected row uses the same red");
+check(JSON.stringify(model.snapshot())===before&&model.status().history.length===history&&saved.length===0,"display changes do not edit or save the plan");
+'''), "PASS")
+
+    def test_modifier_cancel_and_changed_edit_gates_drop_pending_geometry(self) -> None:
+        """Blur, cancelled presses and changed locks cannot commit a later stray release."""
+        self.assertEqual(run_editor_harness(TOOLS + SELECT + r'''
+const start=plan();start.objects=[circle("C",1000,500,100)];await load(value(start));pick("C");
+const original=geometry("C");
+for(const signal of ["pointercancel","lostpointercapture"]) {
+  gesture("pointerdown",at(1100,500),77,1,region,true);
+  gesture(signal,at(1100,500),77,0);gesture("pointermove",at(1200,500),77,1,region,true);release(at(1200,500),77);
+  check(!window.ServerManMapDrag.active()&&geometry("C")===original&&position()===0,"cancelled pending handle press never resurrects");
+}
+const end=drag([1100,500],[1200,500],{ctrl:true,hold:true});window.dispatchEvent(new Event("blur"));
+check(handles()===0&&!window.ServerManMapDrag.active(),"blur clears modifier and active preview");release(end,7);
+check(geometry("C")===original&&position()===0,"blurred geometry never commits");
+drag([1000,500],[1100,500],{hold:true});model.lock("C");const locked=position();release(at(1100,500),7);
+check(find("C").centre.x===1000&&position()===locked&&!window.ServerManMapDrag.active(),"locking during movement cancels before commit");
+model.lock("C");drag([1000,500],[1100,500],{hold:true});model.visible("C");const hidden=position();release(at(1100,500),7);
+check(find("C").centre.x===1000&&position()===hidden&&!window.ServerManMapDrag.active(),"hiding during movement cancels before commit");
 '''), "PASS")

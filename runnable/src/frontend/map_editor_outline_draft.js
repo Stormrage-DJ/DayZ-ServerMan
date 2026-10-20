@@ -18,6 +18,7 @@ function mapOutlineDraftRender(usable) {
   document.getElementById("map-outline-status").textContent = count ? window.ServerManMapWording.outlinePoints(count, crossing) : "";
   document.getElementById("map-outline-finish").disabled = !usable || !count;
   document.getElementById("map-outline-discard").disabled = !count;
+  window.ServerManMapToolbar.refresh();
 }
 
 // Finish refuses locally while a D1 rule fails; a valid outline enters the top and saves at once.
@@ -39,6 +40,7 @@ function mapOutlineDraftFinish() {
   state.vertices = [];
   tools.message("");
   tools.refresh();
+  window.ServerManMapLayers.select(object.id);
   window.ServerManMapPlanSave.finish(object);
 }
 

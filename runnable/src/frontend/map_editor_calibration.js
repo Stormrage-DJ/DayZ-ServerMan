@@ -119,7 +119,9 @@ function mapCalibrationClick(event) {
 function mapCalibrationStart(fit = false) {
   const state = mapCalibrationState, shown = window.ServerManMapBackground.current().shown, bounds = mapCalibrationBounds();
   if (!shown || !bounds) return;
+  // Calibration owns map input until it ends; an earlier geometry preview cannot survive the handoff.
   state.active = true;
+  window.ServerManMapDrag?.cancel();
   state.points = [0, 1, 2].map(() => ({pixel: null, native: null}));
   state.picking = fit ? null : 0;
   state.preview = fit ? window.ServerManMapCalibrationMath.fit(bounds, shown.pixel_width, shown.pixel_height) : null;

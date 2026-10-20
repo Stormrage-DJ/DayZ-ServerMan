@@ -70,6 +70,8 @@ window.ServerManMapBridge = Object.freeze({
   copySources: () => mapApiCall("copy_sources", []),
   previewCopy: (source) => mapApiCall("preview_copy", [source]),
   copyPlan: (source, mode, revision, confirmed) => mapApiCall("copy_plan", [source, mode, revision, confirmed]),
+  getLayout: () => mapApiCall("get_editor_layout", []),
+  saveLayout: (patch) => mapApiCall("save_editor_layout", [patch]),
   // Full-screen affects only this document's native editor window.
   toggleFullScreen: () => mapApiCall("toggle_full_screen", []),
   // Stop a late load from replacing the closing state.

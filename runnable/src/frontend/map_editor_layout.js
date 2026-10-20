@@ -44,6 +44,7 @@ window.ServerManMapLayout = Object.freeze({
   init: () => {
     if (mapLayoutStarted) return;
     mapLayoutStarted = true;
+    window.ServerManMapWorkspace.init();
     const words = window.ServerManMapWording;
     document.getElementById("map-panel").addEventListener("toggle", mapPanelState);
     mapPanelState();

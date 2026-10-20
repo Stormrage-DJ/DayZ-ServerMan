@@ -109,6 +109,7 @@ function mapInspectSync() {
 
 // A click of the Inspect tool replaces the earlier point and its read.
 function mapInspectPoint(point) {
+  window.ServerManMapReports.tab("point"); window.ServerManMapWorkspace.open("report");
   mapInspectState.point = {x: point.x, z: point.z};
   mapInspectSync();
   if (mapInspectState.display) mapInspectState.display.announce = true;

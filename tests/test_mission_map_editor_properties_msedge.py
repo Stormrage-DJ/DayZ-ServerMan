@@ -72,5 +72,19 @@ check(input("map-properties-centre-x").disabled&&input("map-properties-centre-z"
 '''), "PASS")
 
 
+    def test_inspector_composition_survives_early_load(self) -> None:
+        """Early host loading retains real report access beside capacity without placeholder text."""
+        self.assertEqual(run_editor_harness(TOOLS + SELECT + r'''
+const start=plan();start.objects=[polygon("P",[[100,100],[500,100],[500,500]])];
+await load(value(start));pick("P");
+const propertyFields=document.getElementById("map-properties-fields"),row=document.getElementById("map-zone-capacity-row");
+check(!propertyFields.textContent.includes("null"),"early creation never inserts a missing node as text");
+check(row.contains(document.getElementById("map-view-capacity-report")),"report access belongs to capacity");
+check(document.getElementById("map-properties-points").textContent==="Points: 3","actual polygon point count");
+const explanation=document.getElementById("map-zone-capacity-explanation"),details=explanation.closest("details");
+check(details&&!details.open&&explanation.textContent.includes("not item supply"),"guidance is preserved in a disclosure");
+details.querySelector("summary").click();check(details.open,"guidance remains reachable");
+'''), "PASS")
+
 if __name__ == "__main__":
     unittest.main()

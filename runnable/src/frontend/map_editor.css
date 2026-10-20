@@ -43,10 +43,11 @@ html, body { height: 100%; overflow: hidden; }
 .map-layer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.25rem; padding: 0.5rem; border: 1px solid var(--color-border); }
 .map-layer > button:first-child, .map-layer > p { grid-column: 1 / -1; overflow-wrap: anywhere; }
 .map-layer-selected { border-color: var(--color-action); }
-#map-panel { width: 280px; min-height: 0; overflow: hidden; border: 1px solid var(--panel-border); border-radius: var(--radius-control); background: var(--panel-background); }
-#map-panel-toggle { padding: var(--primitive-space-3); cursor: pointer; background: var(--control-background); color: var(--control-text); min-height: var(--control-height); }
+#map-panel { --map-panel-header-height: calc(1.5rem + 2 * var(--primitive-space-3)); position: relative; width: 280px; min-height: 0; overflow: hidden; border: 1px solid var(--panel-border); border-radius: var(--radius-control); background: var(--panel-background); }
+#map-panel-toggle { box-sizing: border-box; height: var(--map-panel-header-height); line-height: 1.5rem; padding: var(--primitive-space-3); cursor: pointer; background: var(--control-background); color: var(--control-text); }
 #map-panel-toggle:focus-visible { outline: var(--focus-outline); outline-offset: -3px; }
-#map-panel-content { height: calc(100% - var(--control-height)); overflow: auto; padding: var(--primitive-space-4); }
+/* Bound the scroll region to the panel instead of percentage sizing through native details content. */
+#map-panel-content { position: absolute; inset: var(--map-panel-header-height) 0 0; overflow: auto; overscroll-behavior: contain; padding: var(--primitive-space-4); }
 #map-panel-content section + section { margin-top: var(--primitive-space-5); padding-top: var(--primitive-space-4); border-top: 1px solid var(--color-border); }
 #map-panel-content h2 { margin: 0; font-size: 14px; }
 #map-panel-content p { margin: var(--primitive-space-2) 0 0; font-size: 13px; }

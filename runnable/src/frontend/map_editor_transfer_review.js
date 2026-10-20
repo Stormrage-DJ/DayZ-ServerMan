@@ -124,7 +124,7 @@ function mapTransferReviewOpen(answer, options = {}) {
     ...boxes.filter((box) => box !== placement && !box.checked)].filter(Boolean);
   const title = copy ? kind.title(answer.source?.name ?? "") : kind.title;
   return dialog.open({kind: copy ? "copy" : "import", title, sections: [dom.element("p", kind.intro), ...sections],
-    refused, confirm: kind.confirm, opener: options.opener, remaining: kind.remaining, stale: kind.previewStale,
+    refused, confirm: kind.confirm, opener: options.opener?.closest("#map-setup-parking") ? document.getElementById("map-show-plan") : options.opener, remaining: kind.remaining, stale: kind.previewStale,
     count: () => open().length, first: () => open()[0] ?? null,
     value: () => ({mode: chosen().value, revision: previews[chosen().value].destination_revision,
       confirmed: previews[chosen().value].confirmation_required === true && boxes.every((box) => box.checked)})});

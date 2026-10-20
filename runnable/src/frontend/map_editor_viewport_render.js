@@ -20,6 +20,20 @@ function mapViewportEdgeLabel(axis, point, gridValue, state, mode) {
   return `${axis} ${mode === "Grid" ? grid : (mode === "Native" ? native : `${native} / ${grid}`)}`;
 }
 
+// Prefer endpoints, then keep only labels whose rendered text does not collide.
+function mapViewportSpaceLabels(labels) {
+  const candidates = [...labels.children];
+  const endpoints = candidates.filter((label) => label.dataset.endpoint === "true");
+  const kept = [];
+  for (const label of [...endpoints, ...candidates.filter((item) => !endpoints.includes(item))]) {
+    const box = label.getBoundingClientRect();
+    const overlaps = kept.some((other) => box.left < other.right + 8 && box.right + 8 > other.left &&
+      box.top < other.bottom + 4 && box.bottom + 4 > other.top);
+    if (overlaps) label.remove();
+    else kept.push(box);
+  }
+}
+
 // Rebuild the plain vector layer; stored bounds and plan objects are never edited.
 function mapViewportRender(view, mode) {
   const state = view.snapshot();
@@ -58,15 +72,17 @@ function mapViewportRender(view, mode) {
       mapViewportSvg("line", {x1: first.x, y1: y, x2: last.x, y2: y}));
     if (x >= 0 && x <= state.width && (tick % strideX === 0 || tick === 10)) {
       labels.append(mapViewportSvg("text", {x: Math.max(70, Math.min(state.width - 70, x)),
-        y: state.height - 6, "text-anchor": "middle"},
+        y: state.height - 6, "text-anchor": "middle", "data-endpoint": tick === 0 || tick === 10},
       mapViewportEdgeLabel("X", bounds.x_min + bounds.width * tick / 10, tick, state, mode)));
     }
     if (y >= 0 && y <= state.height && (tick % strideZ === 0 || tick === 10)) {
-      labels.append(mapViewportSvg("text", {x: 6, y: Math.max(13, Math.min(state.height - 24, y))},
+      labels.append(mapViewportSvg("text", {x: 6, y: Math.max(13, Math.min(state.height - 24, y)),
+        "data-endpoint": tick === 0 || tick === 10},
         mapViewportEdgeLabel("Z", bounds.z_min + bounds.height * tick / 10, tick, state, mode)));
     }
   }
   svg.append(lines, labels);
+  mapViewportSpaceLabels(labels);
 }
 
 // Rendering depends on view snapshots, not backend calls or mutable plan state.

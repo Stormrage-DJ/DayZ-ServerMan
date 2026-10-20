@@ -46,7 +46,7 @@ const length=entries();
 check(L.set(model,"E1",true)===true&&JSON.stringify(find("E1").linked_loot)===JSON.stringify({enabled:true,tier:null,abundance:"rich",radius:null})&&entries()===length+1,"enabling starts as Rich and Inherit; one action");
 check(visible("map-tier-row")&&visible("map-zone-capacity-row")&&field("map-zone-capacity").value==="rich"&&field("map-tier-select").value===""&&!field("map-zone-capacity").disabled&&!field("map-tier-select").disabled,"tier and Zone capacity rows show the linked loot");
 const order=[...document.querySelectorAll("#map-properties-fields input, #map-properties-fields select, #map-properties-fields button")].filter(item=>item.offsetParent!==null).map(item=>item.id);
-check(order.indexOf("map-encounter-dmax")<order.indexOf("map-tier-select")&&order.indexOf("map-tier-select")<order.indexOf("map-zone-capacity")&&order.indexOf("map-zone-capacity")<order.indexOf("map-properties-delete"),"the rows come after the encounter fields "+order);
+check(order.indexOf("map-linked-loot-enable")<order.indexOf("map-tier-select")&&order.indexOf("map-tier-select")<order.indexOf("map-zone-capacity")&&order.indexOf("map-zone-capacity")<order.indexOf("map-properties-centre-x")&&order.indexOf("map-encounter-dmax")<order.indexOf("map-properties-delete"),"linked loot settings precede geometry and retain all provider fields "+order);
 check(text("map-list").includes("Encounter (Infected); Tier: Inherit; Zone capacity: Rich +50%")&&ring("E1").classList.contains("map-zone-inherit"),"the row and the map show the linked loot");
 choose("map-zone-capacity","very_rich");check(find("E1").linked_loot.abundance==="very_rich"&&find("E1").abundance===undefined&&entries()===length+2,"a preset choice is one action on the linked loot");
 check(text("map-zone-capacity-effective")==="Capacity change: Updating","the effective text waits for the backend");
@@ -84,7 +84,7 @@ pick("E1");check(!ring("E1").classList.contains("map-zone-selected")&&mark("E1")
 const length=position();const end=drag([1000+off(40),500],[1100+off(40),450],{hold:true});
 const preview=screen(1100,450);check(Math.abs(Number(ring("E1").getAttribute("cx"))-preview.x)<=2&&Math.abs(Number(ring("E1").getAttribute("cy"))-preview.y)<=2,"the loot line follows the drag preview");
 release(end,7);check(near(find("E1").centre.x,1100)&&near(find("E1").centre.z,450)&&find("E1").linked_loot.radius===null&&same("E1")&&position()===length+1,"a move is one action; the loot keeps the encounter centre");
-drag([1100+300-off(5),450],[1100+360,450]);check(find("E1").radius>340&&same("E1")&&position()===length+2,"a resize is one action; the loot keeps the spawn radius");
+drag([1100+300-off(5),450],[1100+360,450],{ctrl:true});check(find("E1").radius>340&&same("E1")&&position()===length+2,"a resize is one action; the loot keeps the spawn radius");
 type("map-properties-centre-x","800");type("map-properties-radius","120");check(find("E1").centre.x===800&&find("E1").radius===120&&same("E1")&&position()===length+4,"the centre and spawn radius fields move and resize both");
 for(let index=0;index<4;index++)await model.undo();
 check(JSON.stringify(find("E1"))===JSON.stringify(start.objects[0])&&same("E1"),"undo returns both together");

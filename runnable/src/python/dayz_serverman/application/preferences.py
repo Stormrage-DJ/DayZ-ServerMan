@@ -7,11 +7,13 @@ from typing import Any
 
 from ..bridge.contracts import ErrorCode
 from ..bridge.facade import ApplicationCallError
-from ..domain.models import RecordState, RecordUnavailable, RevisionConflict
+from ..domain.models import RecordState
 from ..domain.profiles import ProfileValidationError, validate_profile_id
 from ..repositories.json_store import VersionedJsonRepository
 from ..repositories.profiles import ProfileNotFound, ProfileStorageError
 from .profiles import ProfileService
+from .preference_store import PreferenceStore
+from .editor_layout_preferences import EditorLayoutPreferences
 
 
 class PreferenceCoordinator:
@@ -21,6 +23,8 @@ class PreferenceCoordinator:
         """Store the preference repository and the profile validator."""
         self._repository = repository
         self._profiles = profiles
+        self._store = PreferenceStore(repository)
+        self._layout = EditorLayoutPreferences(self._store)
         # Callback that tells the update-check scheduler about a changed switch
         self._automatic_checks_listener: Callable[[], None] | None = None
 
@@ -28,6 +32,8 @@ class PreferenceCoordinator:
         """Return the bridge handler table for UI preference calls."""
         return {
             "get_ui_preferences": self.get_ui_preferences,
+            "get_editor_layout": self._layout.get,
+            "save_editor_layout": self._layout.save,
             "save_selected_profile": self.save_selected_profile,
             "save_backup_after_stop": self.save_backup_after_stop,
             "save_automatic_update_checks": self.save_automatic_update_checks,
@@ -78,22 +84,15 @@ class PreferenceCoordinator:
         if not isinstance(enabled, bool):
             raise ApplicationCallError(ErrorCode.INVALID_REQUEST, "enabled is invalid")
         profile_id = self._validated_profile(parameters.get("profile_id"))
-        # Read the writable document before editing its stored list
-        inspection = self._writable_inspection()
-        fields = dict(inspection.document.fields) if inspection.document is not None else {}
-        raw = fields.get("backup_after_stop_profiles", [])
-        if not isinstance(raw, list) or any(not isinstance(item, str) for item in raw):
-            raise ApplicationCallError(
-                ErrorCode.RECOVERY_REQUIRED, "UI preference storage requires recovery.",
-            )
-        # Add or remove the profile so the stored set stays unique
-        profiles = set(raw)
-        if enabled:
-            profiles.add(profile_id)
-        else:
-            profiles.discard(profile_id)
-        # Save the updated list under the inspected revision
-        self._save({"backup_after_stop_profiles": sorted(profiles)}, inspection=inspection)
+        def merge(fields):
+            """Merge the backup choice after profile validation, under the preference lock."""
+            raw = fields.get("backup_after_stop_profiles", [])
+            if not isinstance(raw, list) or any(not isinstance(item, str) for item in raw):
+                raise ApplicationCallError(ErrorCode.RECOVERY_REQUIRED, "UI preference storage requires recovery.")
+            profiles = set(raw)
+            profiles.add(profile_id) if enabled else profiles.discard(profile_id)
+            return {**fields, "backup_after_stop_profiles": sorted(profiles)}
+        self._store.update(merge)
         return {"profile_id": profile_id, "backup_after_stop": enabled}
 
     def save_automatic_update_checks(self, parameters: Mapping[str, Any]) -> dict[str, bool]:
@@ -126,47 +125,20 @@ class PreferenceCoordinator:
 
     def delete_profile(self, profile_id: str) -> None:
         """Remove every preference that refers to a deleted profile."""
-        inspection = self._writable_inspection()
-        if inspection.document is None:
-            return
-        fields = dict(inspection.document.fields)
-        changed = False
-        if fields.get("selected_profile_id") == profile_id:
-            fields["selected_profile_id"] = None
-            changed = True
-        raw = fields.get("backup_after_stop_profiles", [])
-        if isinstance(raw, list) and profile_id in raw:
-            fields["backup_after_stop_profiles"] = [item for item in raw if item != profile_id]
-            changed = True
-        if changed:
-            expected = inspection.document.revision
-            self._repository.save(fields, expected)
+        def merge(fields):
+            """Remove only references to the deleted profile in the preference transaction."""
+            original = dict(fields)
+            if fields.get("selected_profile_id") == profile_id:
+                fields["selected_profile_id"] = None
+            raw = fields.get("backup_after_stop_profiles", [])
+            if isinstance(raw, list) and profile_id in raw:
+                fields["backup_after_stop_profiles"] = [item for item in raw if item != profile_id]
+            return fields if fields != original else None
+        self._store.update(merge)
 
-    def _save(self, changes: dict[str, object], *, inspection=None) -> None:
-        """Write preference changes under the inspected revision."""
-        inspection = inspection or self._writable_inspection()
-        # Merge the requested changes over the current stored fields
-        fields = dict(inspection.document.fields) if inspection.document is not None else {}
-        fields.update(changes)
-        expected = inspection.document.revision if inspection.document is not None else None
-        # Translate revision and storage failures into bridge errors
-        try:
-            self._repository.save(fields, expected)
-        except RevisionConflict as error:
-            raise ApplicationCallError(ErrorCode.REVISION_CONFLICT, str(error), retryable=True) from error
-        except (OSError, RecordUnavailable, ValueError) as error:
-            raise ApplicationCallError(ErrorCode.STORAGE_FAILURE, "UI preferences could not be stored.") from error
-
-    def _writable_inspection(self):
-        """Return the repository inspection when preferences may be written."""
-        inspection = self._repository.inspect()
-        # Missing or valid storage may be written; anything else needs recovery
-        if inspection.state not in (RecordState.MISSING, RecordState.VALID):
-            raise ApplicationCallError(
-                ErrorCode.RECOVERY_REQUIRED,
-                "UI preference storage requires recovery.",
-            )
-        return inspection
+    def _save(self, changes: dict[str, object]) -> None:
+        """Merge preference changes in the shared serialized transaction."""
+        self._store.update(lambda fields: {**fields, **changes})
 
     def _validated_profile(self, value: object) -> str:
         """Validate a profile identifier or translate the failure."""

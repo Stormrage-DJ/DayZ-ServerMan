@@ -14,7 +14,7 @@ from .lifecycle_composition import build_online_players
 OBSERVER_READ_METHODS = frozenset((
     "get_application_snapshot", "get_server_status", "get_online_players", "get_lifecycle_schedule",
     "get_update_status", "list_mod_inventory", "list_backups", "list_backup_catalog", "list_profiles",
-    "read_profile", "preview_profile_command", "list_profile_missions", "get_ui_preferences",
+    "read_profile", "preview_profile_command", "list_profile_missions", "get_ui_preferences", "get_editor_layout",
     "load_configuration", "load_mission_configuration", "load_medical_features", "load_mission_map", "read_log",
     "validate_settings_path_selection", "select_legacy_root", "preview_legacy_import", "inspect_backup_archive",
     "inspect_mission_map", "continue_mission_map_inspection", "cancel_mission_map_inspection",
@@ -24,7 +24,7 @@ OBSERVER_READ_METHODS = frozenset((
 # Observer reads that open nothing inside a folder that an owner step renames or removes (3.4, QF-2)
 READER_EXEMPT_METHODS = frozenset((
     "read_log", "list_backups", "list_backup_catalog", "get_application_snapshot",
-    "get_lifecycle_schedule", "get_ui_preferences", "list_profiles", "read_profile",
+    "get_lifecycle_schedule", "get_ui_preferences", "get_editor_layout", "list_profiles", "read_profile",
     "cancel_mission_map_inspection",
 ))
 # Observer reads that take the reader side themselves, once per mission-read slice (A181); the session
@@ -34,7 +34,7 @@ SLICED_READER_METHODS = frozenset(("inspect_mission_map", "continue_mission_map_
 OWNER_ONLY_METHODS = frozenset((
     "get_operation", "read_operation_events", "request_operation_cancellation", "request_shutdown",
     "save_settings", "save_profile", "delete_profile", "provision_profile", "save_selected_profile",
-    "save_backup_after_stop", "save_automatic_update_checks", "create_backup", "preview_restore",
+    "save_editor_layout", "save_backup_after_stop", "save_automatic_update_checks", "create_backup", "preview_restore",
     "apply_restore", "inspect_restore_recovery", "preview_profile_restore", "restore_profile_from_backup",
     "preview_configuration", "apply_configuration", "preview_mission_configuration",
     "apply_mission_configuration", "convert_starter_loadout", "preview_medical_feature",

@@ -13,8 +13,21 @@ function mapVectorPoints(view, vertices) {
   return vertices.map((vertex) => { const point = view.toScreen(vertex); return `${point.x},${point.y}`; }).join(" ");
 }
 
-// One zone: a dark halo under a 2 px line; an explicit tier uses its tier colour, Inherit a dashed line.
-// Linked loot draws as a zone with its own attribute; the selection cue is the encounter ring above it (7.4).
+// Region interiors use screen-space patterns so zoom never changes their visual density.
+function mapVectorInterior(shape, colour, state) {
+  const id = `map-authored-hatch-${state.patternIndex++}`;
+  const opacity = window.ServerManMapLayerDisplay.fraction();
+  const definitions = mapVectorElement("defs", {});
+  const pattern = mapVectorElement("pattern", {id, patternUnits: "userSpaceOnUse", width: 10, height: 10});
+  pattern.append(mapVectorElement("path", {d: "M-2 2 2-2M0 10 10 0M8 12 12 8", stroke: colour,
+    "stroke-width": 1, "stroke-opacity": 0.45, fill: "none"}));
+  definitions.append(pattern);
+  // Separate opacity preserves every boundary and cue when original tiers are dimmed.
+  return [definitions, shape({class: "map-zone-wash", fill: colour, "fill-opacity": 0.12 * opacity}),
+    shape({class: "map-zone-hatch", fill: `url(#${id})`, "fill-opacity": opacity})];
+}
+
+// Keep tier identity, independent selection, and errors visible on every completed region.
 function mapVectorZone(view, item, state) {
   const scale = view.snapshot().scale;
   const shape = (attributes) => item.kind === "loot_circle" ?
@@ -25,14 +38,34 @@ function mapVectorZone(view, item, state) {
   if (item.id === state.selected && !item.linked) classes.push("map-zone-selected");
   if (state.problems.has(item.id)) classes.push("map-zone-problem");
   const line = {class: classes.join(" "), [item.linked ? "data-map-linked" : "data-map-zone"]: item.id};
-  if (item.tier !== null) line.stroke = state.colour(item.tier);
-  return [shape({class: "map-zone-halo"}), shape(line)];
+  const colour = item.tier === null ? "var(--color-text-muted)" : state.colour(item.tier);
+  line.stroke = state.problems.has(item.id) ? "var(--color-status-error)" : colour;
+  const result = mapVectorInterior(shape, colour, state);
+  result.push(shape({class: "map-zone-halo"}), shape(line));
+  // Paint the full selection width last; it never changes the underlying tier or provider identity.
+  if (item.id === state.selected && !item.linked) result.push(shape({class: "map-zone-selection-outer"}),
+    shape({class: "map-zone-selection"}));
+  // A selected error keeps a separate warning mark when its base boundary is covered.
+  if (item.id === state.selected && state.problems.has(item.id)) {
+    const anchor = item.centre ?? item.vertices?.[0];
+    if (anchor) {
+      const point = view.toScreen(anchor);
+      result.push(mapVectorElement("path", {class: "map-zone-error-marker",
+        d: `M${point.x} ${point.y - 24}l8 14h-16Z`}));
+    }
+  }
+  return result;
 }
 
 // The outline draft: edges, the implied closing edge, crossings in the error colour, and its points
 function mapVectorDraft(view, vertices) {
   const group = mapVectorElement("g", {id: "map-outline-draft"});
   const crossings = window.ServerManMapOutline.crossings(vertices);
+  // Invalid or incomplete geometry keeps its edges without suggesting a valid area.
+  if (vertices.length >= 3 && !window.ServerManMapOutline.problem(vertices)) {
+    group.append(mapVectorElement("polygon", {class: "map-outline-wash", points: mapVectorPoints(view, vertices),
+      "fill-opacity": 0.12 * window.ServerManMapLayerDisplay.fraction()}));
+  }
   const edges = vertices.length >= 3 ? vertices.length : vertices.length - 1;
   for (let index = 0; index < edges; index += 1) {
     const from = view.toScreen(vertices[index]), to = view.toScreen(vertices[(index + 1) % vertices.length]);
@@ -79,7 +112,8 @@ function mapVectorDraw(view) {
     if (!colours.has(tier)) colours.set(tier, window.ServerManMapRaster.colour(tiers.indexOf(tier) + 1));
     return colours.get(tier);
   };
-  const state = {selected: window.ServerManMapLayers.selected(), problems: window.ServerManMapPlanSave.problems(), colour};
+  const state = {selected: window.ServerManMapLayers.selected(), problems: window.ServerManMapPlanSave.problems(), colour,
+    patternIndex: 0};
   // A drag preview takes the place of its stored zone; an advisory reason draws it in the error colour
   const drag = window.ServerManMapDrag.preview();
   if (drag?.problem) state.problems = new Set([...state.problems, drag.item.id]);
@@ -96,7 +130,8 @@ function mapVectorDraw(view) {
   for (const item of order) {
     if (item?.kind !== "encounter" || !mapVectorDrawable(item)) continue;
     zones.append(window.ServerManMapEncounterDraw.item(view, item, {selected: item.id === state.selected,
-      problem: state.problems.has(item.id), status: window.ServerManMapEncounters.status(item, value.capabilities)}));
+      problem: state.problems.has(item.id), status: window.ServerManMapEncounters.status(item, value.capabilities),
+      interior: (shape, colour) => mapVectorInterior(shape, colour, state)}));
   }
   // The handles of the selected zone lie above every zone
   const selected = state.selected ? plan?.objects?.find((item) => item?.id === state.selected) : null;

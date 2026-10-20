@@ -142,6 +142,12 @@ automatic check runs. **Check now** still checks. **Update all**, **Update &
 start**, and **Update & restart** still ask Steam first and send the same
 Workshop item numbers.
 
+## Edit network ports
+
+Edit existing ports under **Configuration → Network**. The game port and Steam query port appear together.
+Edit both ports and any other configuration fields, then use the existing **Review changes** and **Apply changes** actions below.
+The review shows all old and new values. **Discard changes** discards the complete draft. Ports take effect at the next server start; this does not restart the server.
+
 ## Create a server profile
 
 Open **Profiles** and select **New profile**. Enter a display name, game port,
@@ -601,6 +607,30 @@ window steps also exist as commands; see [Map commands](#map-commands).
 Each profile has one editor window. If it is open, the button focuses it and
 shows **The map editor of this profile is already open.**
 
+### Editor workspace
+
+The menu band contains **Plan**, **View**, **Map setup**, **Apply**, and **Restore**.
+The editing band groups Select, Create, Inspect, and History with labelled icons. Tool settings appear beside the active tool.
+Finish creates and selects the polygon. Its properties appear in the right inspector.
+
+Authored areas retain a light fill and hatch when deselected. Original-tier opacity affects only the original overlay; Inherit areas use a neutral pattern.
+
+Object rows show names, visibility and locks. Select an object to reveal its priority controls. Capacity guidance is available under **Capacity limits and loot supply**.
+
+- **View → Objects & layers** opens the left panel. It contains object visibility, locks, priority, and original tiers. The tier opacity slider changes in 10% steps. Global container capacity is under **Plan settings**.
+- **View → Properties** opens the selected-object inspector. **View capacity report** opens the report for that selection.
+- **View → Reports** opens the bottom panel. Building capacity uses one row per source entry. Expand **Details** for every container, limit, warning, and identifier. Search filters the current answer; it does not read mission files again. Group ceilings apply per group, regardless of placement count.
+- **Map setup** contains terrain bounds and the map image. Setup closes before calibration so you can pick points on the map. It returns after calibration ends.
+- **Plan** contains Export, Import, and Copy from another profile. Their existing checks and confirmations still apply.
+
+**View** also contains Fit map, Zoom to selection, Full screen, and Coordinates. Escape closes View and returns focus to its button. Finish and Discard appear while an outline is unfinished.
+
+Drag a panel border to resize it. Focus the border and use arrow keys for 10-pixel steps, or Shift with an arrow for 1 pixel. Home and End use the available limits. Escape cancels a resize.
+
+Explicit panel sizes and open states are remembered across editor restarts. At narrow widths, one auxiliary panel opens at a time. Closing a panel gives its space back to the map.
+
+A layout preference failure leaves editing available. Use **Retry** beside the layout notice to try saving again.
+
 ### Terrain bounds and coordinates
 
 A plan needs confirmed terrain bounds. The editor reads the bounds of the
@@ -621,7 +651,7 @@ metres.
 
 ### Zones, tiers, and container capacity
 
-Choose a tool in **Map controls**: **Select** (V), **Circle** (C), **Polygon**
+Choose a tool in the top toolbar: **Select** (V), **Circle** (C), **Polygon**
 (P), **Encounter** (E), or **Inspect** (I).
 
 - A circle has a centre and a radius in metres.
@@ -637,7 +667,7 @@ Choose a tool in **Map controls**: **Select** (V), **Circle** (C), **Polygon**
 
 Each loot zone has a **Tier** or **Inherit**. The tiers are the tiers of the
 tier map of the mission. **Original tiers** shows the tiers that the mission
-has now. It is a display only and changes nothing.
+has now. It is a display only and changes nothing. Each original tier row has an eye button. Tier1 starts hidden; enable its eye to show the grey tint. A separate **Unassigned** eye shows cells with no tier flags in grey and also starts hidden. It uses the original overlay opacity and creates no tier assignment.
 
 **Zone capacity** has four presets: Sparse -25%, Normal 0%, Rich +50%, and
 Very Rich +100%. New loot zones start at Rich. **Global container capacity**
@@ -648,8 +678,16 @@ Select **Inspect** and click a point. It shows the original tier, the
 effective tier, the winning zone, the building capacity, and the covering
 encounters.
 
-Polygon and vertex moves are drag only. A table of vertex coordinates is not
-available yet.
+Drag the selected object to move it, including from near a vertex or radius handle.
+Hold **Ctrl** to show handles, then Ctrl+drag a handle to edit one vertex or resize a circle.
+The action is chosen when the drag starts. Releasing Ctrl hides handles while the current drag keeps its original action.
+Escape, a cancelled pointer, or leaving the window cancels the preview without changing geometry.
+
+**Custom layer opacity** fades authored interiors in 10% steps. It preserves borders, red selection, and handles at 0%.
+The original-tier slider is independent. Selection uses a deep red outline with a thin white edge.
+These layer display choices last for the current editor window and do not edit the plan.
+
+A table of vertex coordinates is not available yet.
 
 ### Map image
 
@@ -674,7 +712,7 @@ shows the changes since the last applied configuration.
   Nothing is deleted.
 - When you close the window with unsaved changes, it asks what to do with them.
 
-The **Plan file** section has three buttons:
+The **Plan file** menu has three buttons:
 
 - **Export plan…** writes the plan you see to a JSON file that you choose.
 - **Import plan…** reads a JSON file. It shows a compatibility preview. You

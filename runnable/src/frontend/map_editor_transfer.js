@@ -55,7 +55,8 @@ function mapTransferRender() {
 
 // Give the focus back to the opener, or to the map when the opener is gone or hidden
 function mapTransferFocus(opener) {
-  (opener?.isConnected && !opener.closest("[hidden]") ? opener : mapTransferElement("map-viewport")).focus();
+  (opener?.closest("#map-setup-parking") ? mapTransferElement("map-show-plan") :
+    opener?.isConnected && !opener.closest("[hidden]") ? opener : mapTransferElement("map-viewport")).focus();
 }
 
 // The text of a refused export: the D1 lead with each object, or the export path texts with the file name

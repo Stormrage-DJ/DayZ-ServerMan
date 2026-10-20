@@ -28,11 +28,14 @@ const answerList=[{source:"Land_Many",adjustment:50,placements:2,kept:null,reaso
   refused("ceiling_unresolved"),refused("default_missing"),refused("default_duplicate"),refused("ceiling_lexical"),
   refused("container_ambiguous"),refused("container_ambiguous",{field:"lootShelves"}),refused("ceiling_unsupported"),
   refused("dirt_placement_not_movable")];
+answerList[0].capacity.qualified=true;
 await load(tierValue(start));pick("C");await reply(done(objectResult("C",["Tier1"],["Tier1"],answerList)));
-const items=[...document.querySelectorAll("#map-tier-capacity-list li")].map(item=>item.textContent),head="Land_Barn: 1 building at +50%. ";
-check(items[0]==="Land_Many: 2 buildings at +50%. Group capacity: 4 now, 9 with this plan. Containers: c1 1 to 2, c2 3, c3 1 to 2, c4 1 to 2, and 1 more.",items[0]);
-check(items[1]==="Land_Low: 1 building at +50%. Group capacity: 4 now, 9 with this plan. The spawn points allow 5 at most.",items[1]);
-check(items[2]==="Land_Kept: 1 building at +50%. The capacity stays unchanged.",items[2]);
+const items=[...document.querySelectorAll("#map-tier-capacity-list tbody tr")].map(item=>item.textContent);
+check(items.length===answerList.length,"one row per authoritative entry");
+check(items[0].includes("c5")&&items[0].includes("Land_Many"),"every container remains available in details");
+const values=[...document.querySelectorAll("#map-tier-capacity-list tbody tr:first-child > td")].map(item=>item.textContent);
+check(values.slice(0,4).join("|")==="2|+50%|4|9","group ceiling is not multiplied by placements");
+check(items[1].includes("Achievable5")&&items[2].includes("capacity stays unchanged"),"bounds and kept status remain available");
 const reasons=["Their capacity is not set in mapgroupproto.xml, so it cannot be changed.",
   "mapgroupproto.xml has no default capacity for them, so their capacity cannot be changed.",
   "mapgroupproto.xml has more than one default capacity for them, so their capacity cannot be changed.",
@@ -41,7 +44,30 @@ const reasons=["Their capacity is not set in mapgroupproto.xml, so it cannot be 
   "Their group has more than one container named lootShelves, so their capacity cannot be changed.",
   "This adjustment would raise their capacity above the supported limit. Choose a smaller adjustment.",
   "They are in mapgroupdirt.xml, so Apply cannot change their capacity."];
-reasons.forEach((reason,index)=>check(items[index+3]===head+reason,items[index+3]));
+reasons.forEach((reason,index)=>check(items[index+3].includes(reason),items[index+3]));
+document.getElementById("map-view-capacity-report").click();
+check(!document.getElementById("map-reports").hidden,"report is reachable from selected properties");
+const search=document.getElementById("map-report-search"),beforeReads=calls.length;
+const expanded=document.querySelector('[data-report-details="0"]');expanded.open=true;await wait();
+search.value="c5";search.dispatchEvent(new Event("input"));await wait();
+check(document.querySelectorAll("#map-tier-capacity-list tbody tr").length===1&&document.querySelector('[data-report-details="0"]').open,"search finds fifth container and retains disclosure identity");
+search.value="not present";search.dispatchEvent(new Event("input"));
+check(text("map-tier-capacity-list")==="No matching entries.","empty search has a useful state");
+search.value="";search.dispatchEvent(new Event("input"));
+check(document.querySelectorAll("#map-tier-capacity-list tbody tr").length===answerList.length&&calls.length===beforeReads,"search filters only the current in-memory result");
+search.value="Qualified upper bound";search.dispatchEvent(new Event("input"));
+check(document.querySelectorAll("#map-tier-capacity-list tbody tr").length===1,"displayed warning text is searchable");
+search.value="c5";search.dispatchEvent(new Event("input"));
+model.edit("C",{name:"Changed name"});
+check(search.value==="c5"&&text("map-tier-capacity-list")==="","same-target refresh retains the query and clears stale rows");
+await reply(done(objectResult("C",["Tier1"],["Tier1"],answerList)));
+check(search.value==="c5"&&document.querySelectorAll("#map-tier-capacity-list tbody tr").length===1,"completed refresh applies the retained query");
+document.getElementById("map-report-tab-point").click();
+check(search.value==="","report type change resets the query");
+document.getElementById("map-report-tab-capacity").click();
+const summary=document.querySelector('[data-report-details="0"] summary');summary.focus();
+search.value="not present";search.dispatchEvent(new Event("input"));
+check(document.activeElement===search&&document.getElementById("map-report-summary").getAttribute("aria-live")==="polite","filtering a focused disclosure restores focus to search and announces the count");
 const causes=[["bounds_not_confirmed","Tiers cannot be written until the terrain bounds are confirmed. The effective tier is the original tier."],
   ["bounds_differ_from_header","Tiers cannot be written, because the terrain bounds differ from the tier map. The effective tier is the original tier."],
   ["tier_header_invalid","Tiers cannot be written in this mission. The effective tier is the original tier."]];

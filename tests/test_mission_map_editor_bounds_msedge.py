@@ -61,6 +61,10 @@ await load(value(loadedPlan,detected));
 check(saved.length===0&&!loadedPlan.terrain.bounds_confirmed,"load never silently confirms or saves");
 check(document.getElementById("map-bounds-confirmation").textContent==="Bounds not confirmed","visible unconfirmed state");
 check(document.getElementById("map-bounds-detection").textContent.includes("20480"),"actual detected extent shown");
+check(document.getElementById("map-bounds-detection").textContent.includes("Width: 20480 m; Height: 8192 m."),"named measurements in metres");
+check(!document.getElementById("map-tools-bounds-help").hidden,"bounds prerequisite beside disabled tools");
+document.getElementById("map-tools-bounds-jump").click();
+check(document.activeElement.id==="map-bounds-detected"&&saved.length===0,"jump focuses confirmation without saving");
 const announcement=document.getElementById("map-announcement").textContent;
 document.getElementById("map-bounds-detected").click();await wait();
 check(document.getElementById("map-announcement").textContent===announcement,"routine Saving/Saved does not announce");
@@ -161,6 +165,10 @@ for(const reason of ["invalid_saved_data","mission_path_changed","returned_to_ea
   check(fields().disabled&&document.getElementById("map-bounds-detected").disabled,"read-only guards bounds controls");manual();
 }
 check(saved.length===0,"read-only makes no save");
+for(const blocked of [{read_only:true,read_only_reason:"mission_path_changed"},{association:null}]) {
+  await load({...value(plan(bounds(),false),bounds()),...blocked});
+  check(document.getElementById("map-tools-bounds-help").hidden,"no confirmation shortcut when bounds cannot be saved");
+}
 await load({...value(plan()),capabilities:{terrain_id:null,detected_bounds:null},read_only:true,read_only_reason:"mission_path_changed"});
 check(document.getElementById("map-terrain").textContent==="synthetic","missing current detection cannot replace a known loaded terrain identity");
 await load(value(plan()));let finish;window.pywebview.api.save_plan=(document,revision,selection)=>{

@@ -23,7 +23,7 @@ class MissionMapEditorApiTests(unittest.TestCase):
         """Only currently implemented named calls are exposed to the editor."""
         methods = {name for name, member in inspect.getmembers(MissionMapEditorApi, inspect.isfunction)
                    if not name.startswith("_")}
-        self.assertEqual(methods, {"load_plan", "save_plan", "toggle_full_screen", "read_tier_layer",
+        self.assertEqual(methods, {"get_editor_layout", "save_editor_layout", "load_plan", "save_plan", "toggle_full_screen", "read_tier_layer",
                                    "read_background", "select_background", "set_aside_plan", "inspect",
                                    "continue_inspection", "cancel_inspection", "preview_plan", "apply_plan",
                                    "preview_restore", "restore_mission", "operation_events", "operation",

@@ -22,8 +22,8 @@ def png_chunk(kind: bytes, data: bytes) -> bytes:
     return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
 
 
-def tier_png(rows: ValueRows, mask: int) -> bytes:
-    """Return the 1-bit palette PNG of the cells whose value has the mask bit.
+def tier_png(rows: ValueRows, mask: int | None) -> bytes:
+    """Return cells matching a mask bit, or whole-cell zero when mask is None.
 
     The rows must hold the whole value layer. PNG row r is cell row j = R − 1 − r, so north is up,
     and PNG column is cell column i. Index 1 marks a cell of the tier.
@@ -33,9 +33,10 @@ def tier_png(rows: ValueRows, mask: int) -> bytes:
     if rows.first_row != 0 or rows.row_count != count:
         raise ValueError("the tier image needs every row of the value layer")
     # One table for each bit position: a cell of the tier gives bit 7 − k of its byte, else 0
-    tables = [bytes((0x80 >> position) if value & mask else 0 for value in range(256)) for position in range(8)]
+    tables = [bytes((0x80 >> position) if (value == 0 if mask is None else value & mask) else 0 for value in range(256)) for position in range(8)]
     width = (columns + 7) // 8
-    padding = bytes(width * 8 - columns)
+    # Padding must remain transparent even when real zero-valued cells are selected.
+    padding = bytes([1 if mask is None else 0]) * (width * 8 - columns)
     compressor = zlib.compressobj(ZLIB_LEVEL)
     parts = []
     for line in range(count):

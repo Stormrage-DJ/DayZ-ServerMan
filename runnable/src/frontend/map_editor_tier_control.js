@@ -46,6 +46,7 @@ function mapTierControlPaint() {
   const display = mapTierControlState.read, words = window.ServerManMapInspectWording, box = mapTierControlElement("map-tier-read");
   box.hidden = !display;
   mapTierControlElement("map-tier-capacity").hidden = display?.mode !== "done";
+  window.ServerManMapReports.render(display, mapTierControlState.id);
   if (!display) return;
   const reading = display.mode === "reading", result = display.mode === "done" ? display.result : null;
   const percent = reading && display.late ? display.progress : null;
@@ -61,9 +62,7 @@ function mapTierControlPaint() {
   // Inspect a point shows only while the Inspect tool can be chosen, because it chooses the tool (T7, QA-4.6-F2)
   mapTierControlElement("map-tier-point").hidden = !window.ServerManMapTools.usable("inspect");
   // Object answers list the buildings that the zone covers, one entry per source group and adjustment (6.9)
-  const entries = Array.isArray(result?.capacity) ? result.capacity : [];
-  mapTierControlElement("map-tier-capacity-list").replaceChildren(...(result ? (entries.length ? entries.map(words.capacityEntry) :
-    [words.capacityNone]) : []).map((text) => Object.assign(document.createElement("li"), {textContent: text})));
+
 }
 
 // The callbacks of one read; an answer for a display that a newer selection or edit replaced is not shown.

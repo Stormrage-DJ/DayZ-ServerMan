@@ -1,4 +1,4 @@
-// Owns the server configuration workspace: guided editing, review, and atomic apply.
+// Owns the server configuration workspace: guided editing, review, and coordinated apply.
 "use strict";
 
 // Tracks the loaded target, edited values, review result, and pending apply operation.
@@ -11,6 +11,8 @@ const configurationState = {
   // Bumped on every edit so a stale review cannot be applied.
   editGeneration: 0,
   pendingOperation: null,
+  pendingContext: null,
+  refreshRequired: false,
 };
 
 // Create one interface element with an optional class and text.
@@ -65,7 +67,7 @@ function updateUnsavedState() {
   window.ServerManTransitions.setDirty("shared-configuration", count > 0);
   indicator.textContent = count ? `${count} unsaved change${count === 1 ? "" : "s"}` : "No unsaved changes";
   indicator.className = count ? "unsaved-indicator is-dirty" : "unsaved-indicator";
-  action.disabled = count === 0;
+  action.disabled = count === 0 || configurationState.refreshRequired || Boolean(configurationState.pendingContext);
   setConfigurationAction(false);
   document.getElementById("configuration-feedback").replaceChildren();
 }
@@ -81,7 +83,7 @@ async function loadSelectedConfiguration(preserveOnFailure = false) {
   configurationState.reviewed = null;
   if (!preserveOnFailure) configurationState.loaded = null;
   document.getElementById("configuration-fields").setAttribute("aria-busy", "true");
-  const result = await window.pywebview.api.load_configuration(profileId, target);
+  const result = await configurationHostResult(() => window.pywebview.api.load_configuration(profileId, target));
   // Ignore responses from a replaced workspace, load, or edit generation.
   if (!window.ServerManWorkspace.isActive(workspace)
       || sequence !== configurationState.loadSequence
@@ -121,8 +123,9 @@ function currentConfigurationFingerprint() {
   }
 }
 
-// Preview the edits first, then apply the reviewed request atomically.
+// Preview every edit first, then submit the one reviewed request.
 async function reviewOrApplyConfiguration() {
+  if (configurationState.pendingContext || configurationState.refreshRequired) return;
   let captured;
   try {
     captured = captureConfigurationEdit();
@@ -134,7 +137,7 @@ async function reviewOrApplyConfiguration() {
   if (!configurationState.reviewed) {
     const workspace = window.ServerManWorkspace.capture("configuration", "shared-configuration");
     const generation = configurationState.editGeneration;
-    const result = await window.pywebview.api.preview_configuration(...captured.args);
+    const result = await configurationHostResult(() => window.pywebview.api.preview_configuration(...captured.args));
     // Ignore the preview when the workspace, generation, or fingerprint changed.
     if (
       !window.ServerManWorkspace.isActive(workspace)
@@ -148,14 +151,7 @@ async function reviewOrApplyConfiguration() {
       args: captured.args,
       result: result.value,
     });
-    // Report the validated change count and switch the action to apply.
-    const summary = configElement(
-      "div",
-      "notice",
-      `${result.value.changed_fields.length} validated change(s). Apply writes the selected profile target atomically.`,
-    );
-    summary.setAttribute("role", "status");
-    document.getElementById("configuration-feedback").replaceChildren(summary);
+    window.ServerManConfigurationNetwork.review(result.value, captured.args[6]);
     setConfigurationAction(true);
     return;
   }
@@ -172,10 +168,15 @@ async function reviewOrApplyConfiguration() {
   setConfigurationControlsDisabled(true);
   document.getElementById("configuration-apply").disabled = true;
   const workspace = window.ServerManWorkspace.capture("configuration", "shared-configuration");
-  const result = await window.pywebview.api.apply_configuration(...reviewed.args);
-  if (!window.ServerManWorkspace.isActive(workspace)) return;
+  const pending = { workspace, generation: configurationState.editGeneration, reviewed };
+  configurationState.pendingContext = pending;
+  const result = await configurationHostResult(() => window.pywebview.api.apply_configuration(...reviewed.args));
+  if (!configurationContextCurrent(pending) || configurationState.pendingContext !== pending) return;
   if (!result.success) {
+    configurationState.pendingContext = null;
+    configurationState.reviewed = null;
     setConfigurationControlsDisabled(false);
+    updateUnsavedState();
     document.getElementById("configuration-apply").disabled = false;
     return showConfigurationError(result, "Changes could not be applied.");
   }
@@ -188,6 +189,9 @@ async function reviewOrApplyConfiguration() {
 
 // Build the configuration panel for the profile selected in the sidebar and bind its discard and apply controls.
 function renderConfigurationWorkspace() {
+  configurationState.pendingOperation = null;
+  configurationState.pendingContext = null;
+  configurationState.refreshRequired = false;
   // Register this workspace as an owner of the shared unsaved-change guard.
   window.ServerManTransitions.registerOwner(
     "shared-configuration", discardConfigurationChanges, focusConfigurationEditor,
@@ -197,7 +201,7 @@ function renderConfigurationWorkspace() {
   const heading = configElement("div", "panel-heading");
   const headingCopy = configElement("div", "mods-heading-copy");
   headingCopy.append(configElement("h2", "", "Server configuration"),
-    configElement("p", "", "Edit the selected profile's serverDZ configuration with guided, typed controls."));
+    configElement("p", "", "Edit network ports and the selected profile's serverDZ configuration."));
   heading.append(headingCopy, configElement("span", "status-label status-normal", "Profile scoped"));
   const path = configElement("p", "configuration-path");
   path.append("Target: ", configElement("code", "", "Loading…"));

@@ -11,6 +11,7 @@ from .application.backup_coordinator import BackupCoordinator
 from .application.backups import BackupService
 from .application.configuration import ConfigurationService
 from .application.configuration_coordinator import ConfigurationCoordinator
+from .application.configuration_recovery import configure_recovery
 from .application.installation_guard import InstallationGuard
 from .application.lifecycle_ownership import LaunchOwnership
 from .application.lifecycle_ports import ServerFolderWriterPort
@@ -133,6 +134,8 @@ def build_composition(
     )
     # Recoveries that write into the DayZ root take the mutex and need a proven stopped server
     installation_guard = InstallationGuard(lifecycle, mutex)
+    configuration_recovery = configure_recovery(paths, configuration, configuration_coordinator, settings,
+                                                operations, installation_guard, folder_writer, observer=observer)
     # Editor recovery finishes before handlers, using the plan service's shared association lock set
     mission_map = build_mission_map(paths, profiles, settings, staging=staging, guard=installation_guard,
                                     folder_writer=folder_writer, operations=operations, logger=logger)
@@ -188,7 +191,8 @@ def build_composition(
     )
     # Assemble every coordinator's handlers into the bridge facade
     coordinator = ApplicationCoordinator(settings, operations, shutdown,
-                                         build_settings_repair(paths, settings, restore_journals, editor_recovery=mission_map.recovery))
+                                         build_settings_repair(paths, settings, restore_journals, editor_recovery=mission_map.recovery,
+                                                               configuration_recovery=configuration_recovery))
     logs = LogQueryService(paths.logs / "manager.jsonl", paths.logs / "dayz-server.log")
     # "Update & restart" stops the running server, so it must name the running profile (D11)
     mod_restart_handlers = {name: for_running_profile(lifecycle, handler)

@@ -33,7 +33,7 @@ check(text("map-encounter-population-note")==="DayZ uses these values, the event
 check(options("map-encounter-event")==="InfectedCity=InfectedCity|InfectedVillage=InfectedVillage"&&field("map-encounter-event").value==="InfectedCity","offered events, exact and sorted");
 check(field("map-encounter-smin").inputMode==="numeric"&&field("map-encounter-smin").type==="text"&&!visible("map-encounter-availability")&&!visible("map-tier-row"),"text fields; no R11 block and no tier row for an available encounter");
 const order=[...document.querySelectorAll("#map-properties-fields input, #map-properties-fields select, #map-properties-fields button")].filter(item=>item.offsetParent!==null).map(item=>item.id).join();
-check(order==="map-properties-name-field,map-properties-centre-x,map-properties-centre-z,map-properties-radius,map-encounter-event,map-encounter-smin,map-encounter-smax,map-encounter-dmin,map-encounter-dmax,map-linked-loot-enable,map-properties-delete","focus order; the linked loot checkbox comes before Delete (7.4) "+order);
+check(order==="map-properties-name-field,map-linked-loot-enable,map-properties-centre-x,map-properties-centre-z,map-properties-radius,map-encounter-event,map-encounter-smin,map-encounter-smax,map-encounter-dmin,map-encounter-dmax,map-properties-delete","focus order; linked loot controls precede geometry without losing provider fields "+order);
 const length=entries();
 for(const typed of ["101","-1","2.5",""," ","+5"]){type("map-encounter-smax",typed);
   check(message()==="Static maximum (smax) must be a whole number from 0 to 100."&&field("map-encounter-smax").getAttribute("aria-invalid")==="true",`refused ${typed}`);}
@@ -69,7 +69,7 @@ check(text("map-encounter-exclude-label")==="Exclude this encounter from Apply"&
 const order=[...document.querySelectorAll("#map-properties-fields input, #map-properties-fields select")].filter(item=>item.offsetParent!==null).map(item=>item.id);
 check(order[0]==="map-encounter-exclude"&&order[1]==="map-properties-name-field","Exclude comes before the fields");
 const row=(id)=>document.querySelector(`[data-map-object="${id}"]`);
-check(row("E1").querySelector(".map-layer-note").textContent===`Unavailable ${reason}`&&row("E1").querySelector('[data-map-control="E1:select"]').getAttribute("aria-describedby")==="map-layer-note-E1","Unavailable tag and reason in the row");
+check(row("E1").querySelector(".map-layer-note").textContent===`Unavailable ${reason}`&&row("E1").querySelector('[data-map-control="E1:select"]').getAttribute("aria-describedby").split(/\s+/).includes("map-layer-note-E1"),"Unavailable tag and reason in the row");
 check(mark("E1").dataset.mapState==="unavailable"&&mark("E1").querySelector("[data-map-mark]").dataset.mapMark==="triangle","warning triangle");
 check(row("E2").querySelector(".map-layer-note").textContent==="Excluded "&&mark("E2").dataset.mapState==="excluded"&&mark("E2").querySelector(".map-encounter-ring").getAttribute("stroke-dasharray")==="2 6"&&mark("E2").querySelector("[data-map-mark]").dataset.mapMark==="not","an excluded encounter: tag, dotted ring and not sign");
 check(getComputedStyle(row("E2").querySelector(".map-layer-tag")).borderTopStyle==="solid","the tag is a bordered box");
@@ -80,8 +80,8 @@ check(row("E1").querySelector(".map-layer-note").textContent===`Unavailable Excl
 await model.undo();check(find("E1").excluded===false&&!field("map-encounter-exclude").checked&&mark("E1").dataset.mapState==="unavailable","undo includes it again");
 field("map-encounter-event").value="InfectedCity";field("map-encounter-event").dispatchEvent(new Event("change",{bubbles:true}));
 check(find("E1").properties.event_name==="InfectedCity"&&!visible("map-encounter-availability")&&!row("E1").querySelector(".map-layer-note")&&mark("E1").dataset.mapState==="available","an explicit edit makes it available");
-pick("E2");const ring=mark("E2").querySelector(".map-encounter-ring");
-check(ring.getAttribute("stroke-width")==="3"&&!ring.hasAttribute("stroke-dasharray"),"a selected excluded ring is solid and 3 px");
+pick("E2");const ring=mark("E2").querySelector(".map-zone-selection");
+check(getComputedStyle(ring).strokeWidth==="3px"&&!ring.hasAttribute("stroke-dasharray"),"a selected excluded ring is solid and 3 px");
 check(visible("map-encounter-availability")&&field("map-encounter-exclude").checked&&text("map-encounter-reason")===""&&text("map-encounter-next")==="Excluded: Apply does not write this encounter to the mission.","an available excluded encounter keeps the checkbox");
 field("map-encounter-exclude").click();check(find("E2").excluded===false&&!visible("map-encounter-availability"),"a clear check includes it; the block goes away");
 await loadWith(start,providers(infected(false,"territory_not_registered",[])));pick("E2");
@@ -106,10 +106,10 @@ pick("B1");check(text("map-properties-name")==="Encounter B1 (Encounter)"&&text(
 check(text("map-encounter-reason")==="Bandit placement is not available on this terrain: no verified ground height source."&&handles()===0,"decision A reason; no resize handle");
 let length=position();drag([300+off(13),300],[350,320]);check(find("B1").centre.x===300&&position()===length,"a press 13 px from its centre does not move it");
 drag([300+off(11),300],[350+off(11),320]);check(near(find("B1").centre.x,350)&&near(find("B1").centre.z,320)&&find("B1").radius===null&&position()===length+1,"a press 11 px from its centre moves it");
-pick("E1");check(handles()===1&&mark("E1").classList.contains("map-encounter-selected")&&!mark("E1").querySelector(".map-encounter-ring").hasAttribute("stroke-dasharray"),"one east handle; a solid selected ring");
+pick("E1");holdControl(true);check(handles()===1&&mark("E1").classList.contains("map-encounter-selected")&&!mark("E1").querySelector(".map-zone-selection").hasAttribute("stroke-dasharray"),"one east handle; a solid selected ring");
 length=position();drag([1100,500],[1150,450]);check(near(find("E1").centre.x,1050)&&near(find("E1").centre.z,450)&&find("E1").radius===400&&position()===length+1,"a press inside the ring moves it; one action");
 await model.undo();check(find("E1").centre.x===1000&&find("E1").centre.z===500,"undo returns the move");
-length=position();drag([1400-off(11),500],[1450,500]);check(find("E1").radius>400&&find("E1").centre.x===1000&&position()===length+1,"a press 11 px from the handle resizes; one action");
+length=position();drag([1400-off(11),500],[1450,500],{ctrl:true});check(find("E1").radius>400&&find("E1").centre.x===1000&&position()===length+1,"a press 11 px from the handle resizes; one action");
 await model.undo();length=position();drag([1400-off(13),500],[1400-off(13)+50,500]);
 check(find("E1").radius===400&&near(find("E1").centre.x,1050)&&position()===length+1,"13 px from the handle moves");
 await model.undo();drag([1100,500],[1200,500],{hold:true});key(region,"Escape");gesture("pointerup",at(1200,500));
@@ -129,6 +129,22 @@ check(["map-encounter-exclude","map-encounter-event","map-encounter-smin","map-e
 check(handles()===0&&button().disabled&&typeSelect().disabled,"no handle, no Encounter tool and no type choice");
 '''), "PASS")
 
+
+    def test_provider_contours_and_linked_interiors_keep_their_identity(self) -> None:
+        """Provider colours remain honest while linked interiors follow their loot tier."""
+        self.assertEqual(run_editor_harness(EDIT + r'''
+const start=plan();start.objects=[encounter("Purple",500,500,100),bandit("Orange",1600,500),
+  encounter("Linked",1000,500,150,{linked_loot:{enabled:true,tier:"Tier3",abundance:"rich",radius:null}})];
+const current=value(start);current.capabilities.encounter_providers=providers();
+current.capabilities.holdable_tiers=["Tier1","Tier2","Tier3","Tier4"];await load(current);
+check(getComputedStyle(mark("Purple").querySelector(".map-encounter-ring")).stroke==="rgb(163, 53, 238)","infected contour is purple");
+check(getComputedStyle(mark("Orange").querySelector(".map-encounter-mark-line")).stroke==="rgb(255, 128, 0)","recognized unavailable bandit contour is orange");
+check(mark("Orange").dataset.mapState==="unavailable"&&mark("Orange").querySelector('[data-map-mark="triangle"]'),"orange does not enable its provider");
+check(mark("Purple").querySelector(".map-zone-wash")&&!mark("Linked").querySelector(".map-zone-wash"),"only unlinked encounter adds a provider interior");
+const linked=document.querySelector('[data-map-linked="Linked"]');
+check(getComputedStyle(linked).stroke==="rgb(30, 255, 0)"&&getComputedStyle(mark("Linked").querySelector(".map-encounter-ring")).stroke==="rgb(163, 53, 238)","linked tier and provider contour stay distinct");
+check(saved.length===0&&entries()===0,"palette and rendering change no plan data");
+'''), "PASS")
 
 if __name__ == "__main__":
     unittest.main()

@@ -23,7 +23,8 @@ class ExportEdgeTests(unittest.TestCase):
         self.assertEqual(transfer_page(r'''
 await start();
 const section=element("map-plan-file-title").closest("section"),headings=[...document.querySelectorAll("#map-panel-content h2")].map(item=>item.textContent);
-check(headings.indexOf(W.heading)===headings.indexOf("Map image")+1&&headings[headings.indexOf(W.heading)+1]==="Original tiers",`order: ${headings}`);
+check(!headings.includes(W.heading),"file actions are separate from navigation");
+element("map-show-plan").click();check(element("map-plan").contains(section),"Plan button exposes file actions");
 const group=element("map-plan-file");
 check(group.getAttribute("role")==="group"&&group.getAttribute("aria-labelledby")==="map-plan-file-title"&&section.contains(group),"a group named by the heading");
 check([...group.querySelectorAll("button")].map(item=>item.textContent).join("|")===`${W.export}|${W.import}|${W.copy}`,"the three labels");
@@ -46,7 +47,7 @@ const sent=host.calls.find(call=>call[0]==="export")[1];
 check(sent.objects[0].id==="draft"&&JSON.stringify(sent)===JSON.stringify(model.snapshot()),"the shown draft is sent");
 check(slot()===W.written&&notice()===W.written&&text("map-announcement")===W.written,`success: ${slot()} / ${notice()}`);
 check(element("map-operation-notice").classList.contains("map-operation-success"),"the success look on the map");
-check(document.activeElement===opener,"the focus is on the opener");
+check(document.activeElement===element("map-show-plan"),"the focus is on the opener");
 check(JSON.stringify(model.status())===before,"model, history and save state unchanged");
 await sleep(900);check(saved.length===saves+1,"autosave still saves the draft as before");
 '''), "PASS")
@@ -75,7 +76,7 @@ element("map-import").click();await wait();check(!host.calls.some(call=>call[0]=
         self.assertEqual(transfer_page(r'''
 await start();const opener=element("map-export");
 host.export={success:true,value:{cancelled:true}};opener.focus();opener.click();await wait();await wait();
-check(slot()===""&&notice()===""&&document.activeElement===opener,"cancel: no text, the focus on the opener");
+check(slot()===""&&notice()===""&&document.activeElement===element("map-show-plan"),"cancel: no text, the focus on the opener");
 const deny=(details,code="INVALID_REQUEST")=>({success:false,error:{code,message:"host",retryable:false,details}});
 host.export=deny({reason:"invalid_document",problems:[{object_id:"observer",rule:"invalid_document",message:"radius is too large"},
   {object_id:null,rule:"invalid_document",message:"the plan has more than 50000 polygon vertices"}]});

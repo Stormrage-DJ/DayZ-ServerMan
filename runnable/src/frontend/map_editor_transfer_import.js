@@ -157,7 +157,7 @@ async function mapTransferImportFlow(kind, opener, reader) {
   } finally {
     publish.release();
     window.ServerManMapTransfer.render();
-    if (!opener?.isConnected || document.activeElement === document.body) window.ServerManMapTransfer.focus(opener);
+    if (!opener?.isConnected || [document.body, document.getElementById("map-viewport")].includes(document.activeElement)) window.ServerManMapTransfer.focus(opener);
   }
 }
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 try:
     from tests.ui_harness_support import EDGE, run_shell_harness
@@ -200,6 +201,16 @@ window.pywebview.api.list_profiles = realList;
 @unittest.skipUnless(EDGE.is_file(), "Microsoft Edge is unavailable")
 class SingleProfileSelectorDynamicTests(unittest.TestCase):
     """Criterion 11: one selector in the sidebar; the pages follow it."""
+
+    def test_network_ports_share_review_apply_and_discard(self) -> None:
+        """One shared review, Apply and Discard covers both ports and all other fields."""
+        fixture = (Path(__file__).parent / "fixtures/configuration_network_harness.js").read_text(encoding="utf-8")
+        self.assertEqual(run_shell_harness(HOST + fixture + "await networkSaveScenario();", budget=12000), "PASS")
+
+    def test_network_ports_preserve_drafts_and_reject_stale_responses(self) -> None:
+        """Stale reviews, failed operations and late responses preserve the complete draft."""
+        fixture = (Path(__file__).parent / "fixtures/configuration_network_harness.js").read_text(encoding="utf-8")
+        self.assertEqual(run_shell_harness(HOST + fixture + "await networkConflictScenario();", budget=12000), "PASS")
 
     def test_pages_follow_the_sidebar_selection_without_their_own_selector(self) -> None:
         """Overview, Profiles, Configuration, Backups and Mods read the shared selection."""

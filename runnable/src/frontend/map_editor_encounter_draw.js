@@ -9,6 +9,12 @@ const mapEncounterDrawRings = Object.freeze({
 // Centre mark of each state: a cross, a warning triangle, or a "not" sign
 const mapEncounterDrawMarks = Object.freeze({available: "cross", unavailable: "triangle", excluded: "not"});
 
+// Recognized provider identity does not imply placement availability or change unsupported wildlife.
+function mapEncounterDrawColour(item) {
+  return item.provider === "native_infected" ? "var(--map-encounter-infected)" :
+    item.provider === "ai_bandits" ? "var(--map-encounter-bandits)" : "var(--map-encounter)";
+}
+
 // Build one SVG element with its attributes
 function mapEncounterDrawElement(tag, attributes) {
   const element = document.createElementNS("http://www.w3.org/2000/svg", tag);
@@ -43,17 +49,31 @@ function mapEncounterDrawItem(view, item, state) {
   if (state.selected) classes.push("map-encounter-selected");
   if (state.problem) classes.push("map-encounter-problem");
   const group = mapEncounterDrawElement("g", {class: classes.join(" "), "data-map-encounter": item.id, "data-map-state": name});
+  group.setAttribute("stroke", mapEncounterDrawColour(item));
   const centre = view.toScreen(item.centre), ring = mapEncounterDrawRings[name];
   if (Number.isFinite(item.radius)) {
     const circle = {cx: centre.x, cy: centre.y, r: item.radius * view.snapshot().scale};
-    const dashes = state.selected ? {} : {"stroke-dasharray": ring.dashes};
-    // A selected ring is solid and 3 px in every state (UI-UX 10:22:15, QA-7.3-F4)
-    const width = state.selected ? 3 : ring.width, halo = state.selected ? 5 : ring.halo;
+    // Linked loot already owns its interior; unlinked encounters use their actual provider colour.
+    if (item.linked_loot?.enabled !== true && state.interior) {
+      group.append(...state.interior((attributes) => mapEncounterDrawElement("circle", {...circle, ...attributes}),
+        mapEncounterDrawColour(item)));
+    }
+    const dashes = {"stroke-dasharray": ring.dashes};
+    const width = ring.width, halo = ring.halo;
     group.append(mapEncounterDrawElement("circle", {...circle, ...dashes, class: "map-encounter-halo", "stroke-width": halo}),
-      mapEncounterDrawElement("circle", {...circle, ...dashes, class: "map-encounter-ring", "stroke-width": width}));
+      mapEncounterDrawElement("circle", {...circle, ...dashes, class: "map-encounter-ring", "stroke-width": width,
+        stroke: state.problem ? "var(--color-status-error)" : mapEncounterDrawColour(item)}));
+    if (state.selected) group.append(mapEncounterDrawElement("circle", {...circle, class: "map-zone-selection-outer"}),
+      mapEncounterDrawElement("circle", {...circle, class: "map-zone-selection"}));
+  } else if (state.selected) {
+    // A point encounter gets a screen-sized selection frame, never an invented spawn radius.
+    const frame = {x: centre.x - 12, y: centre.y - 12, width: 24, height: 24};
+    group.append(mapEncounterDrawElement("rect", {...frame, class: "map-zone-selection-outer"}),
+      mapEncounterDrawElement("rect", {...frame, class: "map-zone-selection"}));
   }
-  const mark = mapEncounterDrawElement("g", {class: "map-encounter-mark", "data-map-mark": mapEncounterDrawMarks[name]});
-  mark.append(...mapEncounterDrawMark(mapEncounterDrawMarks[name], centre.x, centre.y));
+  const symbol = state.problem ? "triangle" : mapEncounterDrawMarks[name];
+  const mark = mapEncounterDrawElement("g", {class: "map-encounter-mark", "data-map-mark": symbol});
+  mark.append(...mapEncounterDrawMark(symbol, centre.x, centre.y));
   group.append(mark);
   return group;
 }

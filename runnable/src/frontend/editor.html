@@ -52,6 +52,10 @@
                 <option value="Grid">Grid</option><option value="Native">Native</option><option value="Both" selected>Both</option>
               </select>
               <p id="map-navigation-help">Wheel to zoom; middle drag or Space+drag to pan.</p>
+              <div id="map-tools-bounds-help" hidden>
+                <p>Confirm the terrain bounds before editing or placing encounters.</p>
+                <button id="map-tools-bounds-jump" type="button" class="button">Review terrain bounds</button>
+              </div>
               <div id="map-tool-buttons">
                 <button id="map-tool-select" type="button" class="button" aria-pressed="false" aria-keyshortcuts="V" title="Select (V)" disabled>Select</button>
                 <button id="map-tool-circle" type="button" class="button" aria-pressed="false" aria-keyshortcuts="C" title="Circle (C)" disabled>Circle</button>
@@ -125,6 +129,11 @@
           <section aria-labelledby="map-tiers-title">
             <h2 id="map-tiers-title">Original tiers</h2>
             <label class="check-row" for="map-tiers-toggle"><input id="map-tiers-toggle" type="checkbox" checked><span id="map-tiers-toggle-label">Original tiers</span></label>
+            <label for="map-tiers-opacity">Layer opacity</label>
+            <div class="map-opacity-control">
+              <input id="map-tiers-opacity" type="range" min="0" max="100" step="10" value="100">
+              <output id="map-tiers-opacity-value" for="map-tiers-opacity">100%</output>
+            </div>
             <p id="map-tiers-status"></p>
             <ul id="map-tiers-legend" aria-label="Original tier legend"></ul>
           </section>
@@ -189,7 +198,7 @@
                 <p id="map-tier-message"></p>
                 <div id="map-tier-capacity" hidden>
                   <h3 id="map-tier-capacity-title">Building capacity</h3>
-                  <ul id="map-tier-capacity-list"></ul>
+                  <div id="map-tier-capacity-list"></div>
                 </div>
               </div>
               <div id="map-zone-capacity-row" hidden>

@@ -166,6 +166,7 @@ async function mapLoad() {
 // Start once the profile-bound native API is connected.
 function mapStart() {
   window.ServerManMapLayout.init();
+  window.ServerManMapLayerDisplay.init();
   window.ServerManMapViewportUi.init();
   window.ServerManMapFullScreen.init();
   mapInitModel();

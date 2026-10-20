@@ -65,19 +65,19 @@ const capacity=[{source:"Land_Hospital",adjustment:75,placements:3,kept:null,rea
 await reply(done(objectResult("C",["Tier2","Tier3"],["Tier2"],capacity)));
 check(line()==="Effective tier: Tier2, Tier3"&&text("map-tier-original")==="Original: Tier2"&&!element("map-tier-original").hidden&&busy()==="false","the result with the original set that differs");
 check(announced()==="Effective tier: Tier2, Tier3","a read that showed a percent announces its result");
-const items=[...document.querySelectorAll("#map-tier-capacity-list li")].map(item=>item.textContent);
-check(!element("map-tier-capacity").hidden&&text("map-tier-capacity-title")==="Building capacity"&&items.length===4,"the building capacity list of the object answer");
-check(items[0]===`Land_Hospital: 3 buildings at +75%. Group capacity: 4 now, 7 with this plan. Containers: lootFloor 3 to 7, lootShelves 4 to 9. The spawn points of lootShelves allow 2 at most. The spawn points allow 3 at most. ${bound} Apply writes them to group SMME_Hospital_7.`,items[0]);
-check(!items[0].includes(points),"the generic backend point text does not show");
-check(items[1]===`PlannerRich_Shed: 1 building at +50%. ${window.ServerManMapInspectWording.plannerContent}`,items[1]);
-check(items[2]==="Land_Unknown: 2 buildings at +50%. Their group is not in mapgroupproto.xml, so their capacity is not known.",items[2]);
-check(items[3]==="Land_Shed: 1 building at 0%. Group capacity: 2 now, 2 with this plan.",items[3]);
+const items=[...document.querySelectorAll("#map-tier-capacity-list tbody tr")].map(item=>item.textContent);
+check(!element("map-tier-capacity").hidden&&text("map-tier-capacity-title")==="Building capacity"&&items.length===4,"the building capacity table of the object answer");
+check(items[0].includes("Land_Hospital")&&items[0].includes(bound)&&items[0].includes("SMME_Hospital_7")&&items[0].includes(points),"container warnings, upper bound and generated group retained");
+check(items[1].includes(window.ServerManMapInspectWording.plannerContent)&&items[2].includes("Their group is not in mapgroupproto.xml"),"kept and unresolved reasons retained");
+check([...document.querySelectorAll("#map-tier-capacity-list tbody tr:last-child > td")].slice(0,4).map(item=>item.textContent).join("|")==="1|0%|2|2","unchanged per-group capacity");
+
 element("map-announcement").textContent="";pick("P");
 check(select.value==="Tier3"&&line()==="Effective tier: Reading tiers"&&element("map-tier-capacity").hidden,"a new selection reads its object; no stale capacity shows");
+check(text("map-tier-capacity-list")===""&&text("map-report-status").includes("Reading tiers"),"reports clear stale rows while the replacement reads");
 await reply(running("jp","sampling",50,100));check(line()==="Effective tier: Reading tiers","no percent before about 1 s");
 await reply(done(objectResult("P",["Tier3"],["Tier3"])));
 check(line()==="Effective tier: Tier3"&&element("map-tier-original").hidden&&announced()==="","equal sets hide Original; a quick read is not announced");
-check([...document.querySelectorAll("#map-tier-capacity-list li")].map(item=>item.textContent).join()==="This zone covers no buildings.","an object without buildings says so");
+check(text("map-tier-capacity-list")==="This zone covers no buildings.","an object without buildings says so");
 pick("X");const stored=[...select.options].at(-1);
 check(stored.textContent==="Tier9 (not holdable)"&&stored.disabled&&select.value==="Tier9"&&text("map-tier-message")===window.ServerManMapInspectWording.tierNotHoldable,"a stored tier that the layer cannot hold stays as a disabled option with its reason");
 pick("L");check(select.disabled,"a locked zone has no tier choice");

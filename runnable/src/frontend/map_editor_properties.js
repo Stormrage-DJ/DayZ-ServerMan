@@ -30,17 +30,20 @@ function mapPropertiesRender() {
   document.getElementById("map-properties-fields").hidden = !item;
   const fields = Object.fromEntries(Object.entries(mapPropertiesFields).map(([key, id]) => [key, document.getElementById(id)]));
   if (state.shown !== item?.id) {
+    if (item) window.ServerManMapWorkspace.open("inspector");
     document.getElementById("map-properties-message").textContent = "";
     for (const field of Object.values(fields)) field.setAttribute("aria-invalid", "false");
   }
   if (!item) {
     state.shown = null;
+    window.ServerManMapInspectorUi.render(null);
     window.ServerManMapEncounterProperties.render(null, true, null);
     return;
   }
   // The kind goes through the wording lookup, with a fallback for a kind that the window does not know
   const type = words.objectTypes[item.kind] ?? words.objectFallback;
   document.getElementById("map-properties-name").textContent = `${item.name} (${type})`;
+  window.ServerManMapInspectorUi.render(item);
   // Lock and visibility affect editing and display only, not the mission settings (R12)
   document.getElementById("map-properties-state").textContent = [item.locked ? words.lockedNote : "",
     item.visible ? "" : words.hiddenNote].filter(Boolean).join(" ");
@@ -169,6 +172,7 @@ function mapPropertiesInit(model) {
   const state = mapPropertiesState, words = window.ServerManMapWording;
   if (state.model) return;
   state.model = model;
+  window.ServerManMapInspectorUi.init();
   for (const [id, text] of [["map-properties-name-label", words.objectName], ["map-properties-centre-x-label", words.centreX],
     ["map-properties-centre-z-label", words.centreZ], ["map-properties-radius-label", words.objectRadius],
     ["map-properties-delete", words.deleteObject], ["map-zoom-selection", words.zoomSelection]]) {

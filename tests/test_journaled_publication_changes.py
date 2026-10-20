@@ -97,3 +97,169 @@ class TypingAndWordingTests(PublicationFixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ConfigurationAdmissionTests(unittest.TestCase):
+    """Configuration recovery uses the same stopped and folder-writer admission as Apply."""
+
+    def setUp(self):
+        """Reuse the real isolated pair builder and existing lifecycle/mutex doubles."""
+        from tests.test_journaled_publication_commit import ConfigurationPairTests
+        from tests.test_configuration_workflow import FakeSettings
+        from tests.applied_gate_fixtures import CountingLifecycle
+        from tests.test_publication_start_guard import _Mutex
+        from dayz_serverman.application.installation_guard import InstallationGuard
+        from dayz_serverman.application.configuration_recovery import ConfigurationRecovery
+        from dayz_serverman.application.operations.manager import OperationManager
+        from dayz_serverman.application.operations.store import OperationStore
+        ConfigurationPairTests.setUp(self)
+        self.publication = ConfigurationPairTests.publisher(self)
+        self.pair_publish = lambda: ConfigurationPairTests.publish(self, self.publication)
+        self.settings = FakeSettings(self.dayz)
+        self.lifecycle, self.mutex = CountingLifecycle(), _Mutex()
+        self.operations = OperationManager(OperationStore(self.root / "lane"))
+        self.addCleanup(self.operations.shutdown, 2)
+        self.writer_events = []
+        from contextlib import contextmanager
+        @contextmanager
+        def exclusive(_wait):
+            self.assertTrue(self.mutex.held)
+            self.writer_events.append("acquire")
+            try:
+                yield
+            finally:
+                self.writer_events.append("release")
+        from types import SimpleNamespace
+        writer = SimpleNamespace(exclusive=exclusive)
+        self.recovery = ConfigurationRecovery(self.publication, self.settings, self.operations,
+                                               InstallationGuard(self.lifecycle, self.mutex), writer)
+
+    def interrupt(self):
+        """Leave a durable committed-direction pair awaiting its exact successor."""
+        from dayz_serverman.repositories.configuration_journal import ConfigurationPublicationError
+        def fail(phase, _index):
+            if phase == "COMMITTING":
+                raise OSError("interrupted")
+        self.publication.fault = fail
+        with self.assertRaises(ConfigurationPublicationError):
+            self.pair_publish()
+        self.publication.fault = lambda *_args: None
+
+    def test_startup_refusals_write_nothing_then_recovery_clears_only_own_block(self):
+        """Unsafe lifecycle states block launch/mutation; safe recovery preserves other owners."""
+        from dayz_serverman.domain.lifecycle import ServerState
+        from dayz_serverman.application.configuration_recovery import OWNER
+        self.interrupt()
+        before = self.profile_path.read_bytes(), self.native.read_bytes()
+        for state in (ServerState.RUNNING_MANAGED, ServerState.RUNNING_EXTERNAL, ServerState.UNKNOWN):
+            self.lifecycle.state = state
+            self.recovery.startup()
+            self.assertEqual((self.profile_path.read_bytes(), self.native.read_bytes()), before)
+            self.assertEqual(self.operations.recovery_block_pair()[1], OWNER)
+            self.assertEqual(self.writer_events, [])
+        self.operations.block_for_recovery("other owner", owner="APPLY_MISSION_MAP")
+        self.lifecycle.state = ServerState.STOPPED
+        self.recovery.startup()
+        self.assertEqual(self.writer_events, ["acquire", "release"])
+        self.assertEqual(self.operations.recovery_block_pair()[1], "APPLY_MISSION_MAP")
+        self.assertEqual(self.repository.load("main").values.game_port, 2502)
+        self.assertEqual(self.lifecycle.calls, 0)
+
+    def test_missing_root_and_unknown_bytes_preserve_blocks_and_never_start(self):
+        """Only an existing settings repair may pass missing-root admission; corruption stays blocked."""
+        from dayz_serverman.application.configuration_recovery import OWNER
+        self.interrupt()
+        self.settings.value.dayz_root = None
+        self.recovery.startup()
+        self.assertEqual(self.operations.recovery_block_pair()[1], OWNER)
+        self.assertEqual(self.writer_events, [])
+        self.assertTrue(self.recovery.require_root_match(self.dayz))
+        self.assertFalse(self.recovery.require_root_match(self.root))
+        self.settings.value.dayz_root = str(self.dayz)
+        self.native.write_bytes(b"unknown external file")
+        self.recovery.startup()
+        self.assertEqual(self.native.read_bytes(), b"unknown external file")
+        self.assertEqual(self.operations.recovery_block_pair()[1], OWNER)
+        self.assertEqual(self.lifecycle.calls, 0)
+
+    def test_mutation_holds_writer_and_observer_composition_creates_no_artifacts(self):
+        """Admission runs before writes; observer recovery is entirely inert."""
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from dayz_serverman.application.configuration_recovery import configure_recovery
+        from dayz_serverman.application.installation_guard import InstallationGuard
+        with self.recovery.mutation():
+            self.assertTrue(self.mutex.held)
+            self.assertEqual(self.writer_events, ["acquire"])
+        self.assertEqual(self.writer_events, ["acquire", "release"])
+        absent = self.root / "observer-operations"
+        paths = SimpleNamespace(profiles=self.repository.root, operations=absent)
+        service, coordinator = Mock(), Mock()
+        configure_recovery(paths, service, coordinator, self.settings, self.operations,
+                           InstallationGuard(self.lifecycle, self.mutex), observer=True)
+        service.bind_publication.assert_not_called()
+        coordinator.bind_admission.assert_not_called()
+        self.assertFalse(absent.exists())
+
+    def test_settings_repair_rejects_pending_configuration_root_redirect_without_write(self):
+        """The existing repair checks the configuration owner without running recovery."""
+        from unittest.mock import Mock
+        from dayz_serverman.application.settings_repair import SettingsRepair
+        from dayz_serverman.application.settings import SettingsValidationError
+        self.interrupt()
+        journals, restores = Mock(), Mock()
+        journals.records.return_value = []
+        restores.journals.records.return_value = []
+        repair = SettingsRepair(self.settings, journals, self.root / "backup-recovery", restores,
+                                configuration_recovery=self.recovery)
+        before = self.profile_path.read_bytes(), self.native.read_bytes()
+        with self.assertRaises(SettingsValidationError):
+            repair._require_journal_match(self.root)
+        repair._require_journal_match(self.dayz)
+        self.assertEqual((self.profile_path.read_bytes(), self.native.read_bytes()), before)
+        self.assertEqual(self.writer_events, [])
+        active = self.publication.store.records()[0][0]
+        active.write_bytes(b"malformed journal")
+        with self.assertRaises(SettingsValidationError):
+            repair._require_journal_match(self.dayz)
+
+    def test_unknown_artifacts_survive_live_hooks_and_startup_without_compensation(self):
+        """Stages and recovery copies are proven after hooks before any destructive engine step."""
+        from tests.test_journaled_publication_commit import ConfigurationPairTests
+        from dayz_serverman.repositories.configuration_journal import ConfigurationPublicationError
+        for boundary in ("BEFORE_COMMIT", "BEFORE_PUBLISH", "BEFORE_COMPENSATE", "STARTUP"):
+            for artifact in ("native", "profile", "recovery", "extra"):
+                with self.subTest(boundary=boundary, artifact=artifact):
+                    fixture = ConfigurationPairTests()
+                    fixture.setUp()
+                    try:
+                        publication = fixture.publisher()
+                        damaged = []
+                        def tamper_artifact():
+                            journal = publication.store.records()[0][1]
+                            paths = {"native": journal.groups[0].staging_path,
+                                     "profile": journal.profile_stage, "recovery": journal.groups[0].recovery_path,
+                                     "extra": str(Path(journal.groups[0].recovery_path).with_name("unknown.extra"))}
+                            path = Path(paths[artifact])
+                            path.write_bytes(b"unknown artifact bytes")
+                            damaged.append(path)
+                        def hook(phase, _index):
+                            if boundary == "STARTUP" and phase == "COMMITTING":
+                                raise OSError("interrupt for startup")
+                            if boundary == "BEFORE_COMPENSATE" and phase == "BEFORE_COMMIT":
+                                raise OSError("force compensation")
+                            if phase == boundary:
+                                tamper_artifact()
+                        publication.fault = hook
+                        with self.assertRaises(ConfigurationPublicationError) as caught:
+                            fixture.publish(publication)
+                        self.assertTrue(caught.exception.recovery_required)
+                        if boundary == "STARTUP":
+                            tamper_artifact()
+                        before = fixture.native.read_bytes(), fixture.profile_path.read_bytes()
+                        self.assertTrue(publication.inspect(fixture.dayz)["blocked"])
+                        self.assertEqual((fixture.native.read_bytes(), fixture.profile_path.read_bytes()), before)
+                        self.assertEqual(damaged[0].read_bytes(), b"unknown artifact bytes")
+                        self.assertEqual(len(publication.store.records()), 1)
+                    finally:
+                        fixture.doCleanups()

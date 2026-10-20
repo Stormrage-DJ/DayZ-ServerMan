@@ -68,7 +68,7 @@ function setProfileDirty() {
 // Read the form into a profile record and validate the game port.
 function captureProfile(form) {
   const data = new FormData(form);
-  const portText = String(data.get("game_port") || "");
+  const portText = String(profileState.selected?.game_port ?? data.get("game_port") ?? "");
   // Reject a game port that is not a whole number.
   if (!/^\d+$/.test(portText)) throw new Error("Game port must be a whole integer.");
   const port = Number(portText);
@@ -128,6 +128,8 @@ function renderProfileForm(record) {
     profileField("Server config", "server_config", value.server_config, "text", true),
     profileField("Mission root (optional)", "mission_root", value.mission_root));
   fields.querySelector('[name="profile_id"]').readOnly = true;
+  const portSummary = fields.querySelector('[name="game_port"]'); portSummary.readOnly = true;
+  portSummary.title = "Edit the game port in Configuration / Network.";
   // Offer an optional explicit runtime profile directory.
   const runtime = profileNode("fieldset", "profile-runtime");
   runtime.append(profileNode("legend", "", "Runtime profile"));

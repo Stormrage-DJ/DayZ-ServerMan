@@ -65,7 +65,7 @@ class SettingsRepair:
     def __init__(
         self, settings: SettingsService, restore_journals: RestoreJournalRepository,
         backup_recovery: Path, profile_restores: ProfileRestoreStorage,
-        *, editor_recovery: MissionMapRecovery | None = None,
+        *, editor_recovery: MissionMapRecovery | None = None, configuration_recovery=None,
     ) -> None:
         """Bind the settings service, the backup-restore journals and the direct-restore storage."""
         self._settings = settings
@@ -73,6 +73,7 @@ class SettingsRepair:
         self._backup_recovery = backup_recovery
         self._profile_restores = profile_restores
         self._editor_recovery = editor_recovery
+        self._configuration_recovery = configuration_recovery
 
     def is_repair_shaped(self, values: Mapping[str, object]) -> bool:
         """Report the shape against the stored settings; a record that cannot be read is no repair."""
@@ -123,6 +124,8 @@ class SettingsRepair:
         no DayZ root, so they are not checked here.
         """
         try:
+            if self._configuration_recovery is not None and not self._configuration_recovery.require_root_match(candidate):
+                raise SettingsValidationError(NOT_THE_USED_FOLDER)
             if self._editor_recovery is not None and not self._editor_recovery.require_root_match(candidate):
                 raise SettingsValidationError(NOT_THE_USED_FOLDER)
             for _path, journal in self._restore_journals.records():

@@ -151,8 +151,11 @@ function mapBoundsLoad(value) {
     field.setAttribute("aria-invalid", "false");
   }
   const detected = value?.capabilities?.detected_bounds;
+  // Keep exact native measurements readable without exposing serialized field names.
+  const measurements = detected ? `X minimum: ${detected.x_min} m; Z minimum: ${detected.z_min} m; ` +
+    `Width: ${detected.width} m; Height: ${detected.height} m.` : "";
   document.getElementById("map-bounds-detection").textContent = detected ?
-    `${words.boundsDetected}: ${JSON.stringify(detected)}` : words.boundsNoDetection;
+    `${words.boundsDetected}: ${measurements}` : words.boundsNoDetection;
   document.getElementById("map-bounds-confirmation").textContent =
     value?.plan?.terrain?.bounds_confirmed ? words.boundsConfirmed : words.boundsUnconfirmed;
   document.getElementById("map-bounds-error").textContent = "";

@@ -102,6 +102,7 @@ click(400,400);const history=model.status().history.position,finishButton=docume
 finishButton.focus();finishButton.click();await wait();check(document.activeElement.id==="map-viewport","focus moves to the map after Finish");
 const objects=model.snapshot().objects;
 check(objects.length===2&&objects[0].kind==="loot_polygon"&&objects[0].name==="Loot polygon 1"&&objects[0].vertices.length===3,"Finish adds the outline at the top");
+check(window.ServerManMapLayers.selected()===objects[0].id&&!document.getElementById("map-inspector").hidden,"Finish selects the polygon and reveals its properties");
 check(objects[0].tier===null&&objects[0].abundance==="rich"&&draft()==="[]"&&model.status().history.position===history+1,"Rich, Inherit, one undo step, draft closed");
 check(saved.length===1&&saved[0].plan.objects[0].id===objects[0].id&&saved[0].revision===4,"Finish saves at once with the loaded revision");
 check(model.status().revision===5&&text("map-status")==="Saved"&&model.status().draft_changes===false,"actual save metadata adopted");
@@ -154,13 +155,47 @@ finish(refuse(moved));await wait();
 check(model.snapshot().objects.some(item=>item.id===moved)&&draft()==="[]"&&document.querySelector(`[data-map-zone="${moved}"]`).classList.contains("map-zone-problem")&&saved.length===7,"a reorder across the outline keeps it in the plan, marked, without a second save");
 '''), "PASS")
 
+    def test_menu_groups_context_and_escape_preserve_drawing(self) -> None:
+        """Menus retain native controls and leave the outline and editing shortcuts intact."""
+        for size in ("1944,1101", "984,692"):
+            with self.subTest(size=size):
+                self.assertEqual(run_editor_harness(TOOLS + r'''
+await load(value(plan()));
+const get=id=>document.getElementById(id),menu=get("map-view-menu"),opener=get("map-show-view");
+const before=JSON.stringify(model.status()),frame=[region.clientWidth,region.clientHeight].join();
+check(get("map-region-actions").contains(get("map-publication")),"Apply and Restore share the menu band");
+check(["navigation","inspector","report"].every(name=>menu.contains(get(`map-show-${name}`))),"panel controls belong to View");
+check(["map-fit","map-zoom-selection","map-full-screen","map-coordinate-mode"].every(id=>menu.contains(get(id))),"camera controls belong to View");
+check(get("map-primary-tools").querySelectorAll(".map-edit-group").length===4,"four named editing groups");
+check(get("map-outline-actions").hidden&&get("map-tool-context").hidden,"irrelevant context is hidden");
+opener.click();check(!menu.hidden&&document.activeElement===get("map-show-navigation"),"menu opens with focus on its first command");
+check([region.clientWidth,region.clientHeight].join()===frame,"menu overlays without resizing map");
+get("map-coordinate-mode").value="Native";get("map-coordinate-mode").dispatchEvent(new Event("change"));
+check(!menu.hidden&&window.ServerManMapViewportUi.mode()==="Native","native coordinates select stays usable");
+press(get("map-coordinate-mode"),"Escape");
+check(menu.hidden&&document.activeElement===opener,"Escape closes only View and restores focus");
+opener.click();region.dispatchEvent(new PointerEvent("pointerdown",{button:0,bubbles:true}));
+check(menu.hidden&&JSON.stringify(model.status())===before,"outside pointer closes without editing");
+tool("circle");check(!get("map-tool-context").hidden&&!get("map-circle-radius").hidden&&get("map-encounter-provider").hidden,"Circle exposes only radius");
+tool("polygon");check(get("map-tool-context").hidden&&!get("map-drawing-actions").hidden&&get("map-outline-actions").hidden,"Polygon reserves context before drawing");
+click(100,100);click(400,100);const outline=draft();
+check(!get("map-outline-actions").hidden,"unfinished outline exposes Finish and Discard");
+opener.click();press(get("map-show-navigation"),"Escape");
+check(draft()===outline&&text("map-tool-status").startsWith("Polygon"),"menu Escape preserves active tool and outline");
+tool("select");check(!get("map-outline-actions").hidden,"unfinished outline actions survive a tool switch");
+get("map-outline-discard").click();
+check(get("map-outline-actions").hidden&&get("map-drawing-actions").hidden,"discard hides irrelevant drawing actions");
+check(region.clientWidth>=320&&region.clientHeight>=240,"usable map remains");
+check(document.documentElement.scrollWidth<=innerWidth,"no page overflow");
+''',window_size=size), "PASS")
+
     def test_map_size_stays_while_drawing_at_minimum_window(self) -> None:
         """The footer stays one line high, so the map keeps its size from the first point to Finish (QA-4.4-F8)."""
         self.assertEqual(run_editor_harness(TOOLS + r'''
 await load(value(plan()));tool("polygon");const size=()=>[region.clientWidth,region.clientHeight].join(),start=size(),sizes=[];
 for(const [x,z] of [[100,100],[500,100],[500,500],[300,700]]){click(x,z);sizes.push(size())}
-press(region,"Enter");await wait();sizes.push(size());
+press(region,"Enter");await wait();const finished=size();check(finished.split(",")[1]===start.split(",")[1],"Finish reveals properties without changing map height");
 check(sizes.every(value=>value===start),`map size stays ${start}: ${sizes.join(" ")}`);
 const footer=document.getElementById("map-tool-status");
 check(footer.title==="Polygon"&&getComputedStyle(footer).whiteSpace==="nowrap"&&saved.length===1,"one-line footer; Finish saved");
-''', window_size="936,508"), "PASS")
+''', window_size="984,692"), "PASS")

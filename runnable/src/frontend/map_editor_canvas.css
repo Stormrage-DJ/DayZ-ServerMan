@@ -1,19 +1,30 @@
 /* Editor component tokens of the map rendering; the shared tokens stay unchanged. */
 :root {
-  --map-tier-1: #56B4E9;
-  --map-tier-2: #009E73;
-  --map-tier-3: #F0E442;
-  --map-tier-4: #E69F00;
+  --map-tier-1: #9d9d9d;
+  --map-tier-2: #ffffff;
+  --map-tier-3: #1eff00;
+  --map-tier-4: #0070dd;
   --map-tier-5: #CC79A7;
   --map-tier-other: #AEB9C6;
   /* Encounters (7.3): 9.9:1 on the canvas and 8.0:1 on the terrain surface (UI-UX 10:22:15) */
   --map-encounter: #F59BFF;
+  --map-encounter-infected: #a335ee;
+  --map-encounter-bandits: #ff8000;
+  --map-selection: #C62828;
 }
 
 /* Legend rows name each tier beside its swatch and pattern. */
 #map-tiers-legend { display: grid; gap: var(--primitive-space-1); list-style: none; margin: var(--primitive-space-2) 0 0; padding: 0; }
 #map-tiers-legend li { display: flex; align-items: center; gap: var(--primitive-space-2); min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+.map-tier-name { flex: 1; min-width: 0; }
+#map-tiers-legend .map-tier-visibility { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; min-height: 32px; padding: 4px; flex: 0 0 32px; border-color: transparent; background: transparent; }
+.map-tier-visibility .map-command-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.map-tier-visibility[aria-pressed=false] { color: var(--color-text-muted); }
 .map-tier-swatch { flex: none; width: 18px; height: 18px; border: 1px solid var(--color-border); }
+/* Keep the opacity value visible without narrowing the slider at small window sizes. */
+.map-opacity-control { display: grid; grid-template-columns: minmax(0, 1fr) 4ch; align-items: center; gap: var(--primitive-space-2); }
+.map-opacity-control input { width: 100%; min-width: 0; }
+.map-opacity-control output { text-align: right; font-variant-numeric: tabular-nums; }
 #map-tiers-status, #map-background-status, #map-calibration-result, #map-calibration-warning { overflow-wrap: anywhere; }
 #map-background-choose, #map-calibrate { margin-top: var(--primitive-space-2); }
 
@@ -33,7 +44,12 @@
 .map-zone-halo, .map-outline-halo { stroke: var(--color-canvas); stroke-width: 4px; }
 .map-zone { stroke-width: 2px; }
 .map-zone-inherit { stroke: var(--color-text); stroke-dasharray: 6 4; }
-.map-zone-selected { stroke: var(--color-action); }
+.map-zone-wash, .map-zone-hatch, .map-outline-wash { stroke: none; pointer-events: none; }
+.map-outline-wash { fill: var(--color-text-muted); }
+/* A light outer edge and action ring frame the unchanged tier or error boundary. */
+.map-zone-selection-outer { fill: none; stroke: white; stroke-width: 5px; stroke-linejoin: round; }
+.map-zone-selection { fill: none; stroke: var(--map-selection); stroke-width: 3px; stroke-linejoin: round; }
+.map-zone-error-marker { fill: var(--color-canvas); stroke: var(--color-status-error); stroke-width: 2px; }
 .map-zone-problem, .map-outline-crossing { stroke: var(--color-status-error); }
 
 /* The outline draft: action-colour edges, a dashed implied closing edge and marked points. */
@@ -77,7 +93,7 @@
 #map-tool-message:not(:empty) { color: var(--color-status-warning); }
 
 /* Square handles of the selected zone differ from the round outline-draft points (4.5). */
-.map-handle { fill: var(--color-canvas); stroke: var(--color-action); stroke-width: 2px; }
+.map-handle { fill: var(--map-selection); stroke: white; stroke-width: 1.5px; }
 #map-viewport.map-dragging { cursor: grabbing; }
 /* The selected item's properties stay usable at the minimum panel width. */
 #map-properties-fields, #map-properties-radius-row { display: grid; gap: var(--primitive-space-1); min-width: 0; }
@@ -123,12 +139,11 @@
 .map-encounter-halo, .map-encounter-ring, .map-encounter-mark-halo, .map-encounter-mark-line { fill: none; stroke-linejoin: round; }
 .map-encounter-halo, .map-encounter-mark-halo { stroke: var(--color-canvas); }
 .map-encounter-mark-halo { stroke-width: 4px; }
-.map-encounter-ring, .map-encounter-mark-line { stroke: var(--map-encounter); }
+.map-encounter-ring, .map-encounter-mark-line { stroke: inherit; }
 .map-encounter-mark-line { stroke-width: 2px; }
-.map-encounter-unavailable .map-encounter-mark-line { stroke: var(--color-status-warning); }
 .map-encounter-unavailable polygon.map-encounter-mark-halo, .map-encounter-unavailable polygon.map-encounter-mark-line { fill: var(--color-canvas); }
-.map-encounter-selected .map-encounter-ring, .map-encounter-selected:not(.map-encounter-unavailable) .map-encounter-mark-line { stroke: var(--color-action); }
 .map-encounter-problem .map-encounter-ring { stroke: var(--color-status-error); }
+.map-encounter-problem .map-encounter-mark-line { stroke: var(--color-status-error); }
 /* Encounter Properties: the R11 block, the event and two population columns at the minimum panel width. */
 #map-encounter-availability, #map-encounter-fields { display: grid; gap: var(--primitive-space-1); min-width: 0; }
 #map-encounter-availability[hidden], #map-encounter-fields[hidden], #map-encounter-provider-text[hidden] { display: none; }
