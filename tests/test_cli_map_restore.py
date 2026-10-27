@@ -24,6 +24,7 @@ from dayz_serverman.application.mission_map_plans import MissionPathChanged  # n
 from dayz_serverman.cli import help_wording, map_wording  # noqa: E402
 from dayz_serverman.cli import map_restore_wording as words  # noqa: E402
 from dayz_serverman.cli.commands import map_restore  # noqa: E402
+from dayz_serverman.cli.commands.common import local_time  # noqa: E402
 from dayz_serverman.cli.output import CliFailure, TypeText  # noqa: E402
 from dayz_serverman.cli.registry import Confirm, Kind, ProfileRule  # noqa: E402
 from dayz_serverman.domain.mission_map_restore_texts import (  # noqa: E402
@@ -31,7 +32,8 @@ from dayz_serverman.domain.mission_map_restore_texts import (  # noqa: E402
 )
 
 # The record time of the fixture Apply in the local form of the read commands
-TIME = "2026-10-15 10:00"
+# The fixture times are 08:00 UTC; the review shows them in the local time zone of the machine
+TIME = local_time("2026-10-15T08:00:00Z")
 # The 8.8 text of an invalid mode, then the CLI line (Product Owner 2026-10-17 02:14:51 in evidence 10.32)
 INVALID_MODE = f"{INVALID_MODE_TEXT} Type map restore original or map restore previous."
 

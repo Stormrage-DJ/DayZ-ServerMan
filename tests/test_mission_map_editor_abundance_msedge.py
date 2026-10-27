@@ -120,7 +120,7 @@ held=false;s.dispatchEvent(new Event("change"));check(model.snapshot().global_ab
 const line=document.getElementById("map-zone-capacity-effective"),subtle=document.createElement("span");
 subtle.style.color="var(--color-text-subtle)";document.body.append(subtle);
 const muted=()=>getComputedStyle(line).color===getComputedStyle(subtle).color;
-check(effective()==="Capacity change: Updating"&&muted()&&!line.closest("[aria-live]"),"Updating in the wait: muted and not a live region");
+check(effective()==="Capacity change: Updating"&&muted()&&!line.closest("[aria-live]"),`Updating in the wait: muted and not a live region: ${effective()} | ${getComputedStyle(line).color} vs ${getComputedStyle(subtle).color} | ${line.closest("[aria-live]")?.id}`);
 await sleep(900);check(waiting.length===1&&saved.at(-1).plan.global_abundance===75&&effective()==="Capacity change: Updating"&&muted(),"Updating while the save runs");
 waiting.shift()();await sleep(50);check(effective()==="Capacity change: Normal 0%; with global +75%: +75%"&&!muted(),"the answer shows in the normal colour");
 // A release while a dialog is open is refused, and the slider shows the draft value again

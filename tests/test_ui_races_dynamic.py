@@ -38,6 +38,8 @@ window.pywebview = { api: {
   apply_configuration: () => host.applyConfig.promise,
 } };
 window.ServerManUi = { renderHostError: () => {}, setHostStatus: () => {} };
+// The shell words host failures through the operation messages; a failed apply here shows its fallback
+window.ServerManOperationMessages = { bridgeError: (result, fallback) => result?.error?.message || fallback };
 window.ServerManProfileContext = { selectedId: () => "alpha", select: () => {} };
 
 (async () => {

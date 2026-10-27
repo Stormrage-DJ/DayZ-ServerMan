@@ -33,14 +33,15 @@ check(!shown("map-tier-row")&&!shown("map-zone-capacity-row")&&!shown("map-linke
 check(text("map-linked-loot-enable-label")==="Link loot to this encounter"&&box().getAttribute("aria-describedby")==="map-linked-loot-note"&&text("map-linked-loot-note")===note&&visible("map-linked-loot-note"),"the label, the note and its link");
 const ids=[...document.querySelectorAll("#map-properties-fields > *")].map(item=>item.id);
 const place=(name)=>ids.indexOf(name);
-check(place("map-encounter-fields")<place("map-linked-loot")&&place("map-linked-loot")<place("map-tier-row")&&place("map-tier-row")<place("map-zone-capacity-row")&&place("map-zone-capacity-row")<place("map-linked-loot-detach")&&place("map-linked-loot-detach")<place("map-properties-message")&&place("map-properties-message")<place("map-properties-delete"),"DOM order "+ids);
-check(tabOrder()==="name-field,centre-x,centre-z,radius,event,smin,smax,dmin,dmax,enable,delete","Tab order with linked loot off: "+tabOrder());
+// The inspector puts the shared loot settings before the geometry and provider fields; Detach stays with the actions at the end
+check(place("map-properties-name-field")<place("map-linked-loot")&&place("map-linked-loot")<place("map-tier-row")&&place("map-tier-row")<place("map-zone-capacity-row")&&place("map-zone-capacity-row")<place("map-properties-radius-row")&&place("map-properties-radius-row")<place("map-encounter-fields")&&place("map-encounter-fields")<place("map-linked-loot-detach")&&place("map-linked-loot-detach")<place("map-properties-message")&&place("map-properties-message")<place("map-properties-delete"),"DOM order "+ids);
+check(tabOrder()==="name-field,enable,centre-x,centre-z,radius,event,smin,smax,dmin,dmax,delete","Tab order with linked loot off: "+tabOrder());
 check(box().offsetWidth<40&&getComputedStyle(field("map-linked-loot")).borderTopStyle==="solid","the checkbox keeps its size; a top line starts the group");
 field("map-announcement").textContent="";const length=position();box().focus();toggle();
 check(find(id).linked_loot.enabled&&find(id).linked_loot.abundance==="rich"&&find(id).linked_loot.tier===null&&position()===length+1,"a check is one action: Rich and Inherit");
 check(document.activeElement===box()&&box().checked&&text("map-announcement")===""&&visible("map-linked-loot-note"),"the focus stays, nothing is announced, the note stays");
 check(shown("map-tier-row")&&shown("map-zone-capacity-row")&&shown("map-linked-loot-detach")&&text("map-linked-loot-detach")==="Detach loot zone","the rows and Detach appear");
-check(tabOrder()==="name-field,centre-x,centre-z,radius,event,smin,smax,dmin,dmax,enable,tier-select,zone-capacity,detach,delete","Tab order with linked loot on: "+tabOrder());
+check(tabOrder()==="name-field,enable,tier-select,zone-capacity,view-capacity-report,centre-x,centre-z,radius,event,smin,smax,dmin,dmax,detach,delete","Tab order with linked loot on: "+tabOrder());
 check(detachButton().classList.contains("button")&&!detachButton().classList.contains("button-danger")&&getComputedStyle(detachButton()).justifySelf==="start","Detach is a plain button");
 toggle();check(!find(id).linked_loot.enabled&&field("map-tier-row").hidden&&field("map-zone-capacity-row").hidden&&detachButton().hidden&&!field("map-zone-capacity").disabled,"a clear hides the rows and Detach, without disabling them");
 check(document.activeElement===box()&&position()===length+2,"one action; the focus stays");
@@ -63,7 +64,7 @@ for(const id of ["U1","X1","H1","W1"]){pick(id);const length=position();
 pick("X1");check(text("map-encounter-next")==="Excluded: Apply does not write this encounter to the mission. Its linked loot is still applied.","the excluded note follows the checkbox");
 toggle();check(text("map-encounter-next")==="Excluded: Apply does not write this encounter to the mission.","a clear removes the addition");
 pick("U1");field("map-encounter-exclude").click();check(find("U1").excluded&&box().checked&&find("U1").linked_loot.enabled,"Exclude does not change the checkbox");
-pick("W1");check(tabOrder()==="exclude,name-field,centre-x,centre-z,radius,enable,tier-select,zone-capacity,detach,delete","a wolf encounter: "+tabOrder());
+pick("W1");check(tabOrder()==="exclude,name-field,enable,tier-select,zone-capacity,view-capacity-report,centre-x,centre-z,radius,detach,delete","a wolf encounter: "+tabOrder());
 model.lock("W1");check(box().disabled&&box().checked&&detachButton().disabled,"a locked encounter: disabled, the check mark stays");
 pick("B1");check(!shown("map-linked-loot")&&!shown("map-linked-loot-detach"),"no checkbox without a spawn radius");
 pick("B2");check(!shown("map-linked-loot")&&shown("map-tier-row")&&shown("map-zone-capacity-row")&&shown("map-linked-loot-detach"),"stored enabled loot without a spawn radius: rows and Detach, no checkbox");

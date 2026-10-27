@@ -69,7 +69,7 @@ check(button().getAttribute("aria-pressed")==="false"&&text("map-tool-status")==
 check(text("map-encounter-provider-reason")===banditText&&button().getAttribute("aria-disabled")==="true"&&button().getAttribute("aria-describedby")==="map-encounter-provider-reason","reason line and aria-disabled");
 check(!button().disabled&&[...typeSelect().options].every(option=>!option.disabled),"the button stays focusable; no disabled option");
 document.getElementById("map-announcement").textContent="";document.getElementById("map-tool-message").textContent="";
-const focused=document.getElementById("map-fit");focused.focus();button().click();
+const focused=document.getElementById("map-tool-select");focused.focus();button().click();
 check(button().getAttribute("aria-pressed")==="false"&&text("map-tool-message")===banditText&&text("map-tool-notice")===banditText&&text("map-announcement")===banditText,"a click says why in the panel, on the map and in the live region");
 check(document.activeElement===focused,"the focus does not move");
 press(region,"e");click(500,400);check(objects().length===0&&button().getAttribute("aria-pressed")==="false","E chooses nothing; a map click places nothing");
@@ -113,9 +113,11 @@ check(text("map-encounter-provider-reason").startsWith(start)&&objects().length=
     def test_footer_and_panel_fit_at_both_window_sizes(self) -> None:
         """With the Encounter tool active and an encounter selected, the map keeps its size and nothing scrolls sideways."""
         body = r'''
-await loadWith(plan());const size=()=>[region.clientWidth,region.clientHeight].join(),start=size();
+// A selection reveals the inspector, which in a compact window narrows the map; measure the map with it open
+await loadWith(plan());window.ServerManMapWorkspace.open("inspector");await wait();
+const size=()=>[region.clientWidth,region.clientHeight].join(),start=size();
 press(region,"e");click(500,400);pick(objects()[0].id);await wait();
-const footer=document.getElementById("map-tool-status"),panel=document.getElementById("map-panel-content");
+const footer=document.getElementById("map-tool-status"),panel=document.getElementById("map-inspector-body");
 check(size()===start&&footer.scrollHeight<=footer.clientHeight+1&&text("map-tool-status")==="Encounter","the footer stays one line; the map keeps its size");
 check(panel.scrollWidth<=panel.clientWidth&&document.documentElement.scrollWidth<=document.documentElement.clientWidth,"no horizontal scroll");
 const pair=document.querySelector(".map-encounter-pair");check(getComputedStyle(pair).gridTemplateColumns.split(" ").length===2,"two population columns");

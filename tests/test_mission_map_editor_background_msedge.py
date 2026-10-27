@@ -45,8 +45,12 @@ near(pixel(375,625),[255,0,0],2,"north-west red");
 near(pixel(625,625),[0,255,0],2,"north-east green");
 near(pixel(375,375),[0,0,255],2,"south-west blue");
 near(pixel(625,375),[255,255,255],2,"south-east white");
+// Tier1 starts hidden (README, Original tiers); its eye shows it so its tint can lie over the image
+near(pixel(125,125),[0,0,255],2,"hidden Tier1 leaves the blue quadrant unchanged");
+[...document.querySelectorAll("[data-map-tier-control]")].find((button)=>button.dataset.mapTierControl==="Tier1").click();
+// The grey Tier1 tint lifts red and green equally; the blue image still shows through it
 const tinted=pixel(125,125);
-check(tinted[1]>60&&tinted[2]>200&&tinted[0]<120,`Tier1 tint lies over the blue quadrant: ${tinted}`);
+check(tinted[0]>60&&Math.abs(tinted[0]-tinted[1])<=2&&tinted[2]<250&&tinted[2]>tinted[0]+60,`Tier1 tint lies over the blue quadrant: ${tinted}`);
 const opacity=document.getElementById("map-tiers-opacity");
 opacity.value="0";opacity.dispatchEvent(new Event("input",{bubbles:true}));
 near(pixel(125,125),[0,0,255],1,"zero tier opacity reveals the unchanged map image");

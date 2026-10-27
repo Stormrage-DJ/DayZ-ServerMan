@@ -37,7 +37,7 @@ for(const provider of ["native_wolf","native_bear"]){
   check(button().getAttribute("aria-pressed")==="false"&&text("map-tool-status")==="No tool active"&&text("map-tool-message")===animalText,`${provider}: a change ends the tool and says why`);
   check(text("map-encounter-provider-reason")===animalText&&button().getAttribute("aria-disabled")==="true"&&button().getAttribute("aria-describedby")==="map-encounter-provider-reason",`${provider}: reason line and aria-disabled`);
   document.getElementById("map-announcement").textContent="";document.getElementById("map-tool-message").textContent="";
-  const focused=document.getElementById("map-fit");focused.focus();button().click();
+  const focused=document.getElementById("map-tool-select");focused.focus();button().click();
   check(text("map-tool-message")===animalText&&text("map-tool-notice")===animalText&&text("map-announcement")===animalText&&document.activeElement===focused,`${provider}: a click says why; the focus stays`);
   press(region,"e");click(500,400);
   check(objects().length===0&&button().getAttribute("aria-pressed")==="false",`${provider}: E chooses nothing; a click places nothing`);
@@ -59,7 +59,7 @@ check(typeSelect().value==="native_bear","the choice survives a load again");
 const start=plan();start.objects=[animal("W1","native_wolf",1000,500),animal("B1","native_bear",400,400,{excluded:true})];
 await loadWith(start,withAnimals());pick("W1");
 check(row("W1").textContent.includes("Encounter (Wolves)")&&row("B1").textContent.includes("Encounter (Bears)")&&!row("W1").textContent.includes("native_wolf"),"rows name the types");
-check(row("W1").querySelector(".map-layer-note").textContent===`Unavailable ${animalText}`&&row("W1").querySelector('[data-map-control="W1:select"]').getAttribute("aria-describedby")==="map-layer-note-W1","Unavailable tag and the text in the row");
+check(row("W1").querySelector(".map-layer-note").textContent===`Unavailable ${animalText}`&&row("W1").querySelector('[data-map-control="W1:select"]').getAttribute("aria-describedby")==="map-layer-summary-W1 map-layer-note-W1","Unavailable tag and the text in the row");
 check(row("B1").querySelector(".map-layer-note").textContent===`Unavailable Excluded ${animalText}`,"an excluded bear shows both tags and the text");
 check(mark("W1").dataset.mapState==="unavailable"&&mark("W1").querySelector("[data-map-mark]").dataset.mapMark==="triangle"&&mark("B1").dataset.mapState==="excluded","warning triangle; excluded drawing");
 check(text("map-encounter-provider-text")==="Encounter type: Wolves"&&visible("map-encounter-availability")&&text("map-encounter-reason")===animalText,"Properties: the type and the 7.9 text");

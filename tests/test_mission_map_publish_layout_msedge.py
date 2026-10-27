@@ -39,17 +39,19 @@ for(const [name,wanted] of [["apply",T.apply],["restore",T.restore],["previous",
 check(words.paused.apply===T.paused_apply&&words.paused.restore===T.paused_restore,"both paused-editor notices");
 check(text("map-apply")===T.apply&&text("map-restore")===T.restore&&text("map-restore-previous")===T.previous
   &&text("map-restore-original")===T.original&&text("map-operation-term")===T.term&&text("map-check-again")===T.check,"the shown labels");
-const group=element("map-restore-modes"),restore=element("map-restore"),header=element("map-identity");
-check(element("map-publication").parentElement===header&&element("map-identity-fields").nextElementSibling===element("map-publication"),
-  "the group follows the identity fields in the header");
+const group=element("map-restore-modes"),restore=element("map-restore"),band=element("map-region-actions");
+// The redesign moved the controls from the identity header into the menu band, after the layout notice
+check(element("map-publication").parentElement===band&&element("map-layout-notice").nextElementSibling===element("map-publication"),
+  "the group follows the layout notice in the menu band");
 for(const id of ["map-apply","map-restore","map-restore-previous","map-restore-original"]){
   check(element(id).className==="button"&&!element(id).hasAttribute("aria-keyshortcuts"),`${id}: a normal button without a shortcut`);
   check(element(id).dataset.busyLock==="control",`${id} is busy-marked`);}
 check(restore.getAttribute("aria-expanded")==="false"&&restore.getAttribute("aria-controls")===group.id&&group.hidden
   &&group.getAttribute("role")==="group"&&group.getAttribute("aria-labelledby")===restore.id,"the disclosure and its group");
-const title=box("map-title"),identity=box("map-identity-fields"),opener=box("map-apply");
-check(opener.top<title.bottom&&title.top<opener.bottom&&opener.top<identity.bottom&&box("map-restore").right<=box("map-identity").right+1,
-  `title, identity fields and the controls on one line: ${JSON.stringify([title,identity,opener])}`);
+const actions=box("map-region-actions"),opener=box("map-apply"),closer=box("map-restore");
+check(opener.top>=actions.top&&opener.bottom<=actions.bottom&&closer.top<opener.bottom&&opener.top<closer.bottom&&opener.right<=closer.left
+  &&closer.right<=actions.right+1&&actions.right-closer.right<=17,
+  `Apply and Restore on one line at the right end of the menu band: ${JSON.stringify([actions,opener,closer])}`);
 restore.click();
 check(!group.hidden&&restore.getAttribute("aria-expanded")==="true","Restore opens the group");
 const modes=box("map-restore-modes");
@@ -77,7 +79,10 @@ check(document.activeElement===element("map-apply"),"the focus returns to Apply"
         """The fifth slot shows at the first activation without changing the footer height; the notices never overlap."""
         self.assertEqual(page(ZONE + r'''
 await start(value(zoned()));
-const columns=()=>getComputedStyle(element("map-status-area").querySelector("dl")).gridTemplateColumns.split(" ").length;
+// The footer is a flex band now: count the shown slots, or 0 when one of them wraps off the first line
+const columns=()=>{const shown=[...element("map-status-area").querySelectorAll("dl > div")].filter(item=>item.getClientRects().length);
+  const first=shown[0].getBoundingClientRect();
+  return shown.every(item=>{const other=item.getBoundingClientRect();return other.top<first.bottom&&first.top<other.bottom})?shown.length:0};
 const height=box("map-status-area").height;
 check(element("map-operation-item").hidden&&columns()===4,"no slot before the first activation");
 lane.hold=true;activate("apply");await wait();

@@ -65,9 +65,16 @@
 /* Reserve both coordinate lines before the first pointer move to keep geometry editing stable. */
 #map-coordinates { width: 34ch; min-height: 30px; font-size: 12px; line-height: 15px; white-space: pre-line; }
 #map-plan-status { margin-left: auto; }
+/* The plan state takes the free width and stays one line, so save texts never resize the footer or the map. */
+#map-status-area #map-plan-status { flex: 1 1 0; min-width: 0; flex-wrap: nowrap; }
+#map-plan-status > #map-status { flex: 1 1 0; min-width: 0; contain: inline-size; }
+#map-plan-status > dd:has(button) { flex: none; }
 #map-plan-status > dd:has(button):not(:has(button:not([hidden]))) { display: none; }
+/* The operation slot shares the band on one line; its title holds the full text (8.18, UI-UX section 2). */
+#map-status-area #map-operation-item { flex: 1 1 0; min-width: 0; flex-wrap: nowrap; }
 #map-operation-item dt { grid-column: auto; }
-#map-operation-status { white-space: normal; overflow: visible; }
+#map-operation-item > #map-operation-status { flex: 1 1 0; min-width: 0; }
+#map-operation-item > dd:has(button) { flex: none; }
 @media (max-width: 1199px) {
   #map-identity { padding: 4px 12px; gap: 12px; }
   #map-title { font-size: 17px; }

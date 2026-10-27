@@ -1,4 +1,4 @@
-"""Verify the F11 key and the full-screen toolbar toggle in composed Edge (QA-9.11-F1)."""
+"""Verify the F11 key and the full-screen View menu toggle in composed Edge (QA-9.11-F1)."""
 
 from __future__ import annotations
 
@@ -31,20 +31,23 @@ class MissionMapEditorFullScreenEdgeTests(unittest.TestCase):
     """Use a fake host; no native window or real data is involved."""
 
     def test_toolbar_toggle_follows_the_button_pattern(self) -> None:
-        """The button is in the tools group, keyboard reachable, named and pressed-aware."""
+        """The button is in the View menu, keyboard reachable, named and pressed-aware."""
         self.assertEqual(run_editor_harness(FULL_SCREEN + r'''
-check(button.closest("#map-toolbar"), "the toggle is in the toolbar");
+// The redesign moved the toggle from the toolbar into the View menu; each click closes the menu.
+const view = document.getElementById("map-show-view"), menu = document.getElementById("map-view-menu");
+const open = () => { if (menu.hidden) view.click(); };
+check(button.closest("#map-view-menu"), "the toggle is in the View menu");
 check(button.type === "button" && button.classList.contains("button") && !button.disabled, "a usable button");
 check(button.textContent === "Full screen (F11)" && button.title === "Full screen (F11)", "label and tooltip");
 check(button.getAttribute("aria-pressed") === "false" && button.getAttribute("aria-keyshortcuts") === "F11", "aria state");
-button.focus(); check(document.activeElement === button, "focusable");
+open(); button.focus(); check(document.activeElement === button, "focusable in the open menu");
 button.click(); await wait();
 check(toggles === 1, "one host call");
 check(button.getAttribute("aria-pressed") === "true" && button.textContent === "Exit full screen (F11)", "full-screen label");
-check(document.activeElement === button, "focus stays on the button");
-button.click(); await wait();
+check(menu.hidden && document.activeElement === view, "focus returns to the View menu opener");
+open(); button.click(); await wait();
 check(toggles === 2 && button.getAttribute("aria-pressed") === "false" && button.textContent === "Full screen (F11)", "back");
-refuse = true; button.click(); await wait();
+refuse = true; open(); button.click(); await wait();
 check(toggles === 3 && button.getAttribute("aria-pressed") === "false", "a refusal keeps the state");
 const notice = document.getElementById("map-save-notice");
 check(notice.textContent.length > 0 && notice.classList.contains("map-save-error"), "the reason shows as an error notice");

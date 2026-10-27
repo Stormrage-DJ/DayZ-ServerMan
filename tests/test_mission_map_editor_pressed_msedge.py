@@ -40,15 +40,20 @@ class MissionMapEditorPressedEdgeTests(unittest.TestCase):
     """Use synthetic plans, fake display reads and isolated headless profiles."""
 
     def test_tools_and_list_toggles_show_the_bar(self) -> None:
-        """Tool, item-name, Visible and Locked buttons show the bar only while pressed."""
+        """Tool, Visible and Locked buttons show the bar only while pressed; the selected name marks its row."""
         self.assertEqual(run_editor_harness(ENCOUNTERS + PRESSED + r'''
 const start=plan();start.objects=[circle("C1",500,500,100)];await loadWith(start);
 const control=(name)=>document.querySelector(`[data-map-control="C1:${name}"]`);
 tool("circle");check(bar(document.getElementById("map-tool-circle"))&&plain(document.getElementById("map-tool-select")),"pressed tool only");
-check(bar(control("visible"))&&plain(control("locked"))&&plain(control("select")),"Visible pressed; Locked and the name not");
-pick("C1");check(bar(control("select")),"the selected item's name button shows the bar");
+// The compact object row keeps borders transparent, so a pressed row toggle shows only the action-coloured bar.
+const rowBar=(element)=>{const shadow=getComputedStyle(element).boxShadow;return shadow.includes("inset")&&shadow.includes(action)};
+check(rowBar(control("visible"))&&plain(control("locked"))&&plain(control("select")),"Visible pressed; Locked and the name not");
+// The selected name is marked by the row's selection edge and bold text instead of the bar.
+pick("C1");const row=control("select").closest(".map-layer");
+check(control("select").getAttribute("aria-pressed")==="true"&&plain(control("select"))&&getComputedStyle(control("select")).fontWeight==="600"
+  &&row.classList.contains("map-layer-selected")&&getComputedStyle(row).borderLeftColor!=="rgba(0, 0, 0, 0)","the selected item's row shows the selection");
 control("visible").click();check(control("visible").getAttribute("aria-pressed")==="false"&&plain(control("visible")),"a hidden item has no bar on Visible");
-control("locked").click();check(control("locked").getAttribute("aria-pressed")==="true"&&bar(control("locked")),"a locked item shows the bar on Locked");
+control("locked").click();check(control("locked").getAttribute("aria-pressed")==="true"&&rowBar(control("locked")),"a locked item shows the bar on Locked");
 const outside=document.createElement("button");outside.className="button";outside.setAttribute("aria-pressed","true");document.body.append(outside);
 check(plain(outside),"a pressed button outside the editor document keeps the shared look");
 '''), "PASS")

@@ -107,11 +107,16 @@ close(fitted.scale,Math.min(region.clientWidth/bounds.width,region.clientHeight/
 const bottom=view.toScreen({x:bounds.x_min,z:bounds.z_min});const top=view.toScreen({x:bounds.x_min,z:bounds.z_min+bounds.height});
 check(top.y<bottom.y,"native Z rises while screen Y falls");
 const centre=view.toNative({x:fitted.width/2,y:fitted.height/2});
-document.getElementById("map-panel-toggle").click();await wait();
-const resized=view.snapshot();check(resized.width>fitted.width,"ResizeObserver follows panel collapse");
+// Compact windows (<1200 px) start with navigation closed, so the toggle opens it there and closes it elsewhere.
+const navigationOpen=window.ServerManMapWorkspace.visible("navigation");
+document.getElementById("map-show-navigation").click();await wait();
+const resized=view.snapshot();
+check(navigationOpen?resized.width>fitted.width:resized.width<fitted.width,"ResizeObserver follows the navigation panel toggle");
 const after=view.toNative({x:resized.width/2,y:resized.height/2});close(after.x,centre.x,"resize centre X");close(after.z,centre.z,"resize centre Z");
 check(document.querySelectorAll("#map-vector line").length===22,"complete terrain grid");
-check(document.querySelector("#map-vector text").textContent.includes("X"),"screen edge axis labels");
+// After the compact toggle narrows the map, the X 0.0 edge can scroll off, so look for both axes anywhere.
+const axisLabels=[...document.querySelectorAll("#map-vector text")].map(label=>label.textContent);
+check(axisLabels.some(text=>text.startsWith("X "))&&axisLabels.some(text=>text.startsWith("Z ")),"screen edge axis labels");
 for (const mode of ["Grid", "Native", "Both"]) {
   for (const width of [580, 900]) {
     view.resize(width, 600); view.fit();

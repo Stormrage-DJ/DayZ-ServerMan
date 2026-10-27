@@ -62,12 +62,16 @@ check(reason.hidden,"a verified family hides any stray text");
         for size in ("1280,800", "960,600", "1920,1080"):
             with self.subTest(size=size):
                 self.assertEqual(run_editor_harness(FAMILY + r'''
+await load(withFamily(verified));const plain=document.getElementById("map-viewport").getBoundingClientRect();
 for(const family of [unverified,unknown]){
   await load(withFamily(family));
   check(shown()&&reason.textContent===family.text,`visible: ${family.reason}`);
   check(document.documentElement.scrollWidth<=innerWidth&&document.documentElement.scrollHeight<=innerHeight,`no page overflow: ${family.reason}`);
-  const map=document.getElementById("map-viewport").getBoundingClientRect();
-  check(map.width>=innerWidth*.60&&map.height>=innerHeight*.50,`large central map: ${family.reason}`);
+  const map=document.getElementById("map-viewport").getBoundingClientRect(),line=reason.getBoundingClientRect().height;
+  // The menu band, the labelled toolbar and the default side panels (wide windows) leave less than the old 60 %/50 %;
+  // the reason itself must not narrow the map and may take only its own line(s) of height.
+  check(map.width===plain.width&&plain.height-map.height<=line+12,`the reason costs only its line: ${family.reason}`);
+  check(map.width>=innerWidth*.45&&map.height>=innerHeight*.45,`large central map: ${family.reason}`);
   const area=reason.getBoundingClientRect(),header=document.getElementById("map-identity").getBoundingClientRect();
   check(area.right<=innerWidth+1&&area.bottom<=innerHeight+1&&area.bottom<=header.bottom+1,`reason inside the window and the header: ${family.reason}`);
   check(area.top>=document.getElementById("map-identity-fields").getBoundingClientRect().bottom-1,`own line: ${family.reason}`);
