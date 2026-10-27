@@ -1,7 +1,7 @@
 // Own local panel arrangement and expose explicit changes to the preference adapter.
 "use strict";
 
-const mapWorkspaceState = {started: false, applying: false, active: null, reveal: {},
+const mapWorkspaceState = {started: false, applying: false, active: null, reveal: {}, sizing: null, sized: {},
   preferred: {navigation_width: 240, inspector_width: 380, report_height: 240,
     navigation_open: true, inspector_open: true, report_open: false}};
 
@@ -22,6 +22,14 @@ function mapWorkspaceLimits(key) {
     Math.min(navigation ? 480 : 640, area.clientWidth - used - 336))];
 }
 
+// Set the sizing rule of the workspace through the CSS object model, one property at a time
+function mapWorkspaceSize(values) {
+  const {sizing, sized} = mapWorkspaceState;
+  for (const [name, value] of Object.entries(values)) {
+    if (sized[name] !== value) { sizing.setProperty(name, value); sized[name] = value; }
+  }
+}
+
 // A scoped stylesheet keeps dimensions dynamic without putting style attributes on controls.
 function mapWorkspaceDraw() {
   const state = mapWorkspaceState, get = (id) => document.getElementById(id);
@@ -33,7 +41,11 @@ function mapWorkspaceDraw() {
   get("map-inspector").hidden = !visible.inspector;
   get("map-reports").hidden = !visible.report;
   for (const key of Object.keys(visible)) get(`map-show-${key}`).setAttribute("aria-expanded", String(visible[key]));
-  get("map-workspace-sizing").textContent = `#map-workspace {grid-template-columns: ${visible.navigation ? size("navigation_width") : 0}px minmax(0,1fr) ${visible.inspector ? size("inspector_width") : 0}px; grid-template-rows: minmax(0,1fr) ${visible.report ? size("report_height") : 0}px; row-gap:${visible.report ? 8 : 0}px;}`;
+  // Change only the values that differ, so an unchanged draw does not replace the sheet and restyle the document
+  mapWorkspaceSize({
+    "grid-template-columns": `${visible.navigation ? size("navigation_width") : 0}px minmax(0, 1fr) ${visible.inspector ? size("inspector_width") : 0}px`,
+    "grid-template-rows": `minmax(0, 1fr) ${visible.report ? size("report_height") : 0}px`,
+    "row-gap": `${visible.report ? 8 : 0}px`});
   // A selection can reveal properties during a click; update transforms before the next gesture.
   const view = window.ServerManMapViewportUi?.view(), frame = view?.snapshot(), viewport = get("map-viewport");
   if (frame && (frame.width !== viewport.clientWidth || frame.height !== viewport.clientHeight)) {
@@ -76,7 +88,8 @@ function mapWorkspaceInit() {
   if (state.started) return;
   window.ServerManMapWorkspaceDom.build(); window.ServerManMapToolbar.init(); state.started = true;
   if (innerWidth < 1200) Object.assign(state.preferred, {navigation_open: false, inspector_open: false});
-  const sheet = document.createElement("style"); sheet.id = "map-workspace-sizing"; document.head.append(sheet);
+  const sheet = document.createElement("style"); sheet.id = "map-workspace-sizing"; sheet.textContent = "#map-workspace {}";
+  document.head.append(sheet); state.sizing = sheet.sheet.cssRules[0].style;
   document.getElementById("map-panel").addEventListener("toggle", () => {
     if (!document.getElementById("map-panel").open && mapWorkspaceVisible("navigation")) mapWorkspaceToggle("navigation");
   });
