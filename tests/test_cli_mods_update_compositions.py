@@ -15,11 +15,10 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from folder_lock_fixtures import held_reader  # noqa: E402
+from folder_lock_fixtures import held_reader, short_writer_waits  # noqa: E402
 from lifecycle_cli_fixtures import OTHER_ID, saved_state  # noqa: E402
 from steam_cli_fixtures import WORKSHOP_ID, SteamRoot  # noqa: E402
 from test_cli_confirm import FakeTerminal  # noqa: E402
-from dayz_serverman.application import folder_writer_scope  # noqa: E402
 from dayz_serverman.application.mod_publication import ModPublicationService  # noqa: E402
 from dayz_serverman.application.workshop_update_result import update_result  # noqa: E402
 from dayz_serverman.application.workshop_updates import WorkshopUpdateService  # noqa: E402
@@ -123,7 +122,7 @@ class ApplyThroughCompositionsTests(SteamRoot):
         self.started()
         before = saved_state(self.manager, self.dayz)
         with held_reader(self.manager / "data" / "server-folders.lock"), \
-                patch.object(folder_writer_scope, "OWNER_WRITER_WAIT_SECONDS", 0.3):
+                short_writer_waits():
             code, stdout, stderr = self.cli("mods", "update", *PROFILE, "--restart", "--yes", "--json")
         error = json.loads(stdout)["error"]
         self.assertEqual((code, error["code"], error["details"]["operation"]["last_working_phase"]),

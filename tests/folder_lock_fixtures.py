@@ -6,8 +6,9 @@ import hashlib
 import subprocess
 import sys
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 PYTHON_ROOT = Path(__file__).resolve().parents[1] / "runnable" / "src" / "python"
 sys.path.insert(0, str(PYTHON_ROOT))
@@ -126,6 +127,26 @@ def held_reader(lock_path: Path) -> Iterator[FolderReader]:
             yield reader
     finally:
         reader.close()
+
+
+# Modules that bind a writer wait bound by name; a held reader makes each of them wait its full bound
+WRITER_WAIT_BINDINGS = (
+    ("dayz_serverman.application.folder_writer_scope", "OWNER_WRITER_WAIT_SECONDS"),
+    ("dayz_serverman.application.configuration_recovery", "OWNER_WRITER_WAIT_SECONDS"),
+    ("dayz_serverman.application.configuration_recovery", "STARTUP_RECOVERY_WAIT_SECONDS"),
+    ("dayz_serverman.application.mission_map_recovery_coordinator", "STARTUP_RECOVERY_WAIT_SECONDS"),
+    ("dayz_serverman.application.mod_publication_startup", "STARTUP_RECOVERY_WAIT_SECONDS"),
+    ("dayz_serverman.application.startup_recoveries", "STARTUP_RECOVERY_WAIT_SECONDS"),
+)
+
+
+@contextmanager
+def short_writer_waits(seconds: float = 0.3) -> Iterator[None]:
+    """Shorten every writer wait bound, so a refusal behind a held reader comes at once, not after 30 seconds."""
+    with ExitStack() as stack:
+        for module, name in WRITER_WAIT_BINDINGS:
+            stack.enter_context(patch(f"{module}.{name}", seconds))
+        yield
 
 
 def writer_for(lock_path: Path) -> FolderWriter:

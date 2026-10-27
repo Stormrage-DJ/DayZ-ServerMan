@@ -149,13 +149,14 @@ class StatusReadResilienceTests(unittest.TestCase):
         stop = threading.Event()
         failures: list = []
 
+        deadline = time.monotonic() + RUN_SECONDS
+
         def write() -> None:
-            """Rewrite the store file until the readers are done."""
-            while not stop.is_set():
+            """Rewrite the store file until the run ends; a writer that outlives it only stalls the last reads."""
+            while not stop.is_set() and time.monotonic() < deadline:
                 self.store.record(targets=self.targets)
 
         writer = threading.Thread(target=write)
-        deadline = time.monotonic() + RUN_SECONDS
         readers = [threading.Thread(target=self.read_until, args=(deadline, failures))
                    for _ in range(3)]
         writer.start()

@@ -12,14 +12,12 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from edit_cli_fixtures import PROFILE, PROFILE_ID, EditRoot, FakeTerminal  # noqa: E402
-from folder_lock_fixtures import held_reader  # noqa: E402
+from folder_lock_fixtures import held_reader, short_writer_waits  # noqa: E402
 from lifecycle_cli_fixtures import OTHER_ID, saved_state  # noqa: E402
-from dayz_serverman.application import folder_writer_scope  # noqa: E402
 from dayz_serverman.session import open_owner_session  # noqa: E402
 
 NEW_ID = "pripyat-test"
@@ -184,7 +182,7 @@ class ProfileDeleteTests(EditRoot):
         code, stdout, _stderr = self.cli("profile", "delete", "--profile", OTHER_ID, "--yes", "--json")
         self.assertEqual((code, json.loads(stdout)["error"]["code"]), (3, "DELETION_BLOCKED"))
         with held_reader(self.manager / "data" / "server-folders.lock"), \
-                patch.object(folder_writer_scope, "OWNER_WRITER_WAIT_SECONDS", 0.3):
+                short_writer_waits():
             code, stdout, stderr = self.cli(*DELETE, "--yes", "--json")
         error = json.loads(stdout)["error"]
         self.assertEqual((code, error["code"]), (3, "CONTROL_CONFLICT"), stderr)

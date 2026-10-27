@@ -1,6 +1,9 @@
 """Run unittest modules for CI and report the outcome as GitHub workflow annotations.
 
 Use it exactly like ``python -m unittest``: ``python -m tests.ci_run tests.test_a tests.test_b``.
+``--jobs=N`` after the optional ``--label=`` runs the modules on N worker processes.
+``--select=FILE`` after those runs only the test IDs that FILE lists, one per line
+(``tests.ci_risk`` writes these lists); the named modules are then ignored.
 The console output and the exit code are those of unittest. After the run, the
 module prints workflow commands: one error per failed or erroring test (with its
 last exception line) and one notice with the counts and the skipped tests.
@@ -85,14 +88,27 @@ def main(argv: list[str]) -> int:
     # An optional leading --label=<text> names the job in the annotation titles
     if argv and argv[0].startswith("--label="):
         label, argv = argv[0].split("=", 1)[1] or label, argv[1:]
-    # A module that cannot even be loaded (for example a syntax error) stops unittest itself
-    try:
-        program = unittest.main(module=None, argv=["python -m unittest", *argv], exit=False)
-    except Exception as error:
-        print(f"::error title={_escape_property(label + ' could not load the tests')}::"
-              f"{_escape_data(f'{type(error).__name__}: {error}')}", flush=True)
-        raise
-    result = program.result
+    # An optional --jobs=<n> runs the modules on n worker processes (tests.ci_parallel)
+    jobs = 1
+    if argv and argv[0].startswith("--jobs="):
+        jobs, argv = int(argv[0].split("=", 1)[1]), argv[1:]
+    # An optional --select=<file> replaces the modules with the test IDs that the file lists
+    if argv and argv[0].startswith("--select="):
+        with open(argv[0].split("=", 1)[1], encoding="utf-8") as selection:
+            argv = [line.strip() for line in selection if line.strip() and not line.startswith("#")]
+    if jobs > 1:
+        from tests import ci_parallel
+
+        result = ci_parallel.run(argv, jobs)
+    else:
+        # A module that cannot even be loaded (for example a syntax error) stops unittest itself
+        try:
+            program = unittest.main(module=None, argv=["python -m unittest", *argv], exit=False)
+        except Exception as error:
+            print(f"::error title={_escape_property(label + ' could not load the tests')}::"
+                  f"{_escape_data(f'{type(error).__name__}: {error}')}", flush=True)
+            raise
+        result = program.result
     # Flush unittest's stream first so the commands follow the report in the log
     sys.stderr.flush()
     for command in annotations(label, result):

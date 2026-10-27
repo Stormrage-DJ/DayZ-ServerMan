@@ -14,12 +14,12 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from folder_lock_fixtures import held_reader  # noqa: E402
+from folder_lock_fixtures import held_reader, short_writer_waits  # noqa: E402
 from session_fixtures import PROFILE_ID  # noqa: E402
 from test_cli_backup_commands import BackupRoot  # noqa: E402
 from test_cli_confirm import FakeTerminal  # noqa: E402
 from lifecycle_cli_fixtures import saved_state  # noqa: E402
-from dayz_serverman.application import folder_writer_scope, review_wording  # noqa: E402
+from dayz_serverman.application import review_wording  # noqa: E402
 from dayz_serverman.cli import presteps  # noqa: E402
 from dayz_serverman.cli.exit_codes import PRE_CHANGE_PHASES  # noqa: E402
 from dayz_serverman.session import open_owner_session  # noqa: E402
@@ -134,7 +134,7 @@ class BackupRestoreTests(BackupRoot):
         """A13 writer side: a held observer read keeps the restore out; exit 3 and the files stay as they were."""
         before = saved_state(self.manager, self.dayz)
         with held_reader(self.manager / "data" / "server-folders.lock"), \
-                patch.object(folder_writer_scope, "OWNER_WRITER_WAIT_SECONDS", 0.3):
+                short_writer_waits():
             code, stdout, stderr = self.restore("--yes", "--json")
         error = json.loads(stdout)["error"]
         self.assertEqual((code, error["code"]), (3, "CONTROL_CONFLICT"), stderr)

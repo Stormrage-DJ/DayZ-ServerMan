@@ -138,23 +138,51 @@ for `msedge.exe`.
 
 `.github/workflows/tests.yml` runs on every push and pull request, on
 `windows-latest` with Python 3.12. It uses `actions/checkout@v5` and
-`actions/setup-python@v6`. It has two jobs:
+`actions/setup-python@v6`. It has one job, **Unit and static tests** (time
+limit 6 minutes). The job installs `requirements-dev.txt` and compile-checks
+the Python source. Then it runs the tests in `tests/ci_unit.txt` on four
+processes. The list includes the undefined-name check. A failing test fails
+the run.
 
-- **Unit and static tests** (time limit 20 minutes) installs
-  `requirements-dev.txt` and compile-checks the Python source. Then it runs
-  every test module that does not start Edge, including the undefined-name
-  check. A failing test fails the run.
-- **Edge-driven interface tests** (time limit 30 minutes) first records the
-  Edge version as a notice, then runs the modules that start Edge. It is marked
-  `continue-on-error`, because hosted runners can keep the temporary Edge
-  profile locked.
+CI does not run the Edge tests. The Edge on hosted runners is a different
+version from the local one, and there the tests failed at random. Run the Edge
+tests locally.
 
-A module counts as Edge-driven when its source matches the case-sensitive
-pattern `msedge|\bEDGE\b`: the text `msedge`, or `EDGE` as a whole word.
+#### Which tests CI runs
 
-Both test steps run `python -m tests.ci_run --label=Unit` or `--label=Edge`
-with the selected modules. `tests/ci_run.py` runs `unittest` unchanged, with
-the same output and exit code. After the run, it prints workflow annotations.
+CI runs only the riskiest tests that fit about 3 minutes. The other tests stay
+in the repository and run locally. `tests/ci_risk.py` scores each
+test as impact × likelihood, each from 1 to 5:
+
+- Impact comes from the words in the test names. Restore, backup, recovery,
+  crash, commit, lock, and delete score 5. Apply, publish, profile,
+  configuration, mods update, and loot score 4. A test of how something looks
+  or reads, such as a colour, the layout, or the wording, scores 1.
+- Likelihood is how often git shows a change to the test module and to the
+  source files that it imports. A fix commit counts twice.
+
+The list keeps whole risk levels from the top while they fit a budget of 170
+seconds of a local serial run.
+
+Before a push, run every test that your change touches, in or out of the list,
+including the Edge tests:
+
+```powershell
+$modules = .\runnable\.venv\Scripts\python.exe -m tests.ci_risk changed
+.\runnable\.venv\Scripts\python.exe -m unittest $modules
+```
+
+A new test runs in CI only after the list is written again. Time the tests,
+then write the list:
+
+```powershell
+.\runnable\.venv\Scripts\python.exe -m tests.ci_risk time <modules> > unit.times
+.\runnable\.venv\Scripts\python.exe -m tests.ci_risk select unit.times 170 tests\ci_unit.txt
+```
+
+The test step runs `python -m tests.ci_run` with `--select=` and the list.
+`tests/ci_run.py` runs `unittest` unchanged, with the same output and exit
+code. After the run, it prints workflow annotations.
 
 Each failed or erroring test gets one `::error`. Its title holds the test ID,
 and its message holds the last exception line. A step shows at most 10 errors;
