@@ -44,10 +44,12 @@ class MissionMapEditorStaticTests(unittest.TestCase):
     def test_assets_are_exactly_the_implemented_offline_inventory(self) -> None:
         """Asset order follows the accepted contract without future module placeholders."""
         self.assertEqual(EDITOR_STYLES, ("tokens.css", "controls.css", "styles.css", "map_editor.css",
-                                         "map_editor_canvas.css", "map_editor_workspace.css", "map_editor_reports.css", "map_editor_toolbar.css"))
+                                         "map_editor_canvas.css", "map_editor_workspace.css", "map_editor_reports.css",
+                                         "map_editor_toolbar.css", "map_editor_inspector.css",
+                                         "map_editor_navigation.css"))
         self.assertEqual(EDITOR_SCRIPTS, ("operation_labels.js", "diagnostic_labels.js",
                          "host_sentences.js", "operation_messages.js", "operation_results.js",
-                         "operation_failures.js", "busy_controls.js", "map_editor_dom.js",
+                         "operation_failures.js", "busy_controls.js", "map_editor_dom.js", "map_editor_icons.js",
                          "map_editor_wording.js", "map_editor_bridge.js", "map_editor_layout.js",
                          "map_editor_toolbar.js", "map_editor_workspace_dom.js", "map_editor_workspace.js", "map_editor_workspace_resize.js", "map_editor_workspace_preferences.js", "map_editor_setup.js", "map_editor_report_rows.js", "map_editor_reports.js",
                          "map_editor_coordinates.js", "map_editor_viewport.js", "map_editor_viewport_render.js",
@@ -55,10 +57,11 @@ class MissionMapEditorStaticTests(unittest.TestCase):
                          "map_editor_bounds_save.js", "map_editor_bounds.js", "map_editor_raster.js",
                          "map_editor_tiers.js", "map_editor_background_parts.js", "map_editor_calibration_math.js",
                          "map_editor_background.js", "map_editor_calibration.js", "map_editor_model.js", "map_editor_history.js",
-                         "map_editor_layers.js", "map_editor_outline.js", "map_editor_vector.js",
+                         "map_editor_layers.js", "map_editor_layer_display.js", "map_editor_outline.js", "map_editor_vector.js",
                          "map_editor_plan_save.js", "map_editor_autosave.js", "map_editor_tools.js",
                          "map_editor_outline_draft.js", "map_editor_encounter_wording.js", "map_editor_encounters.js",
-                         "map_editor_linked_loot.js", "map_editor_encounter_draw.js", "map_editor_encounter_tool.js", "map_editor_drag.js",
+                         "map_editor_linked_loot.js", "map_editor_encounter_draw.js", "map_editor_encounter_tool.js",
+                         "map_editor_drag_input.js", "map_editor_drag.js", "map_editor_inspector_ui.js",
                          "map_editor_properties.js", "map_editor_encounter_properties.js", "map_editor_linked_loot_properties.js",
                          "map_editor_inspect_wording.js", "map_editor_inspect_read.js",
                          "map_editor_tier_control.js", "map_editor_inspect.js", "map_editor_abundance.js", "map_editor_keys.js",

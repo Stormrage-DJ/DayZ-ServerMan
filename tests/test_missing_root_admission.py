@@ -192,8 +192,8 @@ class MissingRootAdmissionTests(unittest.TestCase):
                          [("WARNING", "SAVE_SETTINGS")])
         self.assertEqual(bypass[0]["fields"]["reasons"], [reason for reason, _owner in TAGGED])
 
-    def test_v_only_the_settings_save_and_the_four_startup_paths_use_the_rule(self) -> None:
-        """(v) Static: one place passes the flag, four startup places set the cause."""
+    def test_v_only_the_settings_save_and_the_five_startup_paths_use_the_rule(self) -> None:
+        """(v) Static: one place passes the flag, five startup places set the cause."""
         flags, causes = {}, {}
         for path in PACKAGE.rglob("*.py"):
             source = path.read_text(encoding="utf-8")
@@ -202,8 +202,9 @@ class MissingRootAdmissionTests(unittest.TestCase):
             if found := re.findall(r"\.block_for_missing_dayz_root\(", source):
                 causes[path.name] = len(found)
         self.assertEqual(flags, {"coordinator.py": 1})
+        # The startup recovery of a configuration publication (network ports) is the fifth place
         self.assertEqual(causes, {"mod_publication_startup.py": 1, "startup_recoveries.py": 2,
-                                  "mission_map_recovery_coordinator.py": 1})
+                                  "mission_map_recovery_coordinator.py": 1, "configuration_recovery.py": 1})
 
 
 if __name__ == "__main__":

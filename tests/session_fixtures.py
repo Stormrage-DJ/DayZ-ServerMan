@@ -100,6 +100,7 @@ def read_calls(dayz: Path, archive: Path | None, legacy: Path) -> list[tuple[str
         ("get_lifecycle_schedule", profile), ("get_update_status", profile), ("list_mod_inventory", profile),
         ("list_backups", profile), ("list_backup_catalog", {}), ("list_profiles", {}), ("read_profile", profile),
         ("preview_profile_command", profile), ("list_profile_missions", {}), ("get_ui_preferences", {}),
+        ("get_editor_layout", {}),
         ("load_configuration", {**profile, "target": "server"}),
         ("load_configuration", {**profile, "target": "gameplay"}),
         ("load_mission_configuration", {**profile, "target": "economy"}), ("load_medical_features", profile),

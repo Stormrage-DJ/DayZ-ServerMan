@@ -99,6 +99,9 @@ _DISPLAY_ONLY = "display-only rendering data; Inspect and the capability read gi
 # (`part` from 0) are display transport, and their `over_budget` details carry no fact for a command.
 EXCLUSION_REASONS = MappingProxyType({
     "save_selected_profile": "GUI selection memory; a script must not move the window's selection",
+    # The panel sizes of the map editor window: window memory, not a server or mission fact
+    "get_editor_layout": "map editor window layout memory; no fact for a command",
+    "save_editor_layout": "map editor window layout memory; a script must not change the window's layout",
     "list_legacy_backup_references": _NOT_PARITY,
     "revalidate_legacy_backup_references": _NOT_PARITY,
     "read_mission_map_tier_layer": _DISPLAY_ONLY,

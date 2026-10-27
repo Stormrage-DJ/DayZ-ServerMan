@@ -72,7 +72,7 @@ class ReasonTableTests(unittest.TestCase):
                 self.assertEqual(dispatch_exit({"code": code, "details": {"reason": "no_saved_plan"}}), expected)
 
     def test_only_map_modules_give_the_d13_reasons(self) -> None:
-        """No existing command sees a D13 reason: each one is a literal only in a mission map module."""
+        """No existing command sees a D13 reason: each one is a literal only in a mission map or map editor module."""
         found: dict[str, set[str]] = {}
         for path in PACKAGE.rglob("*.py"):
             if "cli" in path.relative_to(PACKAGE).parts:
@@ -83,7 +83,7 @@ class ReasonTableTests(unittest.TestCase):
         self.assertTrue(found)
         for reason, files in found.items():
             with self.subTest(reason=reason):
-                self.assertTrue(all(name.startswith("mission_map_") for name in files), files)
+                self.assertTrue(all(name.startswith(("mission_map_", "map_editor_")) for name in files), files)
 
 
 class KindTableTests(unittest.TestCase):

@@ -16,6 +16,7 @@ FIELD_LABELS: dict[str, dict[str, str]] = {
         "password": "Server password",
         "passwordAdmin": "Admin password",
         "maxPlayers": "Maximum players",
+        "game_port": "Game port",
         "steamQueryPort": "Steam query port",
         "instanceId": "Instance ID",
         "enableWhitelist": "Whitelist",

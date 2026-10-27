@@ -44,8 +44,11 @@ MISSION_MAP_METHODS = ("load_mission_map", "save_mission_map_plan", "inspect_mis
                        "inspect_mission_map_recovery", "export_mission_map_plan",
                        "preview_mission_map_import", "import_mission_map_plan", "preview_mission_map_copy",
                        "copy_mission_map_plan", "preview_mission_map_adoption", "adopt_mission_map")
+# The two layout methods of the map editor window follow the UI preference read in the preference handlers
+LAYOUT_METHODS = ("get_editor_layout", "save_editor_layout")
 OWNER_METHODS_WITH_MISSION_MAP = (
-    OWNER_METHODS_BEFORE_SPLIT[:37] + MISSION_MAP_METHODS + OWNER_METHODS_BEFORE_SPLIT[37:]
+    OWNER_METHODS_BEFORE_SPLIT[:15] + LAYOUT_METHODS + OWNER_METHODS_BEFORE_SPLIT[15:37] + MISSION_MAP_METHODS
+    + OWNER_METHODS_BEFORE_SPLIT[37:]
 )
 
 

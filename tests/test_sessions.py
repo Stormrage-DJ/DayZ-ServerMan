@@ -61,10 +61,10 @@ class MethodClassTests(unittest.TestCase):
         self.root = Path(temporary.name) / "Manager"
 
     def test_classes_cover_the_owner_allowlist_and_the_observer_facade_holds_only_reads(self) -> None:
-        """Disjoint classes whose union is the owner allowlist; 26 reads; exemptions and sliced reads are reads."""
+        """Disjoint classes whose union is the owner allowlist; 27 reads; exemptions and sliced reads are reads."""
         owner = build_composition(self.root)
         self.addCleanup(owner.operations.shutdown, 2)
-        self.assertEqual(len(OBSERVER_READ_METHODS), 26)
+        self.assertEqual(len(OBSERVER_READ_METHODS), 27)
         self.assertLessEqual(SLICED_READER_METHODS, OBSERVER_READ_METHODS - READER_EXEMPT_METHODS)
         # Exact members: only these two calls take the reader per slice, so sampling holds no reader (QA-4.2-2)
         self.assertEqual(SLICED_READER_METHODS, {"inspect_mission_map", "continue_mission_map_inspection"})

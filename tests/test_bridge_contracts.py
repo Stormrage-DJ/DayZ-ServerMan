@@ -100,6 +100,8 @@ class BridgeContractTests(unittest.TestCase):
                 "request_operation_cancellation",
                 "request_shutdown",
                 "save_profile",
+                "get_editor_layout",
+                "save_editor_layout",
                 "save_selected_profile",
                 "save_backup_after_stop",
                 "save_automatic_update_checks",
