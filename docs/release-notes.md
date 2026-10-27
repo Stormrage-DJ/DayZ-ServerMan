@@ -2,38 +2,11 @@
 
 Each release has one section. The newest release is first.
 
-## Loot supply
+## 1.1.0 (2026-10-27)
 
-### What this release adds
+This release adds the mission map editor and the loot supply settings.
 
-- A **Loot Supply** tab in **Tweaks › Gameplay Tweaks**. It has one slider for
-  each item group. The slider sets how much of the group the economy keeps on
-  the map, from 0% to 300% in steps of 5%. The groups are weapons, weapon attachments,
-  magazines, loose ammunition, ammunition boxes, explosives, food and drink,
-  medical supplies, tools, clothing, and backpacks and containers.
-- An ammunition fill slider and a slider for the chance that a weapon spawns
-  with a magazine.
-- **Initial loot** (`InitialSpawn`) as a slider from 0% to 100%.
-- The throughput values **Item types per respawn**, **Items per type per
-  respawn** and **Restart respawn**.
-- The `loot-supply` and `weapon-magazines` targets of `tweaks show` and
-  `tweaks set`.
-
-### What this release changes
-
-- Each Tweaks page has one **Review changes** action and then one **Apply
-  changes** action for all changed files of the page. The page reloads once,
-  after the last apply.
-- The **Medical item spawns** setting is removed. The **Medical supplies**
-  slider replaces it. `tweaks medical set` accepts only `medical_loot_zones`.
-- **Initial spawn attempts** (`SpawnInitial`) has a correct description. It is
-  not a percentage.
-- **Respawn attempts** and **Initial spawn attempts** moved from the Respawns
-  tab to the Loot Supply tab.
-
-## Mission map editor
-
-### What this release adds
+### Mission map editor
 
 - A separate editor window for each profile. You open it from the main
   window. It edits the loot tiers, the container capacity and the encounters of
@@ -72,6 +45,37 @@ Each release has one section. The newest release is first.
   active mission. Restore and profile delete keep these records in step with
   the mission.
 
+### Loot supply
+
+- A **Loot Supply** tab in **Tweaks › Gameplay Tweaks**. It has one slider for
+  each item group. The slider sets how much of the group the economy keeps on
+  the map, from 0% to 300% in steps of 5%. The groups are weapons, weapon
+  attachments, magazines, loose ammunition, ammunition boxes, explosives, food
+  and drink, medical supplies, tools, clothing, and backpacks and containers.
+- An ammunition fill slider and a slider for the chance that a weapon spawns
+  with a magazine.
+- **Initial loot** (`InitialSpawn`) as a slider from 0% to 100%.
+- The throughput values **Item types per respawn**, **Items per type per
+  respawn** and **Restart respawn**.
+- The `loot-supply` and `weapon-magazines` targets of `tweaks show` and
+  `tweaks set`.
+
+### Changes
+
+- Each Tweaks page has one **Review changes** action and then one **Apply
+  changes** action for all changed files of the page. The page reloads once,
+  after the last apply.
+- **Initial spawn attempts** (`SpawnInitial`) has a correct description. It is
+  not a percentage.
+- **Respawn attempts** and **Initial spawn attempts** moved from the Respawns
+  tab to the Loot Supply tab.
+
+### Removed
+
+- The **Medical item spawns** setting. The **Medical supplies** slider replaces
+  it. `tweaks medical set` accepts only `medical_loot_zones`. A script that
+  calls `tweaks medical set medical_item_spawns` now ends with exit code 2.
+
 ### Known limitations
 
 - Older builds cannot restore archives that hold editor records. A profile
@@ -81,6 +85,8 @@ Each release has one section. The newest release is first.
   Restore such an archive with this release or a later one.
 - Polygon and vertex moves are drag only. A vertex coordinate table is not
   available yet.
+- The loot supply changes only `db/types.xml`. Types files of mods that
+  `cfgeconomycore.xml` adds do not change.
 
 ### Supported terrain families
 
