@@ -5,82 +5,24 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import unicodedata
 from dataclasses import dataclass, replace
 from datetime import datetime
-from pathlib import PurePosixPath
 from typing import Any
 
+# The entries, their path rules and the restore classification live in their own module (10.3);
+# they are re-exported for existing importers
+from .backup_entries import (  # noqa: F401
+    RESTORE_COMPATIBLE, RESTORE_LEGACY, RESTORE_PENDING_RUNTIME, SHA256, BackupManifestError, ManifestEntry,
+    entry_path_key, normalized_entry_path, restore_compatibility,
+)
+from .backup_editor_manifest import EDITOR_SCHEMA_VERSION, is_editor_entry, parse_editor_field
 from .profiles import ProfileValidationError, validate_profile_id, validate_relative_path
 
 
-# Manifest schema version written for new backups
-BACKUP_SCHEMA_VERSION = 3
+# Newest manifest schema this build reads; a backup is written at schema 4 only with editor records (D18)
+BACKUP_SCHEMA_VERSION = EDITOR_SCHEMA_VERSION
 # Backup identifier: letters, digits, dots, underscores, or hyphens
 BACKUP_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
-# Lowercase SHA-256 hex digest
-SHA256 = re.compile(r"[0-9a-f]{64}")
-# Restore-support classifications reported separately from backup integrity
-RESTORE_COMPATIBLE = "COMPATIBLE"
-RESTORE_PENDING_RUNTIME = "PENDING_RUNTIME_PROFILE_SUPPORT"
-RESTORE_LEGACY = "LEGACY_PROFILE_SCHEMA"
-
-
-class BackupManifestError(ValueError):
-    """Raised when a backup manifest violates its persisted contract."""
-    pass
-
-
-def normalized_entry_path(value: object) -> str:
-    """Return the validated forward-slash form of a backup entry path."""
-    if not isinstance(value, str) or not value or "\\" in value or ":" in value:
-        raise BackupManifestError("backup entry path is invalid")
-    # Normalize to NFC so path comparisons stay stable across writers
-    value = unicodedata.normalize("NFC", value)
-    try:
-        validate_relative_path(value, "backup entry")
-    except ProfileValidationError as error:
-        raise BackupManifestError("backup entry path contains unsafe Windows segments") from error
-    path = PurePosixPath(value)
-    # Reject absolute or traversing entries before they reach a manifest
-    if path.is_absolute() or ".." in path.parts or any(part in ("", ".") for part in path.parts):
-        raise BackupManifestError("backup entry path must be normalized and relative")
-    # Control characters are never valid inside persisted entry paths
-    if any(any(ord(character) < 32 for character in part) for part in path.parts):
-        raise BackupManifestError("backup entry path contains a control character")
-    return path.as_posix()
-
-
-def entry_path_key(value: str) -> tuple[str, str]:
-    """Return the one Windows-safe manifest ordering key."""
-    return (value.casefold(), value)
-
-
-@dataclass(frozen=True)
-class ManifestEntry:
-    """One verified file entry recorded in a backup manifest."""
-
-    path: str
-    size: int
-    sha256: str
-
-    @classmethod
-    def parse(cls, value: object) -> ManifestEntry:
-        """Parse and validate one manifest entry object."""
-        if not isinstance(value, dict) or set(value) != {"path", "size", "sha256"}:
-            raise BackupManifestError("manifest entry fields are invalid")
-        # Sizes are non-negative file lengths; digests are lowercase SHA-256
-        size = value["size"]
-        digest = value["sha256"]
-        if not isinstance(size, int) or isinstance(size, bool) or size < 0:
-            raise BackupManifestError("manifest entry size is invalid")
-        if not isinstance(digest, str) or SHA256.fullmatch(digest) is None:
-            raise BackupManifestError("manifest entry checksum is invalid")
-        return cls(normalized_entry_path(value["path"]), size, digest)
-
-    def to_dict(self) -> dict[str, object]:
-        """Return the entry as its persisted JSON object."""
-        return {"path": self.path, "size": self.size, "sha256": self.sha256}
 
 
 @dataclass(frozen=True)
@@ -100,6 +42,8 @@ class BackupManifest:
     runtime_profile: str | None = None
     reconstruction: dict | None = None
     directories: tuple[str, ...] = ()
+    # The `editor` field of schema 4: the carried association records and originals
+    editor: dict | None = None
 
     @classmethod
     def parse(cls, value: object) -> BackupManifest:
@@ -111,16 +55,19 @@ class BackupManifest:
         }
         if not isinstance(value, dict):
             raise BackupManifestError("backup manifest fields are invalid")
-        # Only the two published schema versions are accepted
+        # Only the published schema versions are accepted
         version = value.get("schema_version")
-        if not isinstance(version, int) or isinstance(version, bool) or version not in (1, 2, 3):
+        if not isinstance(version, int) or isinstance(version, bool) or version not in (1, 2, 3, 4):
             raise BackupManifestError("backup manifest schema is unsupported")
         # Version 2 adds the semantic digest and runtime profile fields
         fields = common_fields if version == 1 else common_fields | {
             "semantic_profile_digest", "runtime_profile",
         }
-        if version == 3:
+        # Schema 4 has the schema 3 fields and the editor field
+        if version >= 3:
             fields |= {"reconstruction", "directories"}
+        if version == EDITOR_SCHEMA_VERSION:
+            fields |= {"editor"}
         if set(value) != fields:
             raise BackupManifestError("backup manifest fields are invalid")
         # Validate identity, revisions, and the UTC timestamp
@@ -161,12 +108,20 @@ class BackupManifest:
                 runtime_profile = validate_relative_path(runtime_profile, "runtime_profile")
             except ProfileValidationError as error:
                 raise BackupManifestError("runtime profile identity is invalid") from error
+        # The editor prefix is accepted only with schema 4, and there only in the layout of its field
+        editor = None
+        if version == EDITOR_SCHEMA_VERSION:
+            editor = parse_editor_field(value["editor"], value["profile_id"], entries)
+        elif any(is_editor_entry(item.path) for item in entries):
+            raise BackupManifestError("editor entries need manifest schema 4")
         reconstruction, directories = None, ()
-        if version == 3:
+        if version >= 3:
             from .backup_reconstruction import validate_directories, validate_reconstruction
             try:
                 directories = validate_directories(value["directories"], entries, normalized_entry_path, entry_path_key)
-                reconstruction = validate_reconstruction(value["reconstruction"], value["profile_id"], semantic_digest, runtime_profile, entries, directories)
+                # The editor field, not the reconstruction metadata, accounts for the editor entries
+                payload = tuple(item for item in entries if not is_editor_entry(item.path))
+                reconstruction = validate_reconstruction(value["reconstruction"], value["profile_id"], semantic_digest, runtime_profile, payload, directories)
             except ValueError as error:
                 raise BackupManifestError(str(error)) from error
         return cls(
@@ -182,6 +137,7 @@ class BackupManifest:
             runtime_profile=runtime_profile,
             reconstruction=reconstruction,
             directories=directories,
+            editor=editor,
         )
 
     def unsigned_dict(self) -> dict[str, Any]:
@@ -200,9 +156,12 @@ class BackupManifest:
         if self.schema_version >= 2:
             result["semantic_profile_digest"] = self.semantic_profile_digest
             result["runtime_profile"] = self.runtime_profile
-        if self.schema_version == 3:
+        if self.schema_version >= 3:
             result["reconstruction"] = self.reconstruction
             result["directories"] = list(self.directories)
+        # The manifest digest covers the editor field
+        if self.schema_version == EDITOR_SCHEMA_VERSION:
+            result["editor"] = self.editor
         return result
 
     def signed(self) -> BackupManifest:
@@ -225,24 +184,6 @@ def manifest_digest(value: dict[str, Any]) -> str:
         allow_nan=False,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
-
-
-def restore_compatibility(manifest: BackupManifest) -> tuple[str, str]:
-    """Classify restore support separately from verified backup integrity."""
-    # Legacy backups predate the profile-v2 runtime mapping
-    if manifest.schema_version == 1:
-        return (
-            RESTORE_LEGACY,
-            "This legacy backup cannot be restored with a profile-v2 context.",
-        )
-    # Entries outside the payload trees cannot be mapped yet
-    if any(entry.path.split("/", 1)[0] not in {"payload", "runtime-profile"}
-           for entry in manifest.entries):
-        return (
-            RESTORE_PENDING_RUNTIME,
-            "This backup contains a target form that the current restore mapper does not support.",
-        )
-    return (RESTORE_COMPATIBLE, "This backup is compatible with the current restore mapper.")
 
 
 def _is_utc(value: str) -> bool:

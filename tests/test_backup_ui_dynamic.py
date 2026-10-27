@@ -166,7 +166,7 @@ class BackupUiDynamicTests(unittest.TestCase):
         # Assemble the page from the real frontend scripts and the harness
         scripts = "\n".join(
             (FRONTEND / name).read_text(encoding="utf-8")
-            for name in ("operation_labels.js", "operation_messages.js", "diagnostic_labels.js", "workspace_context.js",
+            for name in ("operation_labels.js", "operation_messages.js", "operation_results.js", "diagnostic_labels.js", "workspace_context.js",
                          "backup_display.js", "backups.js", "backup_history.js")
         )
         page_text = (

@@ -72,6 +72,17 @@ class InstallationGuard:
                 yield
 
 
+    @contextmanager
+    def mutex(self, dayz_root: Path) -> Iterator[None]:
+        """Run the block under the installation mutex only, without a STOPPED proof.
+
+        Adoption writes only manager-root records and renames only manager-root folders. So a running server
+        does not matter (AR-3, Architect 2026-10-16 14:33:32 in evidence 10.1). A busy mutex refuses first.
+        """
+        with self._mutex.guard(str(dayz_root)):
+            yield
+
+
 def _refusal_code(state: ServerState) -> str:
     """Map the blocking server state to its failure code."""
     if state == ServerState.RUNNING_EXTERNAL:

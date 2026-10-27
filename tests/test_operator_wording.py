@@ -11,17 +11,30 @@ except ModuleNotFoundError:
 
 
 from dayz_serverman.application.log_activity import METHOD_TEXTS, format_manager_record
+from dayz_serverman.application.mission_map_recovery import EDITOR_KIND
+from dayz_serverman.domain.mission_map_records import APPLIED_KINDS
+from dayz_serverman.repositories.mission_map_journal_store import JOURNAL_KINDS
 from dayz_serverman.bridge.contracts import ErrorCode
 
 PACKAGE = ROOT / "runnable" / "src" / "python" / "dayz_serverman"
 # Modules that hold the wording catalogue; raw identifiers are keys there
 CATALOGUE = ("operation_labels.js", "operation_messages.js", "diagnostic_labels.js", "host_sentences.js")
+# Accepted journal kinds precede their operation submit registrations in task 8.9; the 8.13 medical toggle
+# runs in the medical feature's operation, so its journal kind has that kind's texts
+JOURNAL_OPERATION_KINDS = {"apply": EDITOR_KIND,
+                           "restore_original": "RESTORE_MISSION_MAP_ORIGINAL",
+                           "restore_previous": "RESTORE_MISSION_MAP_PREVIOUS",
+                           "medical": "APPLY_MEDICAL_FEATURE",
+                           # The adoption journal of leaf 10.35 runs in its own lane kind (AR-3)
+                           "adopt": "ADOPT_MISSION_MAP"}
 # Phases that the lane itself sets
 WAITING_PHASES = ("accepted", "queued", "running")
 TERMINAL_PHASES = ("complete", "cancelled", "failed", "shutdown")
 # An upper-case identifier with an underscore, and a snake_case word
 UPPER_IDENTIFIER = re.compile(r"[A-Z]{2,}_[A-Z_]+")
 SNAKE_WORD = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
+# A mission file name that an operator text names on purpose, such as env/zombie_territories.xml (7.3 Product Owner texts)
+MISSION_FILE = re.compile(r"\b[\w/]+\.(?:xml|map)\b")
 # String literals of a script: double-quoted, single-quoted, and template literals
 LITERAL = re.compile(r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'|`(?:[^`\\]|\\.)*`')
 # Record fields whose raw value must never be put into text
@@ -34,6 +47,19 @@ ALLOWED_INTERPOLATIONS = {
     "shell_ui.js": ("overall.kind",),           # style class of the status dot
     "configuration_edit.js": ("field.kind",),   # value type of a field in a validation sentence
 }
+# The one read of a host message outside the catalogue: the file and the exact read (leaf 8.18). Under a restore
+# kind, the editor shows the host text of a late file change. That text names the file. Rule: Architect 2026-10-15
+# 15:46:42, ruling 6; condition of Architect 2026-10-16 15:49:45. A new read needs its own ruling.
+HOST_MESSAGE_READS = {"map_editor_publish_words.js": ("terminal_error?.message",)}
+# Reads of a host message: a message of a host error or of a terminal error
+HOST_MESSAGE = re.compile(r"\b(?:result|response|selected|preview|medical|inventory|profiles|snapshot)\??\.error"
+                          r"\??\.message|terminal_error\??\.message|\berror\.message === ")
+
+
+def host_message_reads(name: str, source: str) -> tuple[str, ...]:
+    """Return the host-message reads of a script that its allowance does not hold; empty when it holds them."""
+    found = tuple(HOST_MESSAGE.findall(source))
+    return () if found == HOST_MESSAGE_READS.get(name, ()) else found
 
 
 def backend_kinds() -> set[str]:
@@ -83,16 +109,22 @@ class WordingCatalogueTests(unittest.TestCase):
         cls.labels = labels
 
     def test_every_backend_kind_has_the_four_texts(self) -> None:
-        """Each submitted kind has a name and three result sentences."""
-        kinds = backend_kinds()
-        self.assertEqual(len(kinds), 22, sorted(kinds))
+        """Each submitted or accepted journal kind has exactly four catalogue texts."""
+        submitted = backend_kinds()
+        self.assertEqual(len(submitted), 22, sorted(submitted))
+        self.assertEqual(APPLIED_KINDS, {"apply", "restore_original", "restore_previous", "medical"})
+        self.assertEqual(set(JOURNAL_OPERATION_KINDS), JOURNAL_KINDS)
+        journal_kinds = set(JOURNAL_OPERATION_KINDS.values())
+        self.assertEqual(journal_kinds, {"APPLY_MISSION_MAP", "RESTORE_MISSION_MAP_ORIGINAL", "RESTORE_MISSION_MAP_PREVIOUS",
+                                         "APPLY_MEDICAL_FEATURE", "ADOPT_MISSION_MAP"})
+        kinds = submitted | journal_kinds
         for kind in sorted(kinds):
             self.assertIn(kind, self.kinds, f"operation kind without a catalogue entry: {kind}")
             texts = re.findall(r'"([^"]+)"', self.kinds[kind])
             self.assertEqual(len(texts), 4, kind)
             for text in texts:
                 self.assertIsNone(UPPER_IDENTIFIER.search(text), text)
-        self.assertEqual(sorted(self.kinds), sorted(kinds), "catalogue kinds that the backend does not submit")
+        self.assertEqual(set(self.kinds), kinds, "catalogue kinds differ from submitted and accepted journal kinds")
 
     def test_every_backend_phase_has_an_entry(self) -> None:
         """Each checkpoint phase name is the phase part of at least one catalogue row."""
@@ -153,7 +185,7 @@ class OperatorTextLeakTests(unittest.TestCase):
                 if " " not in text.strip():
                     continue
                 self.assertIsNone(UPPER_IDENTIFIER.search(text), f"{name}: {literal}")
-                self.assertIsNone(SNAKE_WORD.search(text), f"{name}: {literal}")
+                self.assertIsNone(SNAKE_WORD.search(MISSION_FILE.sub(" ", text)), f"{name}: {literal}")
 
     def test_templates_do_not_interpolate_raw_record_fields(self) -> None:
         """Outside the catalogue and the bar model no text template inserts a raw state, kind, phase, or code."""
@@ -170,12 +202,15 @@ class OperatorTextLeakTests(unittest.TestCase):
 
     def test_host_messages_pass_through_the_catalogue(self) -> None:
         """Only the catalogue reads the message of a host error or of a terminal error."""
-        pattern = re.compile(r"\b(?:result|response|selected|preview|medical|inventory|profiles|snapshot)\??\.error"
-                             r"\??\.message|terminal_error\??\.message|\berror\.message === ")
         for name, source in self.scripts.items():
             if name in CATALOGUE:
                 continue
-            self.assertIsNone(pattern.search(source), name)
+            self.assertEqual(host_message_reads(name, source), (), name)
+        # The allowance holds only its one read in its one file: a second read or a read elsewhere fails
+        allowed = self.scripts["map_editor_publish_words.js"]
+        self.assertEqual(host_message_reads("map_editor_publish_words.js", allowed), ())
+        self.assertNotEqual(host_message_reads("map_editor_publish_words.js", allowed + "\nx.terminal_error.message;"), ())
+        self.assertNotEqual(host_message_reads("map_editor_publish.js", "record.terminal_error?.message;"), ())
         for name in ("shell_ui.js", "backups.js", "configuration.js", "migration.js", "mods_operations.js",
                      "mod-publication.js", "profile_restore.js", "restore.js", "settings.js", "tweaks.js",
                      "update_status.js"):

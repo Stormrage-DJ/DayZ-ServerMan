@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- EDITOR_CSP -->
+  <title>Bridge transfer measurement - DayZ-ServerMan</title>
+</head>
+<body>
+  <p>Measuring bridge transfers. Close this window to stop the run.</p>
+  <p id="measure-status">Waiting for the first payload.</p>
+  <script>
+    // Measurement page of tools/measure_bridge_transfer.py: receive base64 PNG text, decode it, acknowledge
+    "use strict";
+    const measureState = { parts: [], kept: [] };
+
+    // Join the received text, decode it as a data: image and report to Python
+    async function measureDecode(id, keep) {
+      const started = performance.now();
+      const text = measureState.parts.join("");
+      measureState.parts = [];
+      document.getElementById("measure-status").textContent = "Decoding " + id;
+      const image = new Image();
+      let report;
+      try {
+        image.src = "data:image/png;base64," + text;
+        await image.decode();
+        report = { id, ok: true, width: image.naturalWidth, height: image.naturalHeight, chars: text.length };
+      } catch (error) {
+        report = { id, ok: false, error: String((error && error.message) || error), chars: text.length };
+      }
+      report.decode_ms = performance.now() - started;
+      // Chromium reports the JavaScript heap; decoded image memory is not part of it
+      report.js_heap = performance.memory ? performance.memory.usedJSHeapSize : null;
+      // Keep the images of one tier set, as the editor keeps all tier layers; release the others
+      if (keep && report.ok) measureState.kept.push(image); else image.removeAttribute("src");
+      pywebview.api.done(report);
+    }
+
+    // Bridge entry points that Python calls through evaluate_js
+    window.measurePart = (text) => { measureState.parts.push(text); return measureState.parts.length; };
+    window.measureFinish = (id, keep) => { measureDecode(id, keep); return true; };
+    window.measureReceive = (id, text, keep) => { measureState.parts = [text]; measureDecode(id, keep); return true; };
+    window.measureReset = () => {
+      measureState.parts = [];
+      for (const image of measureState.kept) image.removeAttribute("src");
+      measureState.kept = [];
+      return true;
+    };
+
+    // Tell Python that the page and its js_api are ready
+    window.addEventListener("pywebviewready", () => pywebview.api.ready(navigator.userAgent));
+  </script>
+</body>
+</html>

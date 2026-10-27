@@ -31,10 +31,10 @@ class UiShellStaticTests(unittest.TestCase):
         cls.script = "\n".join(
             (FRONTEND / name).read_text(encoding="utf-8")
             for name in (
-                "shell_ui.js", "operation_labels.js", "operation_messages.js",
+                "shell_ui.js", "operation_labels.js", "operation_messages.js", "operation_failures.js",
                 "operation_announcer.js", "operation_bar_view.js", "operation_bar.js",
                 "busy_controls.js", "workspace_context.js", "transition_guard.js", "profile_context.js",
-                "configuration_catalog.js", "tweaks_catalog.js", "tweaks_render.js", "tweaks.js",
+                "configuration_catalog.js", "tweaks_catalog.js", "tweaks_render.js", "tweaks.js", "tweaks_page.js",
                 "tweaks_dialog.js", "configuration_edit.js", "configuration_context.js",
                 "configuration_fields.js", "configuration.js", "backup_display.js", "backups.js",
                 "sections.js", "app.js",

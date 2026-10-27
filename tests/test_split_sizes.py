@@ -37,6 +37,16 @@ OWNER_METHODS_BEFORE_SPLIT = (
     "publish_mods_and_keys", "apply_mods_and_restart", "verify_mod_files", "get_update_status",
     "request_update_check", "read_log",
 )
+# The additive editor methods are inserted at their coordinator position.
+MISSION_MAP_METHODS = ("load_mission_map", "save_mission_map_plan", "inspect_mission_map", "continue_mission_map_inspection", "cancel_mission_map_inspection",
+                       "set_aside_mission_map_plan", "read_mission_map_tier_layer", "read_mission_map_background",
+                       "preview_mission_map", "apply_mission_map", "preview_mission_map_restore", "restore_mission_map",
+                       "inspect_mission_map_recovery", "export_mission_map_plan",
+                       "preview_mission_map_import", "import_mission_map_plan", "preview_mission_map_copy",
+                       "copy_mission_map_plan", "preview_mission_map_adoption", "adopt_mission_map")
+OWNER_METHODS_WITH_MISSION_MAP = (
+    OWNER_METHODS_BEFORE_SPLIT[:37] + MISSION_MAP_METHODS + OWNER_METHODS_BEFORE_SPLIT[37:]
+)
 
 
 class SplitSizeTests(unittest.TestCase):
@@ -71,8 +81,8 @@ class SplitSizeTests(unittest.TestCase):
         composition = build_composition(Path(temporary.name) / "Manager")
         self.addCleanup(composition.operations.shutdown, 2)
         # Compare the set, then the order of the handler table that the facade copied
-        self.assertEqual(composition.bridge.allowed_methods, frozenset(OWNER_METHODS_BEFORE_SPLIT))
-        self.assertEqual(tuple(composition.bridge._handlers), OWNER_METHODS_BEFORE_SPLIT)
+        self.assertEqual(composition.bridge.allowed_methods, frozenset(OWNER_METHODS_WITH_MISSION_MAP))
+        self.assertEqual(tuple(composition.bridge._handlers), OWNER_METHODS_WITH_MISSION_MAP)
         # "Update & restart" is still wrapped by the running-profile check of the composition root
         handler = composition.bridge._handlers["apply_mods_and_restart"]
         self.assertEqual(handler.__qualname__, "for_running_profile.<locals>.checked")

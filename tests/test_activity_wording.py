@@ -14,6 +14,7 @@ except ModuleNotFoundError:
     from ui_harness_support import FRONTEND, ROOT
 
 from dayz_serverman.application import activity_wording as wording
+from dayz_serverman.application.medical_features import NO_ZONE_CHANGE
 from dayz_serverman.application.log_activity import (
     EVENT_TEXTS, HIDDEN_EVENTS, METHOD_TEXTS, format_manager_record,
 )
@@ -115,7 +116,8 @@ class MutationConflictCauseTests(unittest.TestCase):
                 sites += 1
                 self.assertIn("ErrorCode.MUTATION_CONFLICT", block, path.name)
                 self.assertIn("details=error.details", block, path.name)
-        self.assertEqual(sites, 17)
+        # 8.7 added the mission map Apply lane operation, 8.8 the restore lane operations (one site), 10.35 adoption
+        self.assertEqual(sites, 20)
 
     def test_block_reason_is_logged_when_it_is_set(self) -> None:
         """QF-008: Manager diagnostics holds every block reason; Manager activity words it."""
@@ -170,6 +172,11 @@ class ActivityFormatterTests(unittest.TestCase):
         self.assertEqual(wording.error_text("MUTATION_CONFLICT", "Mutations are blocked by unresolved restore recovery."),
                          "Changes are blocked until recovery is resolved. A backup restore did not finish cleanly. "
                          "Open Backups; DayZ-ServerMan checks the unfinished restore again there.")
+        # 8.11 F1: the refused submission after an editor recovery-required failure (Product Owner 2026-10-17 14:50:44)
+        self.assertEqual(wording.error_text("MUTATION_CONFLICT", "Mutations are blocked by unresolved mission map recovery."),
+                         "Changes are blocked until recovery is resolved. A mission map change did not finish, and its "
+                         "files cannot be recovered safely. Check Manager diagnostics. Then select Check again in the map "
+                         "editor, or restart DayZ-ServerMan; it checks again when it starts.")
         self.assertEqual(activity("schedule.saved", {"profile_id": "alpha", "action": "stop", "hour": 4, "minute": 5}),
                          "Daily schedule saved: save and stop at 04:05.")
         self.assertEqual(activity("schedule.saved", {"profile_id": "alpha", "action": None}), "Daily schedule turned off.")
@@ -202,6 +209,22 @@ class ActivityFormatterTests(unittest.TestCase):
         self.assertEqual(wording.error_text("UPDATE_RESULT_UNKNOWN", ""), wording.ERROR_TEXTS["UPDATE_RESULT_UNKNOWN"])
         self.assertEqual(wording.error_text("AUTHENTICATION_FAILED", "", kind="AUTHENTICATE_STEAMCMD"),
                          wording.ERROR_TEXTS["AUTHENTICATION_FAILED"])
+
+    def test_editor_close_warnings_keep_private_details_in_diagnostics(self) -> None:
+        """Show both close warnings without their identifiers or native details."""
+        cases = {
+            "map_editor.settle_failed": "The map editor could not complete its close request.",
+            "map_editor.destroy_timeout": "The map editor did not close within the allowed time.",
+        }
+        fields = {"profile_id": "PRIVATE_PROFILE", "cause": "acknowledgement_timeout",
+                  "native_detail": "PRIVATE_NATIVE_DETAIL"}
+        for event, sentence in cases.items():
+            with self.subTest(event=event):
+                text = activity(event, fields, "WARNING")
+                self.assertEqual(text, sentence + " Details are in Manager diagnostics.")
+                self.assertFalse(wording.leaks_identifier(text))
+                for private in (event, *fields.values()):
+                    self.assertNotIn(private, text)
 
     def test_every_backend_event_and_frontend_method_is_known(self) -> None:
         """Each event that the backend logs is hidden or worded; each bridge method of the pages has a subject."""
@@ -240,6 +263,14 @@ class ActivityFormatterTests(unittest.TestCase):
         restart = messages.split("const operationRestartApplyTexts = Object.freeze({", 1)[1].split("});", 1)[0]
         self.assertEqual(dict(re.findall(r'^  (\w+): "([^"]+)",$', restart, re.MULTILINE)),
                          wording.RESTART_APPLY_TEXTS)
+        # The host sentences shown unchanged have the same openings in both catalogues
+        shown = messages.split("const operationShownHostTexts = Object.freeze([", 1)[1].split("]);", 1)[0]
+        self.assertEqual(tuple(re.findall(r'^  "([^"]+)",$', shown, re.MULTILINE)), wording.SHOWN_HOST_TEXTS)
+        # Such a sentence is shown as it is, also under a code that has its own text
+        text = f"{wording.SHOWN_HOST_TEXTS[0]}the file is not UTF-8. No file was changed."
+        self.assertEqual(wording.error_text("RECOVERY_REQUIRED", text), text)
+        # The window words a medical toggle without a change with the host's exact sentence
+        self.assertIn(f"const OPERATION_MEDICAL_UNCHANGED = {json.dumps(NO_ZONE_CHANGE)};", messages)
 
     def test_legacy_preview_names_settings_by_their_labels(self) -> None:
         """The import preview says "DayZ server folder", never the settings field name."""

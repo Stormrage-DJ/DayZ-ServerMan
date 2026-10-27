@@ -110,7 +110,8 @@ def verify_directory(directory: Path, manifest: BackupManifest) -> None:
         path = directory / entry.path
         if path.stat().st_size != entry.size or sha256_file(path) != entry.sha256:
             raise BackupVerificationError("Snapshot payload checksum does not match.")
-    if manifest.schema_version == 3:
+    # Schema 4 keeps the schema 3 directories and reconstruction metadata
+    if manifest.schema_version >= 3:
         actual_directories = {path.relative_to(directory).as_posix() for path in directory.rglob("*") if path.is_dir()}
         expected_directories = set(manifest.directories)
         for entry in manifest.entries:
@@ -119,3 +120,7 @@ def verify_directory(directory: Path, manifest: BackupManifest) -> None:
             raise BackupVerificationError("Snapshot directories do not match the manifest.")
         from .backup_reconstruction import verify_reconstruction_bytes
         verify_reconstruction_bytes(manifest, read_bytes_shared(directory / manifest.reconstruction["config_entry"]))
+    # The editor inventory check of schema 4 reads the carried record files
+    if manifest.editor is not None:
+        from .backup_editor_records import verify_editor_entries
+        verify_editor_entries(manifest, lambda path: read_bytes_shared(directory.joinpath(*path.split("/"))))

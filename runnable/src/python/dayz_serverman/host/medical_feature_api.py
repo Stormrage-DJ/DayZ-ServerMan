@@ -23,19 +23,22 @@ class MedicalFeatureHostMethods:
     def apply_medical_feature(
         self, profile_id: object, feature: object, enabled: object,
         expected_profile_revision: object, expected_settings_revision: object,
-        expected_digest: object,
+        expected_digest: object, preview_fingerprint: object = None,
     ) -> dict[str, Any]:
-        """Apply a reviewed medical feature change."""
+        """Apply a reviewed medical feature change; a zone review of an editor-managed mission adds its fingerprint."""
         return self._medical_feature_edit("apply_medical_feature", profile_id, feature, enabled,
-            expected_profile_revision, expected_settings_revision, expected_digest)
+            expected_profile_revision, expected_settings_revision, expected_digest, preview_fingerprint)
 
     def _medical_feature_edit(
         self, method: str, profile_id: object, feature: object, enabled: object,
         expected_profile_revision: object, expected_settings_revision: object,
-        expected_digest: object,
+        expected_digest: object, preview_fingerprint: object = None,
     ) -> dict[str, Any]:
-        """Dispatch a medical feature edit request."""
-        return self._invoke(method, {"profile_id": profile_id, "feature": feature,
+        """Dispatch a medical feature edit request; the fingerprint field exists only when the review gave one (8.13)."""
+        parameters = {"profile_id": profile_id, "feature": feature,
             "enabled": enabled, "expected_profile_revision": expected_profile_revision,
             "expected_settings_revision": expected_settings_revision,
-            "expected_digest": expected_digest})
+            "expected_digest": expected_digest}
+        if preview_fingerprint is not None:
+            parameters["preview_fingerprint"] = preview_fingerprint
+        return self._invoke(method, parameters)

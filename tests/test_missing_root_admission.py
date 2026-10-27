@@ -19,13 +19,16 @@ from dayz_serverman.application.operations.models import (
     TERMINAL_STATES, OperationFailure, QueueUnavailable,
 )
 from dayz_serverman.application.operations.store import OperationStore
+from dayz_serverman.application.mission_map_recovery import EDITOR_KIND, RECOVERY_NO_ROOT
+from dayz_serverman.application.mission_map_recovery_coordinator import MissionMapRecoveryCoordinator
 from dayz_serverman.observability.structured_log import StructuredLogger
 
 PACKAGE = ROOT / "runnable" / "src" / "python" / "dayz_serverman"
-# The three startup reasons that carry the cause, with their owners
+# The four startup reasons that carry the cause, with their owners
 TAGGED = (("Mutations are blocked by unresolved mod publication.", None),
           ("Direct profile restore recovery requires a configured DayZ root.", None),
-          ("Backup restore recovery requires a configured DayZ root.", "RESTORE_BACKUP"))
+          ("Backup restore recovery requires a configured DayZ root.", "RESTORE_BACKUP"),
+          (RECOVERY_NO_ROOT, EDITOR_KIND))
 # Blocks of other causes: SteamCMD, publication not stopped, migration
 OTHER = (("Mutations are blocked by an interrupted SteamCMD update with an unknown result.", None),
          ("Mutations are blocked by an interrupted mod publication while the server is not proven stopped.", None),
@@ -68,7 +71,7 @@ class MissingRootAdmissionTests(unittest.TestCase):
         return self.manager.submit("SAVE_SETTINGS", work or self.work, repairs_missing_dayz_root=True)
 
     def tag_all(self) -> None:
-        """Set the three cause-tagged blocks."""
+        """Set the four cause-tagged blocks."""
         for reason, owner in TAGGED:
             self.manager.block_for_missing_dayz_root(reason, owner)
 
@@ -101,6 +104,26 @@ class MissingRootAdmissionTests(unittest.TestCase):
                         self.tag_all()
                         self.assert_refused(*TAGGED[-1])
         self.assertEqual(self.seen, [])
+
+    def test_editor_startup_block_admits_the_existing_settings_repair(self) -> None:
+        """An actual missing-root editor recovery sets the cause that permits the settings repair."""
+        from types import SimpleNamespace
+        from tests.test_mission_map_journal_paths import snapshot
+        from tests.test_mission_map_recovery_phases import RecoveryFixture
+
+        fixture = RecoveryFixture()
+        fixture.setUp()
+        self.addCleanup(fixture.tearDown)
+        fixture.crash_at("AFTER_PREPARED")
+        recovery = fixture.recovery()
+        recovery.settings = SimpleNamespace(load=lambda: SimpleNamespace(dayz_root=None))
+        before = snapshot(Path(fixture.temp.name))
+        MissionMapRecoveryCoordinator(recovery, self.manager).startup()
+        self.assertEqual(self.manager.recovery_block_pair(), TAGGED[-1])
+        self.assertEqual(self.wait(self.repair().operation_id).state.value, "SUCCEEDED")
+        self.assertEqual(self.seen, [True])
+        self.assertEqual(self.manager.recovery_block_pair(), (RECOVERY_NO_ROOT, EDITOR_KIND))
+        self.assertEqual(snapshot(Path(fixture.temp.name)), before)
 
     def test_c_the_flag_belongs_to_the_settings_save_only(self) -> None:
         """(c) The flag with another kind is a programming error, with or without blocks."""
@@ -169,8 +192,8 @@ class MissingRootAdmissionTests(unittest.TestCase):
                          [("WARNING", "SAVE_SETTINGS")])
         self.assertEqual(bypass[0]["fields"]["reasons"], [reason for reason, _owner in TAGGED])
 
-    def test_v_only_the_settings_save_and_the_three_startup_paths_use_the_rule(self) -> None:
-        """(v) Static: one place passes the flag, three startup places set the cause."""
+    def test_v_only_the_settings_save_and_the_four_startup_paths_use_the_rule(self) -> None:
+        """(v) Static: one place passes the flag, four startup places set the cause."""
         flags, causes = {}, {}
         for path in PACKAGE.rglob("*.py"):
             source = path.read_text(encoding="utf-8")
@@ -179,7 +202,8 @@ class MissingRootAdmissionTests(unittest.TestCase):
             if found := re.findall(r"\.block_for_missing_dayz_root\(", source):
                 causes[path.name] = len(found)
         self.assertEqual(flags, {"coordinator.py": 1})
-        self.assertEqual(causes, {"mod_publication_startup.py": 1, "startup_recoveries.py": 2})
+        self.assertEqual(causes, {"mod_publication_startup.py": 1, "startup_recoveries.py": 2,
+                                  "mission_map_recovery_coordinator.py": 1})
 
 
 if __name__ == "__main__":

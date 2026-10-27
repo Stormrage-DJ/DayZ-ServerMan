@@ -78,7 +78,7 @@ class ModsUiTests(unittest.TestCase):
         # The start outcome of an apply is worded by the catalogue, as in the operation bar
         self.assertIn("window.ServerManOperationBar.pageResult(operation)", publication)
         self.assertIn('result.start_state === "CANCELLED"',
-                      (FRONTEND / "operation_messages.js").read_text(encoding="utf-8"))
+                      (FRONTEND / "operation_results.js").read_text(encoding="utf-8"))
         self.assertIn('setAttribute("aria-modal", "true")', publication)
         self.assertIn('event.key === "Escape"', publication)
         self.assertIn('event.key !== "Tab"', publication)

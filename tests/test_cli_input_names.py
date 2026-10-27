@@ -63,6 +63,9 @@ def valid_type_text(text: str) -> bool:
         return False
     options = [option for command in COMMANDS if command.path[:len(prefix)] == prefix for option in command.options]
     choices = {choice for option in options for choice in option.choices}
+    # A positional that the pre-step checks lists its words in the metavar, for example "original|previous" (10.32)
+    choices |= {word for option in options if option.form is Form.POSITIONAL and not option.choices
+                and "|" in (option.metavar or "") for word in str(option.metavar).split("|")}
     known = {option.flag for option in options} | {"--json", "--yes"}
     rest = words[len(prefix):]
     # Each word is a known option, a choice value, or the value after an option

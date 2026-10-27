@@ -27,9 +27,22 @@ Do not copy only the starter or `src` directory.
   - [Restore an existing profile](#restore-an-existing-profile)
   - [Restore a deleted profile from a ZIP](#restore-a-deleted-profile-from-a-zip)
 - [When changes are blocked](#when-changes-are-blocked)
+- [Loot supply](#loot-supply)
+- [The mission map editor](#the-mission-map-editor)
+  - [Open the editor](#open-the-editor)
+  - [Terrain bounds and coordinates](#terrain-bounds-and-coordinates)
+  - [Zones, tiers, and container capacity](#zones-tiers-and-container-capacity)
+  - [Map image](#map-image)
+  - [Save, export, import, and copy a plan](#save-export-import-and-copy-a-plan)
+  - [Preview, Apply, and Restore](#preview-apply-and-restore)
+  - [Native limits](#native-limits)
+  - [Supported terrain families](#supported-terrain-families)
+  - [Infected, bandits, wolves, and bears](#infected-bandits-wolves-and-bears)
+  - [Backups with editor records](#backups-with-editor-records)
 - [Command line](#command-line)
   - [Run a command](#run-a-command)
   - [Commands](#commands)
+  - [Map commands](#map-commands)
   - [Which profile a command uses](#which-profile-a-command-uses)
   - [Questions, reviews, and --yes](#questions-reviews-and---yes)
   - [Scripts, terminals, and --json](#scripts-terminals-and---json)
@@ -130,6 +143,12 @@ automatic check runs. **Check now** still checks. **Update all**, **Update &
 start**, and **Update & restart** still ask Steam first and send the same
 Workshop item numbers.
 
+## Edit network ports
+
+Edit existing ports under **Configuration → Network**. The game port and Steam query port appear together.
+Edit both ports and any other configuration fields, then use the existing **Review changes** and **Apply changes** actions below.
+The review shows all old and new values. **Discard changes** discards the complete draft. Ports take effect at the next server start; this does not restart the server.
+
 ## Create a server profile
 
 Open **Profiles** and select **New profile**. Enter a display name, game port,
@@ -193,8 +212,8 @@ The workspaces are in three groups:
 - **Server setup**
   - **Profiles** defines the launch command, runtime profile, and ordered mods.
   - **Configuration** edits the selected server's core configuration.
-  - **Tweaks** edits gameplay, economy, weather, events, spawn, and population
-    data.
+  - **Tweaks** edits gameplay, economy, loot supply, weather, events, spawn,
+    and population data.
 - **Application**
   - **Settings** sets the application folders, the backup destination, the
     update checks, and the legacy import.
@@ -575,6 +594,327 @@ guide describes.
 Keep verified recovery copies until they are no longer needed. Restore
 journals remain in `data/operations/`.
 
+## Loot supply
+
+**Tweaks › Gameplay Tweaks › Loot Supply** sets how much loot of each kind the
+central economy keeps on the map. The rules are the same for every map. They
+read the item category and the class name, not a list of one map.
+
+- **Item supply** has one slider for each item group. The groups are weapons,
+  weapon attachments, magazines, loose ammunition, ammunition boxes,
+  explosives, food and drink, medical supplies, tools, clothing, and backpacks
+  and containers.
+  The slider goes from 0% to 300% in steps of 5%. It scales `nominal` and `min`
+  of every item type of the group in `db/types.xml`. 100% keeps the original.
+  Below each slider, the window shows how many item types the group has and
+  about how many items the map holds at that percentage.
+- **Ammunition fill** scales how full spawned ammunition piles and magazines
+  are (`quantmin` and `quantmax`), up to completely full.
+- **Weapons with a magazine** scales the chance that a spawned weapon comes
+  with a magazine attached. It changes the magazine blocks of
+  `cfgspawnabletypes.xml`, up to a chance of 1.
+- **Economy throughput** sets **Initial loot** (`InitialSpawn`, 0% to 100%)
+  and how many items the economy respawns at once. With high supply
+  percentages, raise **Item types per respawn** so that the map fills sooner.
+
+<!-- shot:readme-12 -->
+![Loot Supply tab of Chernarus PvE: Item supply sliders for weapons, attachments, and magazines at 150%, each with its item types and expected count](img/readme-12.png)
+
+Changes on one page can touch several files. The page has one **Review
+changes** action for all of them. After the review, the same button reads
+**Apply changes** and applies every reviewed file. If you change a value after
+the review, review again. The page reloads once, after the last file is
+written.
+
+<!-- shot:readme-13 -->
+![Economy throughput group with the Initial loot slider and the respawn values, and one Apply changes button for all changed files after the review](img/readme-13.png)
+
+Each change is computed from the original values, so percentages never add up.
+While a percentage is not 100%, the file keeps one comment with the
+percentages and the original values. When every percentage is 100% again, the
+file has its original values and no comment. A value that you change by hand
+counts as already scaled. An item type that you add by hand counts as
+original.
+
+Things to know:
+
+- Event loot (`lootdispatch`), item types without a category and item types
+  with a nominal of 0 do not change.
+- An item type name that occurs twice in `db/types.xml` does not change.
+- Types files of mods that `cfgeconomycore.xml` adds do not change. Only
+  `db/types.xml` changes.
+- More items also need free loot places. If the map has too few, raise the
+  container capacity in the map editor.
+- Lower supply takes effect as old loot leaves the map. Higher supply fills
+  the map as fast as the economy throughput allows.
+
+The command line uses `tweaks show --target loot-supply` and
+`tweaks set --target loot-supply --set supply_ammo=200`. The keys are
+`supply_weapons`, `supply_attachments`, `supply_magazines`, `supply_ammo`,
+`supply_ammo_boxes`, `supply_explosives`, `supply_food`, `supply_medical`,
+`supply_tools`, `supply_clothing`, `supply_containers` and `ammo_fill`. The magazine
+chance uses `--target weapon-magazines` with the key `magazine_chance`.
+
+## The mission map editor
+
+The map editor sets loot tiers, container capacity, and infected encounters of
+a mission on a map. It changes no mission file until you apply the plan. The
+window steps also exist as commands; see [Map commands](#map-commands).
+
+### Open the editor
+
+1. Select the server profile in the sidebar, then open **Tweaks**.
+2. Select **Open map editor**. It opens a separate window for this profile.
+
+Each profile has one editor window. If it is open, the button focuses it and
+shows **The map editor of this profile is already open.**
+
+### Editor workspace
+
+The menu band contains **Plan**, **View**, **Map setup**, **Apply**, and **Restore**.
+The editing band groups Select, Create, Inspect, and History with labelled icons. Tool settings appear beside the active tool.
+Finish creates and selects the polygon. Its properties appear in the right inspector.
+
+Authored areas retain a light fill and hatch when deselected. Original-tier opacity affects only the original overlay; Inherit areas use a neutral pattern.
+
+Object rows show names, visibility and locks. Select an object to reveal its priority controls. Capacity guidance is available under **Capacity limits and loot supply**.
+
+- **View → Objects & layers** opens the left panel. It contains object visibility, locks, priority, and original tiers. The tier opacity slider changes in 10% steps. Global container capacity is under **Plan settings**.
+- **View → Properties** opens the selected-object inspector. **View capacity report** opens the report for that selection.
+- **View → Reports** opens the bottom panel. Building capacity uses one row per source entry. Expand **Details** for every container, limit, warning, and identifier. Search filters the current answer; it does not read mission files again. Group ceilings apply per group, regardless of placement count.
+- **Map setup** contains terrain bounds and the map image. Setup closes before calibration so you can pick points on the map. It returns after calibration ends.
+- **Plan** contains Export, Import, and Copy from another profile. Their existing checks and confirmations still apply.
+
+**View** also contains Fit map, Zoom to selection, Full screen, and Coordinates. Escape closes View and returns focus to its button. Finish and Discard appear while an outline is unfinished.
+
+Drag a panel border to resize it. Focus the border and use arrow keys for 10-pixel steps, or Shift with an arrow for 1 pixel. Home and End use the available limits. Escape cancels a resize.
+
+Explicit panel sizes and open states are remembered across editor restarts. At narrow widths, one auxiliary panel opens at a time. Closing a panel gives its space back to the map.
+
+A layout preference failure leaves editing available. Use **Retry** beside the layout notice to try saving again.
+
+### Terrain bounds and coordinates
+
+A plan needs confirmed terrain bounds. The editor reads the bounds of the
+terrain when it can. Select **Confirm detected bounds** to accept them. If no
+bounds are detected, enter the actual bounds in native metres and select
+**Confirm and save manual bounds**. Without confirmed bounds, the editor has
+no plan yet, and Apply cannot write loot tiers.
+
+The editor works without a map image. It then shows the plain terrain. The map
+has a grid of 0 to 10 on each axis and the native X and Z in metres. Choose
+**Grid**, **Native**, or **Both** under **Coordinates**. Distances are in
+metres.
+
+- Zoom with the mouse wheel. Pan with a middle-button drag or Space and drag.
+- **Fit map** shows the whole terrain. **Zoom to selection** (F) shows the
+  selected item.
+- Zoom and pan never move a placed item.
+
+### Zones, tiers, and container capacity
+
+Choose a tool in the top toolbar: **Select** (V), **Circle** (C), **Polygon**
+(P), **Encounter** (E), or **Inspect** (I).
+
+- A circle has a centre and a radius in metres.
+- A polygon needs 3 points. Press Enter to finish it. Press Backspace to
+  remove the last point.
+- **Objects in priority order** lists the zones. The highest zone wins where
+  zones overlap. A new zone goes on top. Use **Move up** and **Move down** to
+  change the order.
+- A zone has a name. **Visible** hides it on the map only. A hidden zone still
+  counts in the mission settings. **Locked** stops edits until you unlock it.
+- Undo and Redo use one history for the whole plan: Ctrl+Z, and Ctrl+Y or
+  Ctrl+Shift+Z.
+
+Each loot zone has a **Tier** or **Inherit**. The tiers are the tiers of the
+tier map of the mission. **Original tiers** shows the tiers that the mission
+has now. It is a display only and changes nothing. Each original tier row has an eye button. Tier1 starts hidden; enable its eye to show the grey tint. A separate **Unassigned** eye shows cells with no tier flags in grey and also starts hidden. It uses the original overlay opacity and creates no tier assignment.
+
+**Zone capacity** has four presets: Sparse -25%, Normal 0%, Rich +50%, and
+Very Rich +100%. New loot zones start at Rich. **Global container capacity**
+goes from -50% to +100% in 25% steps. The global value and the value of the
+winning zone add up, against the original capacity.
+
+Select **Inspect** and click a point. It shows the original tier, the
+effective tier, the winning zone, the building capacity, and the covering
+encounters.
+
+Drag the selected object to move it, including from near a vertex or radius handle.
+Hold **Ctrl** to show handles, then Ctrl+drag a handle to edit one vertex or resize a circle.
+The action is chosen when the drag starts. Releasing Ctrl hides handles while the current drag keeps its original action.
+Escape, a cancelled pointer, or leaving the window cancels the preview without changing geometry.
+
+**Custom layer opacity** fades authored interiors in 10% steps. It preserves borders, red selection, and handles at 0%.
+The original-tier slider is independent. Selection uses a deep red outline with a thin white edge.
+These layer display choices last for the current editor window and do not edit the plan.
+
+A table of vertex coordinates is not available yet.
+
+### Map image
+
+A map image is optional. DayZ-ServerMan ships no map images. Choose a PNG or
+JPEG file that you have the right to use. The editor shows images up to 8,192
+pixels on each side and 32 MiB. The editor does not load online map tiles.
+
+Select **Calibrate with three points** to fit the image to the terrain. Or
+select **Fit to terrain bounds**. **Dim image** makes the image fainter. A plan
+export and a profile backup carry no image file.
+
+### Save, export, import, and copy a plan
+
+The editor saves the plan for each profile by itself. The window shows
+**Saving**, **Saved**, or **Not saved** with the reason. **Draft changes**
+shows the changes since the last applied configuration.
+
+- If the saved plan changed, **Reload plan** loads it and discards your unsaved
+  changes. To keep them, select **Export plan** first.
+- If the saved plan is not valid, the editor is read only. **Set aside invalid
+  plan** keeps the file under a dated name and starts a new, empty plan.
+  Nothing is deleted.
+- When you close the window with unsaved changes, it asks what to do with them.
+
+The **Plan file** menu has three buttons:
+
+- **Export plan…** writes the plan you see to a JSON file that you choose.
+- **Import plan…** reads a JSON file. It shows a compatibility preview. You
+  choose **Replace** or **Merge**. There is no default.
+- **Copy from another profile…** shows a list of profiles. It reads the saved
+  plan of the profile you choose. That plan is not changed.
+
+An import or copy lists the items that it does not import. It can ask for a
+placement review, for example when the terrain differs. You confirm both with
+check boxes. The result is one save and one undo step.
+
+The import also reads a plan export of the earlier Pripyat prototype, one time.
+It uses the same preview. The zones keep their positions. Items that
+DayZ-ServerMan cannot map, for example bandit points, are listed and need your
+confirmation. The import writes no game file.
+
+**Import plan** and **Copy from another profile** are not available in these
+cases. The plan loads, it is read only, autosave is stopped, or a map
+operation runs. They also wait until you confirm the bounds. **Export plan**
+needs only a loaded plan and no other file dialog or file read. It also works
+when the plan is read only, autosave is stopped, or a map operation runs.
+
+### Preview, Apply, and Restore
+
+**Apply…** shows a preview first. It uses only the saved plan, so the editor
+saves the draft before it opens the preview. The preview lists the plan
+changes, the encounters, the loot report, and the mission files that change.
+
+- Stop the DayZ server before you apply. DayZ-ServerMan does not apply while
+  the server runs.
+- A mission file can change outside the map editor. The preview then lists the
+  file. Choose **Keep the change** or **Replace the file** for each file.
+  DayZ-ServerMan saves a copy of the current file before it replaces the file.
+- Some encounters cannot be written on a mission. Exclude each one from this
+  Apply to continue.
+- A refusal is listed under **Apply is not possible**. Fix the cause, then
+  select **Preview again**.
+- Apply changes the mission files for every profile that uses the mission
+  folder.
+
+DayZ-ServerMan keeps a protected copy of the original files. **Restore
+previous state…** returns to the previous state. **Restore original…** returns
+to the original files. Both need a stopped server, and both show a preview
+first. **Restore original** needs a supported terrain family; see
+[Supported terrain families](#supported-terrain-families).
+
+While Apply or a restore runs, editing and autosave are paused. Closing the
+editor does not stop the operation.
+
+If the editor shows **Adopt mission…**, the mission moved, was copied, or lost
+its last Apply record in a restore. Adoption moves or copies the editor
+records. It writes no mission file and needs no stopped server.
+
+An interrupted Apply or restore is finished or undone at start, as for other
+interrupted work; see [When changes are blocked](#when-changes-are-blocked).
+The editor offers **Check again**, and `map recover` does the same.
+
+### Native limits
+
+Percentages change the native capacity of containers, not the item supply.
+More capacity can leave the live loot amount unchanged. Fixed dispatch loot is
+unchanged. The preview shows the supported capacity changes and the native
+limits. It never promises a live item count.
+
+- A value above the native limit of a group is refused. The preview shows the
+  limit.
+- Several categories can share one capacity. It is an upper limit for all of
+  them together.
+- If no item type with a nominal above 0 has a category, more capacity cannot
+  add items.
+- A container with fewer points than its capacity is limited by its points.
+- The map editor never writes `db/types.xml` or the `mapgroupcluster` files.
+
+### Supported terrain families
+
+Apply and Restore original work only for terrain families that passed a test
+with a DayZ server. The family is the part of the mission folder name after the
+last dot, for example `chernarusplus` in `dayzOffline.chernarusplus`. Upper and
+lower case do not matter. A custom mission of a supported family is supported.
+Its own checks still apply.
+
+| Terrain family | Server build of the probe | Tested |
+|---|---|---|
+| `chernarusplus` | 1.29.163709 | Loot tiers, container capacity, medical toggle, infected |
+| `Pripyat` | 1.29.163709 | Same, with the limits below |
+| `enoch` | 1.30.164078.38 | Loot tiers, container capacity, medical toggle |
+
+**sakhal is not supported yet.** Apply and Restore original refuse on sakhal
+and on every other family that is not in the table. Nothing is written. A
+folder name without a family after a dot gets the same refusal. On every
+family you can still plan, save, import, export, and inspect. Restore previous
+state is not limited.
+
+Limits of the tests:
+
+- The tests prove that the DayZ loot economy loads the changed files. They do
+  not prove live loot amounts.
+- Fixed dispatch items are not governed by the capacity. A group with capacity
+  0 can still show its dispatch parts.
+- `chernarusplus`: DayZ server 1.30 changed three of its files after the test.
+  The writer forms loaded on 1.30 on `enoch`. The changed files stay under the
+  checks of each mission.
+- `Pripyat`: the test used the installed medical state, where off equals on.
+  It used global capacity 0 only, because two groups refuse any other global
+  value until you remove the duplicates outside the editor. Only the terrain
+  mods were loaded.
+- `enoch`: no mission with a stored medical baseline was tested. The group
+  `Land_Underground_Storage_POX2` has a point without range and height. A zone
+  over it adds one more group with wrong points to the count of DayZ.
+- A generated copy of a group keeps the points of its source group. A source
+  point without range or height therefore also counts in the copy.
+
+### Infected, bandits, wolves, and bears
+
+- **Infected on chernarusplus and Pripyat.** DayZ accepted the territory
+  element of the editor, and infected appeared in the editor zones, on DayZ
+  server 1.29.163709. The preview shows a notice when `ZombieMaxCount` or
+  `ZoneSpawnDist` is 0. DayZ-ServerMan does not change these values.
+- **Infected on enoch.** On enoch you can apply infected encounters, but no
+  test with a DayZ server covered them on enoch. They were tested on
+  chernarusplus and Pripyat.
+- The editor offers an infected event only when `cfgenvironment.xml` registers
+  `env/zombie_territories.xml`.
+- **Bandits.** Bandit placement is not available: no verified ground height
+  source. The editor creates no AI_Bandits encounter.
+- **Wolves and bears.** Wolf and bear territories are not supported in this
+  version; the pack territory mapping is not verified.
+
+### Backups with editor records
+
+A profile backup carries the editor plan and the editor records of the active
+mission. A restore and a profile delete keep these records in step with the
+mission.
+
+Older builds cannot restore archives that hold editor records. A profile
+backup gets the new archive format (schema 4) only when the profile has an
+editor record for its active mission. Other backups keep the old format and
+stay readable by older builds. An older build refuses a schema 4 archive.
+Restore such an archive with this build or a later one.
+
 ## Command line
 
 Every action of the window is also a command for a terminal or a script. The
@@ -646,7 +986,7 @@ needs that no other DayZ-ServerMan is active (see
 | | `profile delete` | yes | yes |
 | Configuration | `config show --target server\|gameplay` | no | no |
 | | `config set --target server\|gameplay` with `--set` or `--from-file` | yes | yes, after the review |
-| Tweaks | `tweaks show --target economy\|weather\|spawnable-damage\|starter-loadout\|events` | no | no |
+| Tweaks | `tweaks show --target economy\|weather\|spawnable-damage\|starter-loadout\|events\|loot-supply\|weapon-magazines` | no | no |
 | | `tweaks set --target ...` with `--set` or `--from-file` | yes | yes, after the review |
 | | `tweaks convert-loadout` | yes | yes |
 | | `tweaks medical show` | no | no |
@@ -657,11 +997,88 @@ needs that no other DayZ-ServerMan is active (see
 | | `updates auto on\|off` | yes | no |
 | | `migrate preview ROOT` | no | no |
 | | `migrate apply ROOT [--item ID ... \| --all-items]` | yes | yes, after the review |
+| Map editor (Tweaks) | `map show`, `map inspect [--point X,Z \| --object ID]` | no | no |
+| | `map preview` | no | no |
+| | `map save --from-file FILE [--expect-revision N]` | yes | no |
+| | `map set-aside` | yes | yes, after the review |
+| | `map apply [--keep-change PATH] [--replace-file PATH] [--exclude-encounter ID]` | yes | yes, after the review |
+| | `map restore original\|previous` | yes | yes, after the review |
+| | `map recover` | yes | no |
+| | `map export --output FILE [--overwrite]` | no (it writes the file that you name) | no |
+| | `map import --from-file FILE --mode replace\|merge [--confirm-listed] [--expect-revision N]` | yes | yes, after the review |
+| | `map copy --from-profile ID-OR-NAME --mode replace\|merge [--confirm-listed] [--expect-revision N]` | yes | yes, after the review |
+| | `map adopt` | yes | yes, after the review |
 
 `--set KEY=VALUE` changes one value; repeat it for more values. The keys are
 the names that the matching `show` command prints in its **Key** column.
 `--from-file` reads a UTF-8 JSON file with the changes. With both, the file
 comes first, and each `--set` replaces its key.
+
+### Map commands
+
+The `map` commands work on the map plan and the mission of one profile. They
+use the same checks and texts as the map editor window. `--cli map --help`
+lists them. `--cli help map <command>` shows the options of one command.
+
+| Command | What it does |
+|---|---|
+| `map show` | Shows the saved map plan of a profile and the state of its mission. |
+| `map inspect` | Shows the loot tier and the building capacity at one point, or for one object. |
+| `map save` | Saves a map plan from a file over the saved map plan. |
+| `map set-aside` | Keeps an invalid saved map plan under a dated name and starts a new, empty plan, after a review. |
+| `map preview` | Shows what Apply would change in the mission files. Nothing is changed. |
+| `map apply` | Applies the saved map plan to the mission files, after a review. |
+| `map restore` | Restores the original mission files or the previous state, after a review. |
+| `map recover` | Finishes or undoes an interrupted mission map change. |
+| `map export` | Writes the saved map plan to a file. |
+| `map import` | Replaces the saved map plan with a plan from a file, or merges the two, after a review. |
+| `map copy` | Replaces the saved map plan with the plan of another profile, or merges the two, after a review. |
+| `map adopt` | Moves or copies the map editor records of a mission that moved, was copied or was restored, after a review. |
+
+Options of the map commands:
+
+| Option | Used by | Meaning |
+|---|---|---|
+| `--point X,Z` | `map inspect` | A point in native metres, for example `7500,7500`. For a negative number, write `--point=-5,3`. |
+| `--object ID` | `map inspect` | A plan object, by its ID as `map show` lists it. Use `--point` or `--object`. |
+| `--from-file FILE` | `map save`, `map import` | A UTF-8 JSON file that holds the map plan. |
+| `--expect-revision N` | `map save`, `map import`, `map copy` | Refuse when the saved map plan is not at this revision. |
+| `--keep-change PATH`, `--replace-file PATH` | `map apply` | The choice for one mission file that changed outside the map editor. Use the path as the review prints it. Repeat the option for more files. |
+| `--exclude-encounter ID` | `map apply` | Leave one encounter out of the Apply. Use the ID as the review prints it. Repeat the option for more encounters. |
+| `original` or `previous` | `map restore` | What to restore. |
+| `--output FILE` | `map export` | The file to write. |
+| `--overwrite` | `map export` | Replace the file when it exists. |
+| `--mode replace\|merge` | `map import`, `map copy` | How the plan joins the saved plan. There is no default. |
+| `--confirm-listed` | `map import`, `map copy` | Confirm the objects and items that the review lists as not imported, and the placement review. |
+| `--from-profile ID-OR-NAME` | `map copy` | The profile whose map plan is copied. |
+
+Notes on the map commands:
+
+- `map show`, `map inspect`, and `map export` run at any time, also while the
+  window is open. The other map commands refuse while the window or another
+  command that changes something is active (exit code 3, `INSTANCE_ACTIVE`).
+  This includes `map preview`, which changes nothing.
+- `map show`, `map inspect`, `map preview`, and `map export` use the selected
+  profile when you give no `--profile`. The other commands that name a profile
+  need `--profile` when more than one profile exists. `map recover` names no
+  profile.
+- `map apply` and `map restore` need a stopped server. While the server runs,
+  they ask the question first. Then they refuse with exit code 3 and change
+  nothing.
+- `map restore original` refuses with exit code 3 on a terrain family that is
+  not supported; see
+  [Supported terrain families](#supported-terrain-families). Nothing is
+  written.
+- `map adopt` writes only manager records. It needs no stopped server.
+- `map recover` ends with exit code 0 when no unfinished change is left. It
+  ends with exit code 3 when another operation runs or the server is not
+  proven stopped. Any other block ends with exit code 6.
+- `map export` writes only the file that you name. It checks the path first.
+  A missing folder, a folder or link as the file, and a path in a folder that
+  DayZ-ServerMan uses end with exit code 2. If the write or the read-back
+  check fails, the command removes the new file and ends with exit code 1.
+- `map copy` ends with exit code 2 when the source profile is the profile you
+  copy to.
 
 ### Which profile a command uses
 
@@ -704,6 +1121,14 @@ Notes on single commands:
   the state does not allow the apply, the output ends with **The mods are
   downloaded; nothing was applied.** A later `mods update` or the window
   applies them after a new review.
+- `map apply` needs a choice for each mission file that changed outside the
+  map editor (`--keep-change` or `--replace-file`) and for each unavailable
+  encounter (`--exclude-encounter`). Without it, the command ends with exit
+  code 4, also with `--yes` and in a terminal. `map import` and `map copy` need
+  `--confirm-listed` when the review lists objects that are left out, items
+  that are not imported, or a placement review. `map export` needs
+  `--overwrite` to replace an existing file. `--yes` never makes a choice and
+  never confirms the listed items.
 - `migrate apply` imports exactly the items that you name with `--item`, or
   nothing. Without `--item`, it imports every item that can be imported.
   `migrate preview` shows each item and why it cannot be imported.
@@ -821,6 +1246,22 @@ Some cases in detail:
   running one. The message names the running profile.
 - Code 3: the data that a review showed changed before the apply. Run the
   command again for a new review.
+- Code 3: a `map` command that the saved plan, the mission or the records do
+  not allow. Examples are no saved plan, or a restore without a saved
+  original. The JSON error code is `INVALID_REQUEST`, also for a plan
+  over a limit. A terrain family that is not supported has
+  `UNSUPPORTED_SNAPSHOT_CONTENT`, and a running server has `CONTROL_CONFLICT`.
+  A saved plan that is not at the `--expect-revision` number has
+  `REVISION_CONFLICT`. All of these end with exit code 3.
+- Code 4: `map apply` without a choice for a changed file or an unavailable
+  encounter. `map import` or `map copy` without `--confirm-listed` for listed
+  items. `map export` to a file that exists, without `--overwrite`.
+- Code 2: for `map`, an ID or a path that the review does not list. Also a
+  path in both `--keep-change` and `--replace-file`, and a point that is not
+  `X,Z`. Also a mode other than `replace`, `merge`, `original`, or `previous`.
+  An export path that cannot be used ends with code 2 too.
+- Code 6: `map recover` when an interrupted mission map change still blocks
+  changes.
 
 ### JSON error codes
 
@@ -853,7 +1294,10 @@ Only one DayZ-ServerMan changes things in a manager folder at a time. This is
 the window or one command.
 
 - A command that reads runs at any time, also while the window is open. It
-  writes no file and no log line.
+  writes no file and no log line. The exception is `map export`: it writes
+  only the file that you name with `--output`, and no log line. The file cannot
+  be in the DayZ server folder, the DayZ-ServerMan folder or the backup folder.
+  It replaces an existing file only with `--overwrite`.
 - A command that changes something refuses while the window or another such
   command is active: exit code 3, `INSTANCE_ACTIVE`. Close the window, or
   wait for the other command, then run it again.
@@ -941,8 +1385,28 @@ py DayZ-ServerMan.py --cli server players --names
 py DayZ-ServerMan.py --cli server stop --profile chernarus_pve --backup-after-stop
 py DayZ-ServerMan.py --cli backup list --json
 py DayZ-ServerMan.py --cli config set --profile chernarus_pve --target server --set maxPlayers=40
+py DayZ-ServerMan.py --cli tweaks set --profile chernarus_pve --target loot-supply --set supply_ammo=200 --set ammo_fill=150
 py DayZ-ServerMan.py --cli mods update --profile chernarus_pve --restart --yes
 ```
+
+Map commands:
+
+```text
+py DayZ-ServerMan.py --cli map show --profile chernarus_pve
+py DayZ-ServerMan.py --cli map inspect --profile chernarus_pve --point 7500,7500
+py DayZ-ServerMan.py --cli map inspect --profile chernarus_pve --point=-5,3
+py DayZ-ServerMan.py --cli map preview --profile chernarus_pve
+py DayZ-ServerMan.py --cli map apply --profile chernarus_pve
+py DayZ-ServerMan.py --cli map restore original --profile chernarus_pve
+py DayZ-ServerMan.py --cli map export --profile chernarus_pve --output plan.json
+py DayZ-ServerMan.py --cli map import --profile chernarus_pve --from-file plan.json --mode merge
+py DayZ-ServerMan.py --cli map copy --profile chernarus_pve --from-profile livonia_pve --mode replace
+```
+
+If `map apply` lists a changed file, run it again with `--keep-change PATH` or
+`--replace-file PATH` for that file. If it lists an unavailable encounter, add
+`--exclude-encounter ID`. If `map import` or `map copy` lists items that are
+not imported, read the list, then add `--confirm-listed`.
 
 A PowerShell script that checks the result:
 
@@ -955,12 +1419,35 @@ if ($LASTEXITCODE -eq 0) {
 
 ### Known limitations
 
-- **Medical loot settings.** A profile's medical file can match neither its
-  original form nor the form that DayZ-ServerMan writes, for example after a
-  hand edit. Then `tweaks medical show` and `tweaks medical set` end with exit
-  code 3 and **The profile or the settings changed in the meantime. Run the
-  command again.** Running it again does not help, and the window shows the
-  same text. This version has no way out.
+- **Medical loot settings, loot zones.** The loot zones change
+  `mapgroupproto.xml`. When this file and its stored original do not match,
+  `tweaks medical show` ends with exit code 3, and the window shows the same
+  text. The text gives the reason, then the way out.
+  - A group that is not in the stored original: "mapgroupproto.xml differs
+    from its stored original: group PlannerRich_00534 is not in the stored
+    original. No file was changed."
+  - A mixed state, or a group that is in neither form: "mapgroupproto.xml
+    differs from its stored original and from the form that DayZ-ServerMan
+    writes when medical loot zones are on. No file was changed."
+  - The way out of both: "DayZ-ServerMan does not guess the original loot of
+    these groups. If mapgroupproto.xml changed on purpose, for example after
+    a game or mod update or by another tool, first make sure that its medical
+    loot groups have the loot that you want when medical loot zones are off.
+    Then move the stored original to another folder. The current file then
+    becomes the original, which is the Off state. Otherwise, put back the
+    mapgroupproto.xml that matches the stored original. Stored original:
+    <path>"
+  - A layout cause ends with "Correct this in mapgroupproto.xml, then try
+    again."
+  - When the map editor manages the mission and this profile has an applied
+    map plan, the setting works. `tweaks medical show` ends with exit code 0.
+    When this profile has no applied map plan,
+    `tweaks medical set` ends with exit code 2. The text is "Medical loot
+    zones cannot change because the map editor manages this mission, but this
+    profile has no applied map plan for it. No file was changed. If another
+    profile applied its map plan to this mission, change this setting in that
+    profile. Otherwise apply a map plan of this profile in the map editor,
+    then change this setting."
 - **A backup folder inside the DayZ server folder.** A mod apply, a profile
   restore, or a profile deletion can remove or replace the folder that holds
   it, and its backups with it. A backup of a mission can also include older

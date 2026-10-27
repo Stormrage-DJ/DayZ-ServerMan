@@ -118,6 +118,12 @@ class HostRuntimeTests(unittest.TestCase):
         self.assertEqual(fake.start_arguments["storage_path"], str(self.composition.paths.webview2))
         self.assertFalse(fake.settings["ALLOW_DOWNLOADS"])
         self.assertFalse(fake.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"])
+        # The runtime binds the same deletion guard and opens no editor before start
+        registry = self.composition.editor_guard._port
+        self.assertIs(fake.window_arguments["js_api"]._map_editor_opener.__self__, registry)
+        self.assertFalse(registry._started)
+        fake.start_arguments["callback"]()
+        self.assertTrue(registry._started)
         # The update-check scheduler runs exactly while the window lives
         self.assertEqual(self.events, ["scheduler-start", "window", "scheduler-stop"])
         self.assertEqual(self.build_events, ["scheduler-start", "scheduler-stop"])

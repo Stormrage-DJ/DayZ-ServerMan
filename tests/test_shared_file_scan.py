@@ -34,11 +34,6 @@ ALLOWLIST = (
         "Owner-only recovery copy during PREPARING under the installation mutex; the instance lock admits one "
         "owner and observers write nothing, so no other process replaces or renames its source",
     ),
-    AllowEntry(
-        "repositories/restore_storage.py", ".replace(", 5,
-        "Runs only inside the A13 writer side; the exempt observer calls read only the manager root and the "
-        "backup folder; 322 lines",
-    ),
 )
 
 

@@ -1,8 +1,13 @@
 // Catalog data for the tweaks workspace: fields, groups, and tabs.
 "use strict";
 
-// Describe one tweakable field.
-const field = (key, label, kind, hint, pair = "") => ({ key, label, kind, hint, pair });
+// Describe one tweakable field; a percent field also names its slider range.
+const field = (key, label, kind, hint, pair = "", range = null) => ({ key, label, kind, hint, pair, range });
+// Slider range of the loot percentages, and of the initial loot share.
+const lootRange = Object.freeze({ min: 0, max: 300, step: 5 });
+const initialRange = Object.freeze({ min: 0, max: 100, step: 5 });
+// Describe one loot percentage slider.
+const percent = (key, label, hint, range = lootRange) => field(key, label, "percent", hint, "", range);
 // Describe one titled group of fields within a target.
 const group = (title, target, fields, hint = "") => ({ title, target, fields, hint });
 
@@ -61,8 +66,36 @@ const gameplayTabs = [
     ]),
     group("Medical loot", "medical", [
       field("medical_loot_zones", "Medical loot zones", "feature", "Restrict medical locations to medical supplies."),
-      field("medical_item_spawns", "Medical item spawns", "feature", "Boost common medical item spawn counts."),
-    ], "Legacy-compatible, map-specific features."),
+    ], "Legacy-compatible, map-specific feature. Set the amount of medical supplies on the Loot Supply tab."),
+  ]},
+  { id: "supply", label: "Loot Supply", groups: [
+    group("Item supply", "loot_supply", [
+      percent("supply_weapons", "Weapons", "Firearms, crossbows and other items of the weapons category."),
+      percent("supply_attachments", "Weapon attachments", "Optics, stocks, handguards, suppressors, bayonets and weapon lights."),
+      percent("supply_magazines", "Magazines", "Loose magazines (Mag_ items)."),
+      percent("supply_ammo", "Loose ammunition", "Ammunition piles (Ammo_ items)."),
+      percent("supply_ammo_boxes", "Ammunition boxes", "Boxed ammunition (AmmoBox_ items)."),
+      percent("supply_explosives", "Explosives", "Grenades, mines and other explosives."),
+      percent("supply_food", "Food & drink", "Canned food, drinks and other items of the food category."),
+      percent("supply_medical", "Medical supplies", "Bandages, medicine, blood and saline kits, and other medical items."),
+      percent("supply_tools", "Tools", "Tools and other items of the tools category, without medical supplies."),
+      percent("supply_clothing", "Clothing", "Clothes, vests, helmets and other items of the clothes category."),
+      percent("supply_containers", "Backpacks & containers", "Backpacks, tents, barrels and other containers."),
+    ], "Each percentage scales how many items of the group the central economy keeps on the map (nominal and min in db/types.xml), always from the original values. 100% keeps the original. More items also need free loot places; see the container capacity in the map editor."),
+    group("Ammunition fill", "loot_supply", [
+      percent("ammo_fill", "Ammunition & magazine fill", "Scales how full spawned ammunition piles and magazines are, up to completely full."),
+    ]),
+    group("Weapon loadout", "weapon_magazines", [
+      percent("magazine_chance", "Weapons with a magazine", "Scales the chance that a spawned weapon comes with a magazine attached (cfgspawnabletypes.xml), up to always."),
+    ]),
+    group("Economy throughput", "economy", [
+      percent("InitialSpawn", "Initial loot", "Share of each item's nominal that spawns when the server starts without stored loot.", initialRange),
+      field("RespawnTypes", "Item types per respawn", "integer", "How many different item types the economy can respawn at once. Raise it with high supply percentages so the map refills sooner."),
+      field("RespawnLimit", "Items per type per respawn", "integer", "How many items of one type the economy can respawn at once."),
+      field("RespawnAttempt", "Respawn attempts", "integer", "How many attempts the economy makes for one item respawn."),
+      field("SpawnInitial", "Initial spawn attempts", "integer", "How many initial tests are allowed for item spawn. Bohemia's default is 1200."),
+      field("RestartSpawn", "Restart respawn", "integer", "Whether loot respawns toward its nominal at a server restart. Bohemia's default is 0."),
+    ], "The supply percentages raise the targets; these values decide how fast the central economy reaches them."),
   ]},
   { id: "weather", label: "Weather", groups: [
     group("Rain", "weather", [
@@ -76,8 +109,6 @@ const gameplayTabs = [
     group("Loot cleanup & respawn", "economy", [
       field("CleanupAvoidance", "Cleanup avoidance", "integer", "Distances around players used for cleanup and new loot placement.", "avoidance"),
       field("LootSpawnAvoidance", "Loot spawn avoidance", "integer", "Distances around players used for cleanup and new loot placement.", "avoidance"),
-      field("SpawnInitial", "Initial spawn", "integer", "Percentage of nominal loot populated when the economy initializes."),
-      field("RespawnAttempt", "Respawn attempt", "integer", "Number of economy respawn attempts made during one processing cycle."),
       field("CleanupLifetimeRuined", "Ruined item lifetime", "integer", "Seconds before ruined and ordinary abandoned items are cleaned up.", "item-lifetime"),
       field("CleanupLifetimeDefault", "Default item lifetime", "integer", "Seconds before ruined and ordinary abandoned items are cleaned up.", "item-lifetime"),
     ]),

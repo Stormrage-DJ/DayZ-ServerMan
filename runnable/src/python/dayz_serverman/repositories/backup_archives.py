@@ -87,9 +87,13 @@ def verify_archive(path: Path, manifest: BackupManifest) -> None:
                         digest.update(chunk)
                 if digest.hexdigest() != entry.sha256:
                     raise BackupArchiveError("Backup ZIP member checksum does not match.")
-            if manifest.schema_version == 3:
+            # Schema 4 keeps the schema 3 reconstruction metadata and adds the editor inventory check
+            if manifest.schema_version >= 3:
                 from .backup_reconstruction import verify_reconstruction_bytes
                 verify_reconstruction_bytes(manifest, archive.read(manifest.reconstruction["config_entry"]))
+            if manifest.editor is not None:
+                from .backup_editor_records import verify_editor_entries
+                verify_editor_entries(manifest, lambda path: archive.read(infos[path]))
     except zipfile.BadZipFile as error:
         raise BackupArchiveError("Backup ZIP structure is invalid.") from error
 

@@ -18,8 +18,12 @@ class RecoveryBlocks:
 
     The owner is the kind of operation whose recovery lifts the block, for example
     RESTORE_BACKUP; a block without an owner is lifted only by a manager restart.
-    A failed operation that requires recovery blocks under its own kind, so its
-    recovery lifts that block too, while blocks of other recoveries stay (QF-039, QF-040).
+    A failed operation that requires recovery blocks under the recovery owner of its
+    failure, or else under its own kind. So that recovery lifts the block too.
+    Blocks of other recoveries stay (QF-039, QF-040). For example a failed map editor
+    restore or medical toggle names the map editor kind, whose recovery resolves the
+    editor journal (8.13 Architect finding F1).
+
     The cause is MISSING_DAYZ_ROOT only for the three startup paths that block
     because no DayZ server folder is set; every other block has no cause.
     """
@@ -49,9 +53,14 @@ class RecoveryBlocks:
         self._log.emit("operation_lane.recovery_block", fields=fields, level="ERROR")
 
     def clear(self, owner: str | None) -> None:
-        """Remove the blocks of one owner, or every block when owner is None."""
+        """Remove the blocks of one owner, or every block when owner is None; log only a real removal."""
         with self._condition:
-            self._entries = [] if owner is None else [entry for entry in self._entries if entry[1] != owner]
+            removed = [entry for entry in self._entries if owner is None or entry[1] == owner]
+            self._entries = [entry for entry in self._entries if entry not in removed]
+        # The lift line of a recovery, for example Check again in the map editor (8.12 Architect decision 1)
+        if removed:
+            fields = {"reasons": [entry[0] for entry in removed], **({"owner": owner} if owner else {})}
+            self._log.emit("operation_lane.recovery_block_cleared", fields=fields)
 
     def only_cause(self, cause: str) -> bool:
         """Report whether at least one block exists and every block has this cause."""

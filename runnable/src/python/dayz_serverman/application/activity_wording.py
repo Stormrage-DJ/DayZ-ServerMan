@@ -2,11 +2,32 @@
 
 The frontend catalogue holds the same texts for kinds, error codes, block reasons, and path roles.
 Tests keep the two catalogues equal. A raw kind, state, code, or role is a key here and is never printed.
+Path roles and block reasons live in `host_sentence_wording.py`, and the result texts of a finished
+operation live in `activity_result_wording.py` (8.14); this module re-exports both.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
+
+# Host sentence wording lives in its own module; it is re-exported for existing importers
+from .host_sentence_wording import (  # noqa: F401
+    _IMPORT_BLOCK,
+    BLOCK_FALLBACK,
+    BLOCK_REASONS,
+    BLOCK_RESTART_ACTION,
+    BLOCK_RESTORE_ACTION,
+    BLOCK_RESTORE_OWNER,
+    ROLE_LABELS,
+    block_reason_text,
+    leaks_identifier,
+    plain_sentence,
+)
+# The result texts of a finished operation live in their own module (8.14); re-exported for existing importers
+from .activity_result_wording import GUARD_CODES, NEUTRAL_SUCCESS, RESTART_APPLY_TEXTS, restart_apply_text  # noqa: F401
+# ADOPT-28 of the adoption review is also the REVISION_CONFLICT text of its lane kind (leaf 10.35)
+from ..domain.mission_map_adoption_texts import ADOPTION_COMMITTED_TEXT, ADOPTION_STALE_TEXT
 
 # Text for an internal fault and for every message that would show an identifier
 INTERNAL_TEXT = "Something went wrong inside DayZ-ServerMan. Details are in Logs, Manager diagnostics."
@@ -20,17 +41,20 @@ RECOVERY_TEXT = ("An earlier operation did not finish cleanly. Changes are block
 QUEUE_FULL_TEXT = "Too many operations are waiting. Wait for one to finish and try again."
 CLOSING_TEXT = "DayZ-ServerMan is closing and starts no new operation."
 BLOCKED_TEXT = "Changes are blocked until recovery is resolved."
-# Reason shown when a block reason is neither known nor a plain sentence
-BLOCK_FALLBACK = "An earlier operation did not finish cleanly."
-# The way out of a block that has no catalogue sentence: a restart checks again (QF-045)
-BLOCK_RESTART_ACTION = "Restart DayZ-ServerMan to check again."
-# The way out of such a block when a restore owns it: the Backups page finishes the restore
-BLOCK_RESTORE_ACTION = "Open Backups to finish the restore."
-# Operation kind of a restore apply; the blocks it owns are lifted on the Backups page
-BLOCK_RESTORE_OWNER = "RESTORE_BACKUP"
+# A stale review or a late file change of both restore kinds; one text per kind, as for Apply (8.8)
+RESTORE_STALE_TEXT = ("The profile, the settings, the mission files or the map editor records changed after the "
+                      "preview. Nothing was restored. Preview the restore again and check it before you restore.")
+# A failure of both restore kinds after the commit point (Product Owner 2026-10-17 02:14:51, evidence 10.32)
+RESTORE_COMMITTED_TEXT = ("The restore reached its commit point, but a later step failed. The mission files can have "
+                          "changed. Preview the restore again to see what is left to restore.")
 
 # Per operation kind: name while active, success, failure, and cancellation sentence
 KIND_TEXTS: dict[str, tuple[str, str, str, str]] = {
+    "APPLY_MISSION_MAP": ("Applying mission map", "Mission map applied.", "The mission map could not be applied.", "Mission map apply cancelled."),
+    "RESTORE_MISSION_MAP_ORIGINAL": ("Restoring original mission map", "Original mission map restored.", "The original mission map could not be restored.", "Original mission map restore cancelled."),
+    "RESTORE_MISSION_MAP_PREVIOUS": ("Restoring previous mission map", "Previous mission map restored.", "The previous mission map could not be restored.", "Previous mission map restore cancelled."),
+    # ADOPT-29 (Product Owner 2026-10-16 14:26:38, evidence 10.1)
+    "ADOPT_MISSION_MAP": ("Adopting mission map records", "Mission map records adopted.", "The mission map records could not be adopted.", "Mission map adoption cancelled."),
     "START_SERVER": ("Starting server", "Server started.", "The server could not be started.", "Server start cancelled."),
     "STOP_SERVER": ("Stopping server", "Server stopped.", "The server could not be stopped.", "Backup cancelled. The server stays stopped."),
     "RESTART_SERVER": ("Restarting server", "Server restarted.", "The server could not be restarted.", "Restart cancelled during the backup. The server stays stopped."),
@@ -56,29 +80,6 @@ KIND_TEXTS: dict[str, tuple[str, str, str, str]] = {
 }
 # Wording for a kind that this catalogue does not know yet
 KIND_FALLBACK = ("Working", "Operation finished.", "The operation did not finish.", "Operation cancelled.")
-# Kinds whose outcome depends on a result that the log record does not hold: a neutral end sentence
-NEUTRAL_SUCCESS = {
-    "UPDATE_WORKSHOP_ITEMS": "Mod update finished. The result is on the Mods page.",
-    "VERIFY_WORKSHOP_FILES": "Mod file verification finished. The result is on the Mods page.",
-    "APPLY_MODS_AND_RESTART": "Applying mods and restarting finished. The result is on the Mods page.",
-}
-# Sentences of "apply mods and restart" for a failed or cancelled end, chosen by the last working phase
-RESTART_APPLY_TEXTS: dict[str, str] = {
-    "cancelledRunning": "Cancelled. The server keeps running; nothing was applied.",
-    "cancelledStopped": "Cancelled. The server stays stopped; the mods were not applied.",
-    "preflight": "The reviewed plan is out of date, or the server state changed. The server keeps running; nothing was applied. Update again.",
-    "stop": "The server could not be stopped. Nothing was applied.",
-    "stopNotRunning": "The server was already stopped, so it was not restarted. Nothing was applied. To apply the mods and start the server, use Update & start.",
-    "backup": "Server stopped, but the backup failed. The mods were not applied and the server was not started again.",
-    "check": "Mods applied, but the server folder changed before the start. The server stays stopped.",
-    "apply": "Server stopped, but the mods could not be applied. The server folder is as it was. The server was not started again.",
-    "applyBlocked": "Server stopped, but the mods could not be applied.",
-    "applyRefused": "The server was stopped, but its state changed before the mods could be applied. Nothing was applied; the server folder is as it was.",
-    "startCheck": "Mods applied, but the server folder changed before the start. The server was not started.",
-    "start": "Mods applied, but the server start did not succeed or could not be confirmed. Check the server state on Overview.",
-}
-# Error codes of a write guard that refused the apply because the server was not stopped
-GUARD_CODES = frozenset(("CONTROL_CONFLICT", "EXTERNAL_PROCESS", "PROCESS_STATE_UNKNOWN"))
 
 # Text that replaces the host message, per error code
 ERROR_TEXTS: dict[str, str] = {
@@ -123,7 +124,58 @@ KIND_ERROR_TEXTS: dict[str, dict[str, str]] = {
     "AUTHENTICATE_STEAMCMD": {
         "UPDATE_RESULT_UNKNOWN": "SteamCMD did not close cleanly after the Steam sign-in, so the sign-in cannot be confirmed. Changes are blocked.",
     },
+    # A stale review or a late file change of the map editor Apply (Product Owner 2026-10-15 01:16:10, evidence 8.7);
+    # a failure after the commit point (Product Owner 2026-10-16 17:17:52, evidence 10.5)
+    "APPLY_MISSION_MAP": {
+        "REVISION_CONFLICT": "The map plan, the profile, the settings or the mission files changed after the preview. Nothing was applied. Preview the changes again and check them before you apply.",
+        "PUBLICATION_FAILED": "Apply reached its commit point, but a later step failed. The mission files can have changed. Preview the changes again to see what is left to apply.",
+    },
+    # A stale review or a late file change of a restore (Product Owner 2026-10-15 07:10:16, evidence 8.8);
+    # a failure after the commit point (Product Owner 2026-10-17 02:14:51, evidence 10.32)
+    "RESTORE_MISSION_MAP_ORIGINAL": {"REVISION_CONFLICT": RESTORE_STALE_TEXT, "PUBLICATION_FAILED": RESTORE_COMMITTED_TEXT},
+    "RESTORE_MISSION_MAP_PREVIOUS": {"REVISION_CONFLICT": RESTORE_STALE_TEXT, "PUBLICATION_FAILED": RESTORE_COMMITTED_TEXT},
+    # ADOPT-28, a stale adoption review (Product Owner 2026-10-16 14:26:38, evidence 10.1)
+    # A failure after the commit point (Product Owner 2026-10-17 11:41:56, evidence 10.35)
+    "ADOPT_MISSION_MAP": {"REVISION_CONFLICT": ADOPTION_STALE_TEXT, "PUBLICATION_FAILED": ADOPTION_COMMITTED_TEXT},
 }
+# Host sentences of one kind that are shown unchanged, by a fragment; never the general request text (8.7)
+KIND_SHOWN_TEXTS: dict[str, tuple[str, ...]] = {
+    "APPLY_MISSION_MAP": (
+        "Apply needs a choice for each mission file that changed outside the map editor",
+        "Apply cannot write an encounter that is not available on this mission",
+        "affects values that the map editor sets, so the map editor cannot keep this change",
+        "This mission has no saved map plan.",
+    ),
+}
+# Host sentences shown unchanged, by their opening text; each names its cause, its file and the outcome
+SHOWN_HOST_TEXTS: tuple[str, ...] = (
+    "mapgroupproto.xml has a layout that this setting cannot change safely: ",
+    "mapgroupproto.xml differs from its stored original: ",
+    # The 6.11 family gate of Apply and Restore original (8.7); never the general backup text of its code
+    "Apply and Restore original are not available for this mission. ",
+    # The 8.13 stale zone review, before and under the guard. An ordinary mission has another message.
+    # Source: Product Owner 2026-10-15 06:27:10 and 14:59:22, evidence 8.13
+    "The profile, the settings, the mission files or the map editor records changed after the review of medical loot zones. ",
+)
+# Way out of a loot-zone refusal where mapgroupproto.xml and its stored original do not match (6.5, PO 15:19:49)
+ZONE_ORIGINAL_WAY_OUT = ("DayZ-ServerMan does not guess the original loot of these groups. If mapgroupproto.xml "
+                         "changed on purpose, for example after a game or mod update or by another tool, first make "
+                         "sure that its medical loot groups have the loot that you want when medical loot zones are "
+                         "off. Then move the stored original to another folder. The current file then becomes the "
+                         "original, which is the Off state. Otherwise, put back the mapgroupproto.xml that matches "
+                         "the stored original.")
+# Admin text of a loot-zone refusal, by the opening of its host reason (6.5). Each row gives the sentence
+# that replaces the reason ("" shows the reason) and the way out ("" for none). The frontend has the same rows.
+ZONE_REFUSAL_TEXTS: tuple[tuple[str, str, str], ...] = (
+    ("mapgroupproto.xml differs from its stored original: ", "", ZONE_ORIGINAL_WAY_OUT),
+    ("medical feature target differs from both its original and managed state",
+     "mapgroupproto.xml differs from its stored original and from the form that DayZ-ServerMan writes when medical loot zones are on. No file was changed.",
+     ZONE_ORIGINAL_WAY_OUT),
+    ("mapgroupproto.xml has a layout that this setting cannot change safely: ", "",
+     "Correct this in mapgroupproto.xml, then try again."),
+    ("medical loot zones cannot change because the map editor manages this mission",
+     "Medical loot zones cannot change because the map editor manages this mission.", ""),
+)
 # Known host sentences of a rejected request, by a fragment of the host message
 REQUEST_TEXTS: tuple[tuple[str, str], ...] = (
     ("must contain only letters, digits, or underscore", "The Steam account name may contain only letters, digits and underscores."),
@@ -138,113 +190,16 @@ SERVER_STATES: dict[str, str] = {
     "STOPPED": "stopped", "STARTING": "starting", "STOPPING": "stopping",
     "AMBIGUOUS": "in an unknown state", "UNKNOWN": "in an unknown state",
 }
-# Reason sentence of an unfinished legacy import; the host words this block in two ways
-_IMPORT_BLOCK = ("A legacy import was interrupted and could not be undone safely. "
-                 "Restart DayZ-ServerMan; it checks the unfinished import again when it starts.")
-# Known reasons of a recovery block, by a fragment of the host reason; the first match wins
-BLOCK_REASONS: tuple[tuple[str, str], ...] = (
-    # A direct profile restore is worded by cause (QF-075); these rows come before "restore recovery"
-    ("Direct profile restore journals", "A profile restore from a backup archive did not finish, and its restore records cannot be read, so DayZ-ServerMan cannot finish or undo it. Restart DayZ-ServerMan to read them again."),
-    ("Direct profile restore recovery requires a configured DayZ root", "A profile restore from a backup archive did not finish, and it cannot be checked because no DayZ server folder is set. In Settings, set the DayZ server folder that the restore used and change nothing else. Then save and restart DayZ-ServerMan."),
-    ("Direct profile restore recovery requires attention", "A profile restore from a backup archive did not finish, and DayZ-ServerMan cannot finish or undo it safely because the DayZ server folder or the restored files changed or cannot be opened. If a drive or folder was unavailable, make it available again, then restart DayZ-ServerMan."),
-    ("Direct profile restore requires recovery", "A profile restore from a backup archive did not finish. Stop the DayZ server, then restart DayZ-ServerMan; it checks the unfinished restore when it starts."),
-    # A backup restore without a DayZ server folder (QF-069); it contains "restore recovery", so it comes first
-    ("Backup restore recovery requires a configured DayZ root", "A backup restore did not finish, and it cannot be checked because no DayZ server folder is set. In Settings, set the DayZ server folder that the restore used and change nothing else. Then save, and open Backups or restart DayZ-ServerMan."),
-    ("restore recovery", "A backup restore did not finish cleanly. Open Backups; DayZ-ServerMan checks the unfinished restore again there."),
-    ("mod publication recovery", "Applying mods to the server folder was interrupted and could not be undone safely. Restart DayZ-ServerMan; it checks the server folder again when it starts."),
-    ("unresolved mod publication", "Applying mods to the server folder was interrupted, and it cannot be checked because no DayZ server folder is set. In Settings, set the DayZ server folder that the apply used and change nothing else. Then save and restart DayZ-ServerMan."),
-    ("interrupted mod publication", "Applying mods to the server folder was interrupted and must be finished. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then restart DayZ-ServerMan."),
-    ("interrupted backup restore", "A backup restore was interrupted and must be finished. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then open Backups again or restart DayZ-ServerMan."),
-    ("interrupted direct profile restore", "A profile restore from a backup archive was interrupted and must be finished. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then restart DayZ-ServerMan."),
-    ("interrupted profile creation", "Creating a profile was interrupted and must be finished. This is possible only while the server is stopped and no other DayZ-ServerMan uses this DayZ installation. Stop the server, then restart DayZ-ServerMan."),
-    ("interrupted SteamCMD update", "A mod update was interrupted, so its result is not known. Restart DayZ-ServerMan, then update the mods again."),
-    ("process-tree exit after the sign-in", "SteamCMD did not close cleanly after the Steam sign-in, so the sign-in cannot be confirmed. Close SteamCMD, restart DayZ-ServerMan, then sign in again."),
-    ("process-tree exit", "SteamCMD did not close cleanly, so the mod update cannot be confirmed. Close SteamCMD, restart DayZ-ServerMan, then update the mods again."),
-    ("Profile provisioning recovery", "Creating a profile was interrupted and could not be undone safely. Restart DayZ-ServerMan; it checks the unfinished profile again when it starts."),
-    ("migration recovery", _IMPORT_BLOCK),
-    ("Migration publication", _IMPORT_BLOCK),
-)
-# Label of each path role and settings field inside a sentence
-ROLE_LABELS: dict[str, str] = {
-    "dayz_root": "DayZ server folder", "dayz_executable": "DayZ server program",
-    "steamcmd_root": "SteamCMD folder", "steamcmd_executable": "SteamCMD program",
-    "workshop_content_root": "Workshop download folder",
-    "backup_root": "backup folder", "custom_backup_root": "backup folder",
-}
 
-# An upper-case identifier, a snake_case word, a camelCase word, or a bracketed list of names
-_IDENTIFIER = re.compile(r"[A-Z]{2,}_[A-Z_]+|\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b|\b[a-z]+[A-Z]\w*|[\[\]{}]")
+# A server state name as a whole word
 _STATE_NAME = re.compile(r"\b(" + "|".join(SERVER_STATES) + r")\b")
 # A sentence that states the block; a result whose own sentence states it drops it from its error text
 BLOCK_SENTENCE = re.compile(r"\s*Changes are blocked(?: until [^.]*)?\.")
-_ROLE_NAME = re.compile(r"\b(" + "|".join(sorted(ROLE_LABELS, key=len, reverse=True)) + r")\b")
-
-
-def leaks_identifier(text: str) -> bool:
-    """Report whether a text still holds something that is not operator wording."""
-    return _IDENTIFIER.search(text) is not None
-
-
-def plain_sentence(message: object) -> str | None:
-    """Return a host message as one operator sentence, or None when it cannot be shown.
-
-    Path roles become their labels. A bare code, an empty text, and a text that
-    still holds an identifier are refused.
-    """
-    text = _ROLE_NAME.sub(lambda match: f"the {ROLE_LABELS[match.group(1)]}", str(message or "")).strip()
-    text = text.replace("DayZ root", "DayZ server folder")
-    if " " not in text or leaks_identifier(text):
-        return None
-    # Start with a capital letter and end with a full stop
-    text = text[0].upper() + text[1:]
-    return text if text[-1] in ".!?" else f"{text}."
 
 
 def without_block_sentence(text: str) -> str:
     """Return an error text without the sentences that state the block, for a result that states it itself."""
     return BLOCK_SENTENCE.sub("", text).strip()
-
-
-def restart_apply_text(
-    state: object, phase: object, code: object = None, message: object = None,
-) -> str | None:
-    """Return the sentence of a failed or cancelled "apply mods and restart", or None for the generic one.
-
-    `code` and `message` are the host error; a server state that the message names
-    tells a refused stop of a stopped server and a refused apply from a real failure.
-    """
-    name = phase if isinstance(phase, str) else ""
-    if state == "CANCELLED":
-        # Before the stop the server still runs; every later safe point leaves it stopped
-        return RESTART_APPLY_TEXTS["cancelledRunning" if name in ("", "preflight") else "cancelledStopped"]
-    if not name:
-        return None
-    states = _STATE_NAME.findall(str(message or ""))
-    named = states[-1] if states else None
-    if name == "STOP_SERVER":
-        # A stop that was refused because the server was already stopped did not fail to stop it
-        key = "stopNotRunning" if named == "STOPPED" else "stop"
-    elif name in ("preflight", "VERIFY_BEFORE_START", "START_SERVER"):
-        # A failure of the start handoff proves neither a changed folder nor a stopped server
-        key = {"preflight": "preflight", "VERIFY_BEFORE_START": "check", "START_SERVER": "start"}[name]
-    elif name.startswith("BACKUP_"):
-        key = "backup"
-    elif state == "RECOVERY_REQUIRED":
-        key = "applyBlocked"
-    else:
-        # A write guard that found the server no longer stopped applied nothing
-        key = "applyRefused" if named not in (None, "STOPPED") and code in GUARD_CODES else "apply"
-    return RESTART_APPLY_TEXTS[key]
-
-
-def block_reason_text(reason: object, owner: object = None) -> str:
-    """Word why changes are blocked: the known sentence, else the host sentence or the fallback with its way out."""
-    text = str(reason or "")
-    for fragment, sentence in BLOCK_REASONS:
-        if fragment in text:
-            return sentence
-    action = BLOCK_RESTORE_ACTION if owner == BLOCK_RESTORE_OWNER else BLOCK_RESTART_ACTION
-    return f"{plain_sentence(text) or BLOCK_FALLBACK} {action}"
 
 
 def conflict_text(message: object, reason: object = None, owner: object = None) -> str:
@@ -273,6 +228,11 @@ def error_text(code: object, message: object, owner: object = None, kind: object
         return f"This cannot be done while the server is {SERVER_STATES[states[-1] if states else 'RUNNING_EXTERNAL']}."
     if code == "MUTATION_CONFLICT":
         return conflict_text(text, owner=owner)
+    # A host sentence that already says what to do is shown as it is, whatever its code
+    if text.startswith(SHOWN_HOST_TEXTS):
+        return text
+    if isinstance(kind, str) and any(fragment in text for fragment in KIND_SHOWN_TEXTS.get(kind, ())):
+        return text
     own = KIND_ERROR_TEXTS.get(kind, {}) if isinstance(kind, str) else {}
     if code in own:
         return own[str(code)]
@@ -284,3 +244,21 @@ def error_text(code: object, message: object, owner: object = None, kind: object
             return sentence
     # Any other host sentence is shown when it holds no identifier
     return plain_sentence(text) or (REQUEST_TEXT if code == "INVALID_REQUEST" else INTERNAL_TEXT)
+
+
+def zone_baseline_text(baseline: object) -> tuple[str, str | None] | None:
+    """Return the admin text of an unmappable loot-zone baseline and the stored original to name (6.5).
+
+    A mappable baseline, or a reason without a row, gives None: the state is never guessed, and the
+    caller keeps its existing text.
+    """
+    if not isinstance(baseline, Mapping) or baseline.get("mappable") is not False:
+        return None
+    reason = str(baseline.get("reason") or "")
+    for opening, replacement, way_out in ZONE_REFUSAL_TEXTS:
+        if reason.startswith(opening):
+            text = " ".join(part for part in (replacement or reason, way_out) if part)
+            # Only the way out that moves or matches the stored original needs its path
+            path = baseline.get("stored_original") if way_out == ZONE_ORIGINAL_WAY_OUT else None
+            return text, str(path) if path else None
+    return None

@@ -6,6 +6,8 @@ import math
 import re
 from typing import Any
 
+from .loot_supply import MAGAZINE_KEY, SUPPLY_KEYS, LootSupplyError, validate_percent
+
 
 class MissionValidationError(ValueError):
     """Raised when mission configuration values are invalid."""
@@ -19,7 +21,10 @@ GLOBAL_INTEGER_KEYS = frozenset({
     "CleanupLifetimeDeadAnimal", "CleanupAvoidance", "LootSpawnAvoidance",
     "CleanupLifetimeRuined", "CleanupLifetimeDefault", "CleanupLifetimeDeadPlayer",
     "TimeLogin", "TimeLogout", "TimePenalty",
+    "InitialSpawn", "RespawnTypes", "RespawnLimit", "RestartSpawn",
 })
+# Economy globals that are a percentage from 0 through 100
+GLOBAL_PERCENT_KEYS = frozenset({"InitialSpawn"})
 # Economy globals edited as booleans
 GLOBAL_BOOLEAN_KEYS = frozenset({"FoodDecay", "WorldWetTempUpdate"})
 # Loot damage ratios bounded from 0.0 through 1.0
@@ -57,9 +62,7 @@ def validate_mission_updates(target: str, value: object) -> dict[str, Any]:
     if not isinstance(value, dict) or not value:
         raise MissionValidationError("updates must be a non-empty object")
     # Dispatch to the validator that owns the target area
-    validator = {"economy": _economy, "weather": _weather,
-                 "spawnable_damage": _spawnable, "starter_loadout": _starter,
-                 "events": _events}.get(target)
+    validator = VALIDATORS.get(target)
     if validator is None:
         raise MissionValidationError("mission target is not supported")
     return validator(value)
@@ -79,16 +82,12 @@ def validate_proposed_state(target: str, current: dict[str, Any], updates: dict[
     # Merge scalar targets and re-validate the complete state
     merged = dict(current)
     merged.update(updates)
-    validator = {"economy": _economy, "weather": _weather,
-                 "spawnable_damage": _spawnable, "starter_loadout": _starter}[target]
-    return validator(merged, require_complete=True)
+    return VALIDATORS[target](merged, require_complete=True)
 
 
 def validate_current_state(target: str, current: dict[str, Any]) -> dict[str, Any]:
     """Return validated persisted state for one target area."""
-    validator = {"economy": _economy, "weather": _weather,
-                 "spawnable_damage": _spawnable, "starter_loadout": _starter,
-                 "events": _events}.get(target)
+    validator = VALIDATORS.get(target)
     if validator is None:
         raise MissionValidationError("mission target is not supported")
     return validator(current, require_complete=True)
@@ -110,6 +109,8 @@ def _economy(value: dict[str, Any], *, require_complete: bool = False) -> dict[s
             result[key] = raw
         else:
             result[key] = _integer(raw, key)
+            if key in GLOBAL_PERCENT_KEYS and result[key] > 100:
+                raise MissionValidationError(f"{key} must be a percentage from 0 through 100")
     # Keep the damage range ordered
     if result.get("LootDamageMin", 0) > result.get("LootDamageMax", 1):
         raise MissionValidationError("LootDamageMin must not exceed LootDamageMax")
@@ -180,6 +181,28 @@ def _events(value: dict[str, Any], *, require_complete: bool = False) -> dict[st
     return {"events": result}
 
 
+def _loot_supply(value: dict[str, Any], *, require_complete: bool = False) -> dict[str, Any]:
+    """Return validated supply percentages of the item groups and the ammunition fill."""
+    if not set(value) <= SUPPLY_KEYS or (require_complete and set(value) != SUPPLY_KEYS):
+        raise MissionValidationError("loot supply state has missing or unknown fields")
+    return {key: _percent(raw, key) for key, raw in value.items()}
+
+
+def _weapon_magazines(value: dict[str, Any], *, require_complete: bool = False) -> dict[str, Any]:
+    """Return the validated magazine chance percentage."""
+    if set(value) != {MAGAZINE_KEY}:
+        raise MissionValidationError(f"weapon magazines require {MAGAZINE_KEY}")
+    return {MAGAZINE_KEY: _percent(value[MAGAZINE_KEY], MAGAZINE_KEY)}
+
+
+def _percent(value: object, name: str) -> int:
+    """Return a loot percentage or raise the validation error of the mission workflow."""
+    try:
+        return validate_percent(value, name)
+    except LootSupplyError as error:
+        raise MissionValidationError(str(error)) from error
+
+
 def _integer(value: object, name: str) -> int:
     """Return a non-negative 32-bit integer or raise."""
     if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 2_147_483_647:
@@ -195,3 +218,9 @@ def _number(value: object, name: str) -> float:
     if not math.isfinite(result) or not 0.0 <= result <= 1.0:
         raise MissionValidationError(f"{name} must be from 0.0 through 1.0")
     return result
+
+
+# The validator of each mission target
+VALIDATORS = {"economy": _economy, "weather": _weather, "spawnable_damage": _spawnable,
+              "starter_loadout": _starter, "events": _events, "loot_supply": _loot_supply,
+              "weapon_magazines": _weapon_magazines}

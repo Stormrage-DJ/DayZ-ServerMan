@@ -48,9 +48,10 @@ def execute_operation(
                 pending.record.progress_percent,
             )
     except OperationFailure as error:
-        # Block the lane when the failure requires supervised recovery
+        # Block the lane when the failure requires supervised recovery, under the owner that the failure names.
+        # The block carries the failure's recovery reason when it names one, else the safe message (8.11 F1)
         if error.recovery_required:
-            context.block_for_recovery(error.safe_message)
+            context.block_for_recovery(error.recovery_reason or error.safe_message, owner=error.recovery_owner)
         # Record the safe error before publishing the failure state
         with condition:
             pending.record.terminal_error = OperationError(

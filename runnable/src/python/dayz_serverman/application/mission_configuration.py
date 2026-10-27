@@ -15,7 +15,7 @@ from ..domain.mission_configuration import (
 )
 from ..domain.models import RevisionConflict
 from ..repositories.atomic_file import AtomicFilePublisher, ContentChangedError
-from ..repositories.configuration_common import digest_bytes
+from ..repositories.configuration_common import ConfigurationFileError, digest_bytes
 from ..repositories.mission_files import (
     TARGET_PATHS, convert_starter_file, load_mission_file, transform_mission_file,
 )
@@ -61,6 +61,9 @@ class MissionConfigurationService:
             "values": snapshot["values"],
             "adoption_required": bool(snapshot.get("adoption_required", False)),
         }
+        if target == "loot_supply":
+            # The supply target adds the item counts of each group, so the window can show the effect
+            result["facts"] = snapshot["facts"]
         if target == "starter_loadout":
             # Starter loadouts additionally expose their legacy-conversion state
             result["conversion_required"] = bool(snapshot.get("conversion_required", False))

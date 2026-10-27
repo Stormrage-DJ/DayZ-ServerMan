@@ -1,0 +1,80 @@
+/* Independent editor regions share existing tokens; their content scrolls without burying tools. */
+#map-editor { grid-template-rows: auto auto minmax(0, 1fr) auto; gap: 8px; }
+#map-edit-bar { min-width: 0; display: grid; gap: 6px; }
+#map-region-actions, #map-primary-tools, #map-tool-context, #map-drawing-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+#map-toolbar { display: grid; gap: 6px; margin: 0; }
+#map-edit-bar [hidden] { display: none; }
+#map-toolbar p { margin: 0; }
+#map-primary-tools .button, #map-region-actions .button { padding: 5px 10px; min-height: 32px; }
+#map-tool-context input, #map-tool-context select { width: 110px; min-width: 0; min-height: 30px; padding: 3px 6px; }
+#map-tool-context label { font-size: 12px; }
+#map-tool-context p:empty, #map-drawing-actions p:empty { display: none; }
+#map-workspace { gap: 8px; min-width: 0; grid-template-rows: minmax(0,1fr) 0; }
+#map-viewport { grid-column: 2; grid-row: 1; }
+#map-panel { grid-column: 1; grid-row: 1 / 3; width: auto; min-width: 0; }
+#map-panel[hidden], .map-workspace-region[hidden] { display: none; }
+#map-panel-content { padding: 12px; }
+#map-inspector { grid-column: 3; grid-row: 1; }
+#map-reports { grid-column: 2 / 4; grid-row: 2; }
+.map-workspace-region { position: relative; display: grid; grid-template-rows: auto minmax(0,1fr); min-height: 0; min-width: 0; overflow: hidden; border: 1px solid var(--panel-border); border-radius: var(--radius-control); background: var(--panel-background); }
+.map-region-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 12px; background: var(--control-background); }
+.map-region-heading h2 { margin: 0; font-size: 14px; }
+.map-region-heading button { min-height: 28px; padding: 2px 8px; }
+.map-region-body { min-height: 0; min-width: 0; overflow: auto; padding: 12px; }
+.map-region-body h2 { font-size: 14px; margin-top: 0; }
+.map-region-body p { overflow-wrap: anywhere; font-size: 13px; }
+.map-region-body input:not([type=checkbox]), .map-region-body select { max-width: 100%; }
+.map-resize-handle { position: absolute; z-index: 3; width: 8px; top: 0; bottom: 0; cursor: col-resize; touch-action: none; }
+#map-panel > .map-resize-handle { right: 0; }
+#map-inspector > .map-resize-handle { left: 0; }
+#map-reports > .map-resize-handle { top: 0; bottom: auto; left: 0; right: 0; width: auto; height: 8px; cursor: row-resize; }
+.map-resize-handle:hover, .map-resize-handle:focus-visible { background: var(--color-action); outline: var(--focus-outline); outline-offset: -2px; }
+#map-layout-notice { margin: 0; font-size: 12px; color: var(--color-status-warning); }
+#map-calibration-workspace { position: fixed; right: 16px; top: 160px; width: 350px; max-height: calc(100vh - 180px); overflow: auto; padding: 12px; z-index: 5; background: var(--panel-background); border: 1px solid var(--panel-border); }
+#map-calibration-workspace[hidden] { display: none; }
+@media (max-width: 1199px) {
+  #map-editor { padding: 8px; gap: 6px; }
+  #map-identity { column-gap: 12px; }
+  #map-title { font-size: 17px; }
+  #map-region-actions .button, #map-primary-tools .button { padding: 3px 6px; font-size: 12px; min-height: 28px; }
+  #map-status-area { padding-top: 4px; }
+  #map-workspace { column-gap: 4px; }
+}
+
+#map-drawing-actions { flex-wrap: nowrap; height: 38px; min-width: 0; }
+#map-drawing-actions p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#map-outline-actions { flex-shrink: 0; }
+
+@media (max-width: 1199px) {
+  #map-editor { gap: 4px; }
+  #map-edit-bar, #map-toolbar { gap: 4px; }
+  #map-toolbar { grid-template-columns: max-content minmax(0,1fr); }
+  #map-primary-tools { grid-column: 1 / -1; }
+  #map-tool-context { grid-column: 1; flex-wrap: nowrap; }
+  #map-drawing-actions { grid-column: 2; height: 30px; }
+  #map-outline-actions .button { min-height: 28px; padding: 3px 6px; }
+}
+
+#map-panel-content > details { border-top: 1px solid var(--color-border); margin-top: 16px; padding-top: 12px; }
+#map-panel-content > details > summary { cursor: pointer; font-weight: 600; }
+#map-panel-content .map-layer .button { min-height: 28px; padding: 3px 6px; font-size: 12px; }
+#map-panel-content .map-layer > p { font-size: 12px; margin: 0; }
+
+#map-region-actions { position: relative; }
+#map-setup { width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0; overflow: hidden; color: var(--color-text); background: var(--panel-background); border: 1px solid var(--panel-border); border-radius: var(--radius-control); box-shadow: var(--panel-shadow); }
+#map-setup[open] { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+#map-setup::backdrop { background: var(--color-scrim); }
+#map-setup .map-region-heading { border-bottom: 1px solid var(--panel-border); }
+#map-setup .map-region-body { padding: var(--primitive-space-4); }
+#map-setup .map-region-body > section + section { margin-top: var(--primitive-space-5); padding-top: var(--primitive-space-4); border-top: 1px solid var(--color-border); }
+#map-setup .map-region-body p { margin: var(--primitive-space-2) 0 var(--primitive-space-3); }
+#map-setup .map-region-body h2 { font-size: 14px; margin-bottom: var(--primitive-space-3); }
+#map-setup input:not([type=checkbox]) { width: 100%; }
+#map-setup #map-bounds-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: var(--primitive-space-2) var(--primitive-space-4); padding: var(--primitive-space-3); border: 1px solid var(--panel-border); border-radius: var(--radius-control); }
+#map-setup #map-bounds-fields legend { padding: 0 var(--primitive-space-1); font-size: 13px; color: var(--color-text-muted); }
+#map-setup #map-bounds-save { grid-column: 1 / -1; }
+@media (max-width: 599px) {
+  #map-setup #map-bounds-fields { grid-template-columns: minmax(0, 1fr); }
+}
+.map-plan-menu { position: absolute; left: 0; top: 100%; z-index: 8; width: 330px; max-width: calc(100vw - 32px); padding: 12px; background: var(--panel-background); border: 1px solid var(--panel-border); box-shadow: 0 8px 24px #0008; }
+.map-plan-menu .button { display: block; margin: 4px 0; }

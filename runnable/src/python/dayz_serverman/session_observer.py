@@ -19,7 +19,7 @@ from .adapters.windows.server_folder_lock import (
 )
 from .adapters.windows.shared_files import read_text_shared
 from .bridge.contracts import CONTRACT_VERSION
-from .bridge_composition import OBSERVER_READ_METHODS, READER_EXEMPT_METHODS
+from .bridge_composition import OBSERVER_READ_METHODS, READER_EXEMPT_METHODS, SLICED_READER_METHODS
 from .composition import build_composition
 from .composition_model import ApplicationComposition, SessionMode
 from .repositories.migration_journal import MigrationJournalRepository
@@ -84,6 +84,13 @@ class ObserverSession:
         if method in READER_EXEMPT_METHODS and not (method in BACKUP_ROOT_METHODS
                                                     and backup_root_in_dayz_root(self.composition.settings)):
             result = self.composition.bridge.dispatch(envelope)
+        elif method in SLICED_READER_METHODS:
+            # Inspect takes the reader side per mission-read slice through the bound port (A181)
+            port = self.composition.mission_map.reader
+            port.unsupported = None
+            result = self.composition.bridge.dispatch(envelope)
+            if port.unsupported is not None:
+                raise InstanceLockUnsupported() from port.unsupported
         else:
             try:
                 with self.reader.shared(READER_WAIT_SECONDS):
@@ -135,6 +142,8 @@ def open_observer_session(
     except BaseException:
         reader.close()
         raise
+    # Inspect slices hold this session's reader side; an owner session never binds the port
+    built.mission_map.reader.bind(reader)
     return ObserverSession(paths, built, reader)
 
 
@@ -150,6 +159,9 @@ def _reader(paths: PortablePaths) -> Any:
 def pending_recoveries(paths: PortablePaths) -> tuple[str, ...]:
     """Return the kinds of interrupted work that an owner would recover, by read-only checks (4.5)."""
     pending: list[str] = []
+    # Editor recovery stays owner-only; observers report even an unreadable active journal
+    if _has_json(paths.operations / "mission-map-journals"):
+        pending.append("APPLY_MISSION_MAP")
     # Backup restore: any restore journal
     if RestoreJournalRepository(paths.operations / "restore-journals", create_root=False).records():
         pending.append("RESTORE_BACKUP")

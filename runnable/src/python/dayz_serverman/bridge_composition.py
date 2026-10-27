@@ -14,20 +14,27 @@ from .lifecycle_composition import build_online_players
 OBSERVER_READ_METHODS = frozenset((
     "get_application_snapshot", "get_server_status", "get_online_players", "get_lifecycle_schedule",
     "get_update_status", "list_mod_inventory", "list_backups", "list_backup_catalog", "list_profiles",
-    "read_profile", "preview_profile_command", "list_profile_missions", "get_ui_preferences",
-    "load_configuration", "load_mission_configuration", "load_medical_features", "read_log",
+    "read_profile", "preview_profile_command", "list_profile_missions", "get_ui_preferences", "get_editor_layout",
+    "load_configuration", "load_mission_configuration", "load_medical_features", "load_mission_map", "read_log",
     "validate_settings_path_selection", "select_legacy_root", "preview_legacy_import", "inspect_backup_archive",
+    "inspect_mission_map", "continue_mission_map_inspection", "cancel_mission_map_inspection",
+    # The export of the saved map plan returns text and takes no path (D16, DC-7); the CLI writes the file
+    "export_mission_map_plan",
 ))
 # Observer reads that open nothing inside a folder that an owner step renames or removes (3.4, QF-2)
 READER_EXEMPT_METHODS = frozenset((
     "read_log", "list_backups", "list_backup_catalog", "get_application_snapshot",
-    "get_lifecycle_schedule", "get_ui_preferences", "list_profiles", "read_profile",
+    "get_lifecycle_schedule", "get_ui_preferences", "get_editor_layout", "list_profiles", "read_profile",
+    "cancel_mission_map_inspection",
 ))
+# Observer reads that take the reader side themselves, once per mission-read slice (A181); the session
+# wrapper does not hold the reader for the whole call
+SLICED_READER_METHODS = frozenset(("inspect_mission_map", "continue_mission_map_inspection"))
 # Every other method of the owner allowlist: lane operations, synchronous writes, mutex, SteamCMD, cache
 OWNER_ONLY_METHODS = frozenset((
     "get_operation", "read_operation_events", "request_operation_cancellation", "request_shutdown",
     "save_settings", "save_profile", "delete_profile", "provision_profile", "save_selected_profile",
-    "save_backup_after_stop", "save_automatic_update_checks", "create_backup", "preview_restore",
+    "save_editor_layout", "save_backup_after_stop", "save_automatic_update_checks", "create_backup", "preview_restore",
     "apply_restore", "inspect_restore_recovery", "preview_profile_restore", "restore_profile_from_backup",
     "preview_configuration", "apply_configuration", "preview_mission_configuration",
     "apply_mission_configuration", "convert_starter_loadout", "preview_medical_feature",
@@ -35,7 +42,20 @@ OWNER_ONLY_METHODS = frozenset((
     "revalidate_legacy_backup_references", "start_server", "stop_server", "restart_server",
     "save_lifecycle_schedule", "save_steam_settings", "authenticate_steamcmd", "update_workshop_items",
     "preview_mod_publication", "publish_mods_and_keys", "apply_mods_and_restart", "verify_mod_files",
-    "request_update_check",
+    "request_update_check", "save_mission_map_plan",
+    # Set aside of invalid saved plan data (5.3, A11): an owner write, a confirming command in task 10
+    "set_aside_mission_map_plan",
+    # Display reads of the map editor (3.17, A11): owner methods, never observer reads
+    "read_mission_map_tier_layer", "read_mission_map_background",
+    # Both previews, Apply, the restores and the editor recovery (8.9, A11): owner methods, never observer reads
+    "preview_mission_map", "apply_mission_map", "preview_mission_map_restore", "restore_mission_map",
+    "inspect_mission_map_recovery",
+    # The import preview and the import (10.33, AR-1): owner methods, the review step and the save of map import
+    "preview_mission_map_import", "import_mission_map_plan",
+    # The copy preview and the copy (10.7): owner methods of map copy, as import
+    "preview_mission_map_copy", "copy_mission_map_plan",
+    # The adoption preview (10.13, AR-1) and the adopt step in the lane (10.35): owner methods of map adopt
+    "preview_mission_map_adoption", "adopt_mission_map",
 ))
 
 
@@ -64,6 +84,10 @@ def build_handler_table(
     configuration_coordinator: HandlerSource,
     mission_configuration_coordinator: HandlerSource,
     medical_feature_coordinator: HandlerSource,
+    mission_map_coordinator: HandlerSource,
+    mission_map_display: HandlerSource,
+    mission_map_publication: HandlerSource,
+    mission_map_transfer: HandlerSource,
     migration_coordinator: HandlerSource,
     legacy_backup_coordinator: HandlerSource,
     lifecycle_coordinator: HandlerSource,
@@ -90,6 +114,15 @@ def build_handler_table(
         **configuration_coordinator.handlers(),
         **mission_configuration_coordinator.handlers(),
         **medical_feature_coordinator.handlers(),
+        **mission_map_coordinator.handlers(),
+        # The tier-layer read (`tier`) and the background read (`selection_id`, `part`) of 3.15 and 3.16;
+        # both are permanent parity exclusions, and `over_budget` refusals carry `limit`, `size` and `unit`
+        **mission_map_display.handlers(),
+        # Apply preview and Apply, restore preview and restore, and the on-demand editor recovery (8.9)
+        **mission_map_publication.handlers(),
+        # The transfer methods of task 10: export (10.6), import (10.33) and copy (10.7), then the adoption
+        # preview (10.13)
+        **mission_map_transfer.handlers(),
         **migration_coordinator.handlers(),
         **legacy_backup_coordinator.handlers(),
         **lifecycle_coordinator.handlers(),

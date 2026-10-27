@@ -12,6 +12,8 @@ from ..composition import ApplicationComposition
 from .api import HostApi
 from .assets import compose_shell_html, resolve_frontend_root
 from .shutdown import SafeCloseController
+from .editor_windows import EditorWindowRegistry
+from .map_editor_transfer_api import protected_roots
 from .webview2 import find_webview2_version, show_native_error
 
 
@@ -115,6 +117,16 @@ def launch_application(
     open_dialog = (
         dialog_types.OPEN if dialog_types is not None else webview.OPEN_DIALOG
     )
+    # A host without a save constant gets None; its Export plan then fails as a dialog failure
+    save_dialog = dialog_types.SAVE if dialog_types is not None else getattr(webview, "SAVE_DIALOG", None)
+    # Bind the owner guard before native callbacks can open or delete a profile; Export plan gets the dialogs
+    # and the protected roots of `map export` (9.1)
+    editors = EditorWindowRegistry(webview, window, composition.profiles,
+                                   composition.host_bridge, assets, composition.logger, hidden=hidden,
+                                   selections=composition.mission_map.images, dialogs=(open_dialog, save_dialog),
+                                   protected=lambda: protected_roots(composition.paths.root, composition.settings))
+    composition.editor_guard.bind(editors)
+    host_api._set_map_editor_opener(editors.open)
     def select_legacy_folder() -> str | None:
         """Ask the operator for a legacy DayZ root folder."""
         selected = window.create_file_dialog(folder_dialog, allow_multiple=False)
@@ -153,14 +165,16 @@ def launch_application(
         return str(selected[0]) if isinstance(selected, (tuple, list)) else str(selected)
     host_api._set_backup_archive_selector(select_backup_archive)
     # Guard native closes so backend work can drain first
-    close_controller = SafeCloseController(window, composition.shutdown)
+    close_controller = SafeCloseController(window, composition.shutdown, editors=editors)
     closing_event = getattr(getattr(window, "events", None), "closing", None)
     if closing_event is not None:
         closing_event += close_controller.on_closing
     # Run the smoke probe instead of the user shell when requested
-    callback = (
-        lambda: _smoke_probe(window, close_controller, version, hold_seconds)
-    ) if smoke else None
+    def callback() -> None:
+        """Permit editor creation after start and run the optional owned smoke probe."""
+        editors.mark_started()
+        if smoke:
+            _smoke_probe(window, close_controller, version, hold_seconds)
     # Keep scheduled lifecycle actions running while the window lives
     composition.schedules.start()
     # Check Steam for mod updates and for the server build at start and on their intervals

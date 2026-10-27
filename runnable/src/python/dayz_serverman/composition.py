@@ -11,6 +11,7 @@ from .application.backup_coordinator import BackupCoordinator
 from .application.backups import BackupService
 from .application.configuration import ConfigurationService
 from .application.configuration_coordinator import ConfigurationCoordinator
+from .application.configuration_recovery import configure_recovery
 from .application.installation_guard import InstallationGuard
 from .application.lifecycle_ownership import LaunchOwnership
 from .application.lifecycle_ports import ServerFolderWriterPort
@@ -18,17 +19,15 @@ from .application.lifecycle_coordinator import LifecycleCoordinator, for_running
 from .application.logs import LogQueryService
 from .application.mission_configuration import MissionConfigurationService
 from .application.mission_configuration_coordinator import MissionConfigurationCoordinator
+from .application.medical_editor_toggle import build_medical_editor
 from .application.medical_features import MedicalFeatureService
 from .application.medical_feature_coordinator import MedicalFeatureCoordinator
-from .application.migration_coordinator import MigrationCoordinator
-from .application.migrations import MigrationService
-from .application.legacy_backup_coordinator import LegacyBackupCoordinator
-from .application.legacy_backups import LegacyBackupService
 from .application.operations.manager import OperationManager
 from .application.operations.store import OperationStore
 from .application.preferences import PreferenceCoordinator
 from .application.profiles import ProfileService
 from .application.restore_coordinator import RestoreCoordinator
+from .application.restore_editor import RestoreEditor
 from .application.restores import RestoreService
 from .application.schedules import ScheduleCoordinator
 from .application.settings import SettingsService
@@ -37,10 +36,6 @@ from .application.startup_recoveries import recover_interrupted_restores
 from .bridge.facade import BridgeFacade
 from .observability.structured_log import NullStructuredLogger, StructuredLogger
 from .repositories.json_store import StagingPolicy, VersionedJsonRepository
-from .repositories.migrations import MigrationStorage
-from .repositories.legacy_backup_index import LegacyBackupIndexRepository
-from .repositories.migration_journal import MigrationJournalRepository
-from .repositories.migration_publication import MigrationPublication
 from .repositories.mod_publication_journal import PublicationJournalRepository
 from .repositories.backups import BackupStorage
 from .repositories.restore_journal import RestoreJournalRepository
@@ -54,6 +49,10 @@ from .bridge_composition import build_handler_table, observer_handlers
 from .composition_model import ApplicationComposition, SessionMode
 from .profile_provisioning_composition import build_profile_provisioning
 from .lifecycle_composition import build_lifecycle
+from .migration_composition import build_migration
+from .mission_map_composition import build_mission_map
+from .mission_map_publication_composition import build_mission_map_commit, build_mission_map_publication
+from .mission_map_transfer_composition import build_mission_map_transfer
 from .profile_restore_composition import build_profile_restore, build_settings_repair
 from .update_check_composition import (
     build_server_build, build_update_check, build_update_check_scheduler, build_update_status,
@@ -116,28 +115,13 @@ def build_composition(
     configuration_coordinator = ConfigurationCoordinator(configuration, operations)
     mission_configuration = MissionConfigurationService(profiles, settings)
     mission_configuration_coordinator = MissionConfigurationCoordinator(mission_configuration, operations)
-    medical_features = MedicalFeatureService(profiles, settings, paths.tweak_baselines)
+    medical_features = MedicalFeatureService(profiles, settings, paths.tweak_baselines, mission_map=paths.mission_map)
     medical_feature_coordinator = MedicalFeatureCoordinator(medical_features, operations)
-    # Build migration services with legacy backup indexing
-    migration_storage = MigrationStorage(paths.migrations)
-    legacy_backup_repository = LegacyBackupIndexRepository(
-        paths.migrations / "legacy-backup-index.json", staging=staging,
+    # Build migration services with legacy backup indexing; only an owner inspects an interrupted publication
+    migration = build_migration(
+        paths, settings, settings_repository, profiles, profile_repository, operations,
+        staging=staging, recover=not observer,
     )
-    migration_publication = MigrationPublication(
-        paths.root, migration_storage,
-        MigrationJournalRepository(paths.migrations / "publication-journals"),
-        block_recovery=operations.block_for_recovery,
-    )
-    migrations = MigrationService(
-        paths, settings, settings_repository, profiles, profile_repository,
-        migration_storage, publisher=migration_publication,
-        backup_index_repository=legacy_backup_repository,
-    )
-    if not observer:
-        migrations.inspect_recovery()
-    migration_coordinator = MigrationCoordinator(migrations, operations)
-    legacy_backups = LegacyBackupService(legacy_backup_repository)
-    legacy_backup_coordinator = LegacyBackupCoordinator(legacy_backups, operations)
     # A6: the ownership record lets a session adopt a server that another session of this root started;
     # only an owner writes it
     ownership = LaunchOwnership(
@@ -150,14 +134,30 @@ def build_composition(
     )
     # Recoveries that write into the DayZ root take the mutex and need a proven stopped server
     installation_guard = InstallationGuard(lifecycle, mutex)
+    configuration_recovery = configure_recovery(paths, configuration, configuration_coordinator, settings,
+                                                operations, installation_guard, folder_writer, observer=observer)
+    # Editor recovery finishes before handlers, using the plan service's shared association lock set
+    mission_map = build_mission_map(paths, profiles, settings, staging=staging, guard=installation_guard,
+                                    folder_writer=folder_writer, operations=operations, logger=logger)
+    # One commit step on the same locks for Apply, the restores, the zone toggle (8.13) and adoption (10.35)
+    mission_map_commit = build_mission_map_commit(paths, mission_map, installation_guard, folder_writer,
+                                                  create_root=not observer)
+    medical_features.bind_editor(build_medical_editor(paths, mission_map_commit))
+    # Backups carry the editor records (schema 4); both restores accept schema 4 (10.10, 10.11, 10.37)
+    backups.bind_editor(mission_map.plans, mission_map.locks, paths.mission_map)
+    mission_map_publication = build_mission_map_publication(
+        paths, profiles, mission_map, installation_guard, folder_writer, operations,
+        medical_baseline=medical_features.zone_baseline_path, create_root=not observer, commit=mission_map_commit)
     profile_provisioning_coordinator = build_profile_provisioning(
         profiles, settings, operations, paths.operations, installation_guard, recover=not observer,
     )
     # Build restore services and gate mutations on pending recovery
     restore_journals = RestoreJournalRepository(paths.operations / "restore-journals", create_root=not observer)
+    # A same-profile restore writes the map editor records on the plan service's association locks (10.10)
     restores = RestoreService(
         profiles, settings, backup_storage, RestoreStorage(), restore_journals,
         paths.backup_recovery, lifecycle, mutex, folder_writer,
+        editor=RestoreEditor(paths, mission_map.plans, mission_map.locks, profiles),
     )
     if not observer:
         recover_interrupted_restores(restore_journals, restores, operations)
@@ -190,7 +190,9 @@ def build_composition(
         update_check, workshop.mod_inventory, server_build.service,
     )
     # Assemble every coordinator's handlers into the bridge facade
-    coordinator = ApplicationCoordinator(settings, operations, shutdown, build_settings_repair(paths, settings, restore_journals))
+    coordinator = ApplicationCoordinator(settings, operations, shutdown,
+                                         build_settings_repair(paths, settings, restore_journals, editor_recovery=mission_map.recovery,
+                                                               configuration_recovery=configuration_recovery))
     logs = LogQueryService(paths.logs / "manager.jsonl", paths.logs / "dayz-server.log")
     # "Update & restart" stops the running server, so it must name the running profile (D11)
     mod_restart_handlers = {name: for_running_profile(lifecycle, handler)
@@ -206,8 +208,13 @@ def build_composition(
         configuration_coordinator=configuration_coordinator,
         mission_configuration_coordinator=mission_configuration_coordinator,
         medical_feature_coordinator=medical_feature_coordinator,
-        migration_coordinator=migration_coordinator,
-        legacy_backup_coordinator=legacy_backup_coordinator,
+        mission_map_coordinator=mission_map.coordinator,
+        mission_map_display=mission_map.display,
+        mission_map_publication=mission_map_publication,
+        # Export is an observer read that returns text (10.6); import and copy follow in 10.33 and 10.7
+        mission_map_transfer=build_mission_map_transfer(mission_map, mission_map_commit, operations),
+        migration_coordinator=migration.migration_coordinator,
+        legacy_backup_coordinator=migration.legacy_backup_coordinator,
         lifecycle_coordinator=lifecycle_coordinator,
         lifecycle=lifecycle,
         schedules=schedules,
@@ -234,6 +241,7 @@ def build_composition(
         profile_repository=profile_repository,
         profiles=profiles,
         profile_coordinator=workshop.profile_coordinator,
+        editor_guard=workshop.editor_guard,
         preferences=preferences,
         backups=backups,
         backup_coordinator=backup_coordinator,
@@ -245,10 +253,10 @@ def build_composition(
         mission_configuration_coordinator=mission_configuration_coordinator,
         medical_features=medical_features,
         medical_feature_coordinator=medical_feature_coordinator,
-        migrations=migrations,
-        migration_coordinator=migration_coordinator,
-        legacy_backups=legacy_backups,
-        legacy_backup_coordinator=legacy_backup_coordinator,
+        migrations=migration.migrations,
+        migration_coordinator=migration.migration_coordinator,
+        legacy_backups=migration.legacy_backups,
+        legacy_backup_coordinator=migration.legacy_backup_coordinator,
         lifecycle=lifecycle,
         lifecycle_coordinator=lifecycle_coordinator,
         schedules=schedules,
@@ -263,6 +271,7 @@ def build_composition(
         update_check_scheduler=update_check_scheduler,
         update_check_coordinator=update_check_coordinator,
         server_build=server_build,
+        mission_map=mission_map,
         coordinator=coordinator,
         bridge=bridge,
         host_bridge=bridge,

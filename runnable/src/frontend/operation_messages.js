@@ -1,4 +1,5 @@
-// Operator wording for host error codes and for the result of a finished operation. A code is never printed.
+// Operator wording for host error codes. A code is never printed. The result of a finished operation is
+// worded in operation_results.js; every document that loads this file also loads that one (8.14).
 "use strict";
 
 // Text shown for an internal fault and for every message that would show an identifier.
@@ -60,7 +61,41 @@ const operationKindErrorTexts = Object.freeze({
   AUTHENTICATE_STEAMCMD: Object.freeze({
     UPDATE_RESULT_UNKNOWN: "SteamCMD did not close cleanly after the Steam sign-in, so the sign-in cannot be confirmed. Changes are blocked.",
   }),
+  APPLY_MISSION_MAP: Object.freeze({
+    REVISION_CONFLICT: "The map plan, the profile, the settings or the mission files changed after the preview. Nothing was applied. Preview the changes again and check them before you apply.",
+    PUBLICATION_FAILED: "Apply reached its commit point, but a later step failed. The mission files can have changed. Preview the changes again to see what is left to apply.",
+  }),
+  // A stale review or a late file change of a restore; the window shows the late-change host text (8.8, 8.14).
+  // A failure after the commit point has the kind text of 10.32 (Product Owner 2026-10-17 02:14:51).
+  RESTORE_MISSION_MAP_ORIGINAL: Object.freeze({
+    REVISION_CONFLICT: "The profile, the settings, the mission files or the map editor records changed after the preview. Nothing was restored. Preview the restore again and check it before you restore.",
+    PUBLICATION_FAILED: "The restore reached its commit point, but a later step failed. The mission files can have changed. Preview the restore again to see what is left to restore.",
+  }),
+  RESTORE_MISSION_MAP_PREVIOUS: Object.freeze({
+    REVISION_CONFLICT: "The profile, the settings, the mission files or the map editor records changed after the preview. Nothing was restored. Preview the restore again and check it before you restore.",
+    PUBLICATION_FAILED: "The restore reached its commit point, but a later step failed. The mission files can have changed. Preview the restore again to see what is left to restore.",
+  }),
+  // ADOPT-28, a stale adoption review (Product Owner 2026-10-16 14:26:38, evidence 10.1)
+  ADOPT_MISSION_MAP: Object.freeze({
+    REVISION_CONFLICT: "The profile, the settings, the mission files or the map editor records changed after the preview. Nothing was adopted. Preview the adoption again and check it before you adopt.",
+    // A failure after the commit point (Product Owner 2026-10-17 11:41:56, evidence 10.35)
+    PUBLICATION_FAILED: "Adoption reached its commit point, but a later step failed. No mission file changed. The map editor records can have changed. Preview the adoption again to see what is left to adopt.",
+  }),
 });
+// Host sentences of one kind that are shown unchanged, by a fragment; never the general request text (8.7).
+const operationKindShownTexts = Object.freeze({ APPLY_MISSION_MAP: Object.freeze([
+  "Apply needs a choice for each mission file that changed outside the map editor",
+  "Apply cannot write an encounter that is not available on this mission",
+  "affects values that the map editor sets, so the map editor cannot keep this change", "This mission has no saved map plan.",
+]) });
+// Host sentences shown unchanged, by their opening text; each names its cause, its file and the outcome.
+const operationShownHostTexts = Object.freeze([
+  "mapgroupproto.xml has a layout that this setting cannot change safely: ",
+  "mapgroupproto.xml differs from its stored original: ",
+  "Apply and Restore original are not available for this mission. ",
+  // The 8.13 stale zone review, before and under the guard; an ordinary mission has another message (8.14).
+  "The profile, the settings, the mission files or the map editor records changed after the review of medical loot zones. ",
+]);
 // Known host sentences of a rejected request, by a fragment of the host message.
 const operationRequestTexts = Object.freeze([
   ["must contain only letters, digits, or underscore", "The Steam account name may contain only letters, digits and underscores."],
@@ -74,14 +109,6 @@ const operationServerStates = Object.freeze({
   RUNNING_EXTERNAL: "running outside DayZ-ServerMan", RUNNING_MANAGED: "running",
   STOPPED: "stopped", STARTING: "starting", STOPPING: "stopping",
   AMBIGUOUS: "in an unknown state", UNKNOWN: "in an unknown state",
-});
-// Result of a mod update that ran to its end, by its download state: sentence and look.
-const operationDownloadResults = Object.freeze({
-  VERIFIED: ["Mods are downloaded and checked.", "success"],
-  EMPTY: ["This profile has no Workshop mods.", "success"],
-  FAILED: ["Some mods could not be updated.", "failed"],
-  UNKNOWN: ["The mod update could not be confirmed.", "failed"],
-  CANCELLED: ["Mod update cancelled.", "cancelled"],
 });
 
 // Sentences of "apply mods and restart" for a failed or cancelled end, chosen by the last working phase.
@@ -99,11 +126,40 @@ const operationRestartApplyTexts = Object.freeze({
   startCheck: "Mods applied, but the server folder changed before the start. The server was not started.",
   start: "Mods applied, but the server start did not succeed or could not be confirmed. Check the server state on Overview.",
 });
-// Error codes of a write guard that refused the apply because the server was not stopped.
-const operationGuardCodes = Object.freeze(["CONTROL_CONFLICT", "EXTERNAL_PROCESS", "PROCESS_STATE_UNKNOWN"]);
 
-// Item states of a verification that mean no problem; a mod in any other state needs the operator.
-const operationVerifyGood = Object.freeze({ source: "VERIFIED", target: "MATCHES_SOURCE" });
+// Success of a medical loot-zone toggle where no group changes; it replaces the normal success sentence.
+const OPERATION_MEDICAL_UNCHANGED = "No medical loot group on this mission changes with this setting. No file was changed.";
+// Way out of a loot-zone refusal where mapgroupproto.xml and its stored original do not match (6.5, PO 15:19:49).
+const OPERATION_ZONE_ORIGINAL_WAY_OUT = "DayZ-ServerMan does not guess the original loot of these groups. If mapgroupproto.xml "
+  + "changed on purpose, for example after a game or mod update or by another tool, first make sure that its medical "
+  + "loot groups have the loot that you want when medical loot zones are off. Then move the stored original to another "
+  + "folder. The current file then becomes the original, which is the Off state. Otherwise, put back the "
+  + "mapgroupproto.xml that matches the stored original.";
+// Admin text of a loot-zone refusal, by the opening of its host reason (6.5). Each row gives the sentence
+// that replaces the reason ("" shows the reason) and the way out ("" for none). Python has the same rows.
+const operationZoneRefusalTexts = Object.freeze([
+  ["mapgroupproto.xml differs from its stored original: ", "", OPERATION_ZONE_ORIGINAL_WAY_OUT],
+  ["medical feature target differs from both its original and managed state",
+    "mapgroupproto.xml differs from its stored original and from the form that DayZ-ServerMan writes when medical loot zones are on. No file was changed.",
+    OPERATION_ZONE_ORIGINAL_WAY_OUT],
+  ["mapgroupproto.xml has a layout that this setting cannot change safely: ", "",
+    "Correct this in mapgroupproto.xml, then try again."],
+  ["medical loot zones cannot change because the map editor manages this mission",
+    "Medical loot zones cannot change because the map editor manages this mission.", ""]
+]);
+
+// Word an unmappable loot-zone baseline: its reason, the way out and the stored original (6.5).
+// A mappable baseline, or a reason without a row, gives null, so the state is never guessed.
+function zoneBaselineText(baseline) {
+  if (!baseline || typeof baseline !== "object" || baseline.mappable !== false) return null;
+  const reason = String(baseline.reason || "");
+  const row = operationZoneRefusalTexts.find(([opening]) => reason.startsWith(opening));
+  if (!row) return null;
+  const text = [row[1] || reason, row[2]].filter(Boolean).join(" ");
+  // Only the way out that moves or matches the stored original needs its path.
+  const named = row[2] === OPERATION_ZONE_ORIGINAL_WAY_OUT && baseline.stored_original;
+  return named ? `${text} Stored original: ${baseline.stored_original}` : text;
+}
 
 // Find the name of the server state that a host message names last; null when it names none.
 function namedServerStateName(message) {
@@ -120,6 +176,9 @@ function namedServerState(message) {
 // Turn a host error into operator text; the fallback replaces a missing error, the kind of its operation picks its text.
 function operationErrorText(error, fallback = OPERATION_INTERNAL_TEXT, kind = null) {
   if (!error || typeof error !== "object") return fallback;
+  // A medical loot-zone refusal names its way out and the stored original (6.5).
+  const zone = zoneBaselineText(error.details?.zone_baseline);
+  if (zone) return zone;
   const code = typeof error.code === "string" ? error.code : "";
   const message = typeof error.message === "string" ? error.message : "";
   // A message that names a server state becomes one sentence about that state.
@@ -128,6 +187,9 @@ function operationErrorText(error, fallback = OPERATION_INTERNAL_TEXT, kind = nu
     return `This cannot be done while the server is ${state || operationServerStates.RUNNING_EXTERNAL}.`;
   }
   if (code === "MUTATION_CONFLICT") return mutationConflictText(error.details?.reason, message, error.details?.owner);
+  // A host sentence that already says what to do is shown as it is, whatever its code.
+  if (operationShownHostTexts.some((opening) => message.startsWith(opening))) return message;
+  if (Object.hasOwn(operationKindShownTexts, kind) && operationKindShownTexts[kind].some((part) => message.includes(part))) return message;
   const own = typeof kind === "string" && Object.hasOwn(operationKindErrorTexts, kind) ? operationKindErrorTexts[kind] : {};
   if (Object.hasOwn(own, code)) return own[code];
   if (Object.hasOwn(operationErrorTexts, code)) return operationErrorTexts[code];
@@ -160,138 +222,19 @@ function recoveryNoticeText(reason, owner = null) {
     + "Details are in Logs, Manager diagnostics.";
 }
 
-// Count the mods of a verification result that have a problem with the download or with the server copy.
-function verifyProblemCount(items) {
-  return (Array.isArray(items) ? items : []).filter((item) =>
-    item?.source_state !== operationVerifyGood.source || item?.target_state !== operationVerifyGood.target).length;
-}
-
 // Word the text of a failed bridge call for a page notice.
 function bridgeErrorText(result, fallback) {
   return operationErrorText(result?.error, fallback);
 }
 
-// Choose the failure sentence of a stop or restart from the phase that worked last.
-function lifecycleFailureSentence(kind, phase, generic) {
-  const backup = String(phase || "").startsWith("BACKUP_");
-  if (kind === "STOP_SERVER" && backup) return "Server stopped, but the backup failed.";
-  if (kind === "RESTART_SERVER" && backup) {
-    return "Server stopped, but the backup failed. The server was not started again.";
-  }
-  if (kind === "RESTART_SERVER" && phase === "START_SERVER") {
-    return "Server stopped, but it could not be started again.";
-  }
-  return generic;
-}
-
-// Choose the sentence of a failed or cancelled "apply mods and restart"; null means the generic sentence.
-function restartApplySentence(state, phase, error = null) {
-  const name = typeof phase === "string" ? phase : "";
-  const texts = operationRestartApplyTexts;
-  // Before the stop the server still runs; every later safe point leaves it stopped.
-  if (state === "CANCELLED") return ["", "preflight"].includes(name) ? texts.cancelledRunning : texts.cancelledStopped;
-  if (!name) return null;
-  // The server state that the host names in its refusal, when it names one.
-  const named = namedServerStateName(typeof error?.message === "string" ? error.message : "");
-  if (name === "preflight") return texts.preflight;
-  // A stop that was refused because the server was already stopped did not fail to stop it.
-  if (name === "STOP_SERVER") return named === "STOPPED" ? texts.stopNotRunning : texts.stop;
-  if (name.startsWith("BACKUP_")) return texts.backup;
-  if (name === "VERIFY_BEFORE_START") return texts.check;
-  // A failure of the start handoff proves neither a changed folder nor a stopped server.
-  if (name === "START_SERVER") return texts.start;
-  if (state === "RECOVERY_REQUIRED") return texts.applyBlocked;
-  // A write guard that found the server no longer stopped applied nothing.
-  return named && named !== "STOPPED" && operationGuardCodes.includes(error?.code) ? texts.applyRefused : texts.apply;
-}
-
-// Build the success sentence and look of a finished "apply mods and restart" from its start outcome.
-function restartApplySuccess(result, labels) {
-  if (result.start_state === "NOT_NEEDED") {
-    return { sentence: "All mods are current. The server was not restarted. To restart it anyway, use Save & Restart on Overview.", look: "success" };
-  }
-  if (result.start_state === "CANCELLED") {
-    return { sentence: "Mods and keys applied. The server start was cancelled. The server stays stopped.", look: "success" };
-  }
-  if (result.start_state === "FAILED") {
-    const reason = operationErrorText({ code: result.start_error, message: "" });
-    return { sentence: `Server stopped and mods applied, but the server could not be started: ${reason}`, look: "failed" };
-  }
-  return { sentence: result.backup ? "Server backed up, mods applied and server restarted." : labels.success, look: "success" };
-}
-
-// Build the success sentence and look of a finished operation from its result.
-function successPresentation(operation, labels) {
-  const result = operation.result || {};
-  if (operation.kind === "UPDATE_WORKSHOP_ITEMS" && Object.hasOwn(operationDownloadResults, String(result.download_state))) {
-    const [sentence, look] = operationDownloadResults[result.download_state];
-    return { sentence, look };
-  }
-  // A stop or restart names the backup that it made.
-  if (operation.kind === "STOP_SERVER" && result.backup) return { sentence: "Server stopped and backed up.", look: "success" };
-  if (operation.kind === "RESTART_SERVER" && result.backup) return { sentence: "Server backed up and restarted.", look: "success" };
-  // A verification that found problems says how many mods need the operator.
-  const problems = operation.kind === "VERIFY_WORKSHOP_FILES" ? verifyProblemCount(result.items) : 0;
-  if (problems) {
-    return { sentence: problems === 1 ? "1 mod has a problem." : `${problems} mods have problems.`, look: "warning" };
-  }
-  if (operation.kind === "APPLY_MODS_AND_RESTART") return restartApplySuccess(result, labels);
-  if (operation.kind === "PUBLISH_MODS_AND_KEYS") {
-    // An apply names the outcome of the server start that it was asked to do.
-    if (result.start_state === "STARTED") return { sentence: `${labels.success} The server was started.`, look: "success" };
-    if (result.start_state === "CANCELLED") return { sentence: `${labels.success} The server start was cancelled.`, look: "success" };
-    if (result.start_state === "NOT_REQUESTED") return { sentence: `${labels.success} Server start was not requested.`, look: "success" };
-    if (result.start_state === "FAILED") {
-      const reason = operationErrorText({ code: result.start_error, message: "" });
-      return { sentence: `${labels.success} The server could not be started: ${reason}`, look: "failed" };
-    }
-  }
-  return { sentence: labels.success, look: "success" };
-}
-
-// Describe a finished operation: look, result sentence, message, and both joined as one text.
-function operationResult(operation, seenPhase = null) {
-  const labels = window.ServerManOperationLabels.kind(operation?.kind);
-  const phase = operation?.last_working_phase || seenPhase;
-  let look = "failed"; let sentence = labels.failure; let message = "";
-  if (operation?.state === "SUCCEEDED") {
-    ({ sentence, look } = successPresentation(operation, labels));
-  } else if (operation?.state === "CANCELLED") {
-    // A stop or restart that never reached its backup did not stop the server.
-    const untouched = ["STOP_SERVER", "RESTART_SERVER"].includes(operation.kind)
-      && !String(phase || "").startsWith("BACKUP_");
-    look = "cancelled";
-    sentence = untouched ? window.ServerManOperationLabels.kind(null).cancelled : labels.cancelled;
-    if (operation.kind === "APPLY_MODS_AND_RESTART") sentence = restartApplySentence("CANCELLED", phase);
-  } else {
-    const failure = operation?.terminal_error || operation?.error;
-    const texts = operationRestartApplyTexts;
-    sentence = lifecycleFailureSentence(operation?.kind, phase, labels.failure);
-    if (operation?.kind === "APPLY_MODS_AND_RESTART") sentence = restartApplySentence(operation.state, phase, failure) || sentence;
-    // An apply with a start that failed in the check before the start, or in the start, did apply the mods.
-    if (operation?.kind === "PUBLISH_MODS_AND_KEYS" && phase === "VERIFY_BEFORE_START") sentence = texts.startCheck;
-    if (operation?.kind === "PUBLISH_MODS_AND_KEYS" && phase === "START_SERVER") sentence = texts.start;
-    message = operationErrorText(failure, "", operation?.kind);
-    // These sentences already say what the text of their error code or of the named state says.
-    const code = operation?.terminal_error?.code;
-    if ((sentence === texts.preflight && code === "PUBLICATION_PREVIEW_STALE") || sentence === texts.stopNotRunning
-        || ([texts.check, texts.startCheck].includes(sentence) && code === "PUBLICATION_FAILED")) message = "";
-    // A launch failure of a start or restart is already said by the sentence.
-    if (operation?.terminal_error?.code === "LAUNCH_FAILED"
-        && ["START_SERVER", "RESTART_SERVER"].includes(operation.kind)) message = "";
-    // The result sentence states the block once, so the message does not state it again.
-    if (operation?.state === "RECOVERY_REQUIRED") {
-      look = "recovery"; sentence = `${sentence} Changes are blocked.`; message = message.replace(OPERATION_BLOCK_SENTENCE, "").trim();
-    }
-  }
-  return Object.freeze({ look, sentence, message, text: message ? `${sentence} ${message}` : sentence });
-}
-
-// Publish the message lookups used by the bar and by every page notice.
+// Publish the message lookups used by the bar and by every page notice. operationResult is declared in
+// operation_results.js, which each document composes into the same script element.
 window.ServerManOperationMessages = Object.freeze({
   error: operationErrorText,
   bridgeError: bridgeErrorText,
   result: operationResult,
   recoveryText: OPERATION_RECOVERY_TEXT,
   recoveryNotice: recoveryNoticeText,
+  medicalUnchanged: OPERATION_MEDICAL_UNCHANGED,
+  zoneBaseline: zoneBaselineText,
 });

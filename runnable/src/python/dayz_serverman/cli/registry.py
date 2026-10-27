@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from types import MappingProxyType
 
 
 class Kind(str, Enum):
@@ -89,9 +90,28 @@ class CommandSpec:
 # Bridge methods that only the CLI machinery calls: the waiter, Ctrl+C and the session close (01.04)
 INTERNAL_METHODS = frozenset(("get_operation", "read_operation_events", "request_operation_cancellation",
                               "request_shutdown"))
-# Bridge methods that no command calls, with the Product Owner's reason in 01.04
-EXCLUDED_METHODS = frozenset(("save_selected_profile", "list_legacy_backup_references",
-                              "revalidate_legacy_backup_references"))
+# Reason of the two legacy backup reference methods (01.04)
+_NOT_PARITY = "Never called by the GUI; no operator documentation; new feature, not parity"
+# Product Owner reason of the two display reads of the map editor (A11, RQ1)
+_DISPLAY_ONLY = "display-only rendering data; Inspect and the capability read give the same facts as text"
+# Bridge methods that no command calls, each with the Product Owner's reason in 01.04 of the CLI plan.
+# The display reads (3.17) are permanent exclusions, never pending: the tier PNG and the background parts
+# (`part` from 0) are display transport, and their `over_budget` details carry no fact for a command.
+EXCLUSION_REASONS = MappingProxyType({
+    "save_selected_profile": "GUI selection memory; a script must not move the window's selection",
+    "list_legacy_backup_references": _NOT_PARITY,
+    "revalidate_legacy_backup_references": _NOT_PARITY,
+    "read_mission_map_tier_layer": _DISPLAY_ONLY,
+    "read_mission_map_background": _DISPLAY_ONLY,
+})
+EXCLUDED_METHODS = frozenset(EXCLUSION_REASONS)
+# Start of each PENDING_TASK_10 value
+PENDING_PREFIX = "pending task 10: "
+# Bridge methods whose command task 10 of the mission map plan builds, each with
+# "pending task 10: <planned command>". A pending method is not an exclusion. Task 10 empties this table.
+# Leaf 10.36 removed the last two entries, the adoption methods of `map adopt` (Architect 2026-10-17 09:30:36 in
+# evidence 10.13).
+PENDING_TASK_10: MappingProxyType[str, str] = MappingProxyType({})
 # Command words that are not leaf commands of the table
 HELP_WORD = "help"
 

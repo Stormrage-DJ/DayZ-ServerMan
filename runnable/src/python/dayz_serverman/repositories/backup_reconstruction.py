@@ -26,7 +26,8 @@ def directory_inventory(dayz_root, relative, prefix):
 
 def verify_reconstruction_bytes(manifest, config_bytes):
     """Reject validly signed metadata that contradicts its configuration payload."""
-    if manifest.schema_version != 3:
+    # Schema 4 carries the same reconstruction metadata as schema 3
+    if manifest.schema_version < 3:
         return
     configuration = read_restore_configuration(config_bytes)
     metadata = manifest.reconstruction

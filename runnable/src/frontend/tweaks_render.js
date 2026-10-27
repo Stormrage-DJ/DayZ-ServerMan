@@ -6,12 +6,46 @@ function tweakNode(tag, className = "", text = "") { return window.ServerManUi.e
 // Turn a configuration key into readable label text.
 function tweakLabel(key) { return key.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " "); }
 
+// Describe what a supply percentage does with the group's item counts of the loaded mission.
+function supplyEffect(group, field, percent, api) {
+  const facts = api.state.snapshots.get(group.target)?.facts;
+  if (!facts) return "";
+  if (field.key === "ammo_fill") return `${facts.fill_types} ammunition and magazine types in this mission.`;
+  const counts = facts.groups?.[field.key];
+  if (!counts) return "";
+  if (!counts.types) return "No item type of this group spawns in this mission.";
+  const target = Math.round(counts.nominal * percent / 100);
+  return `${counts.types} item types · ${counts.nominal} on the map originally · about ${target} at ${percent}%`;
+}
+
+// Build a percentage slider with its shown value and, for supply groups, its effect.
+function percentControl(wrapper, group, field, value, api) {
+  const input = document.createElement("input");
+  input.type = "range"; input.min = String(field.range.min); input.max = String(field.range.max);
+  input.step = String(field.range.step); input.value = String(value ?? 100);
+  input.setAttribute("aria-label", field.label);
+  const shown = tweakNode("output", "tweak-percent-value");
+  const effect = tweakNode("small", "tweak-percent-effect");
+  // Show the slider position and its effect while it moves; the draft changes on release
+  const update = () => {
+    shown.textContent = `${input.value}%`; input.setAttribute("aria-valuetext", `${input.value}%`);
+    effect.textContent = supplyEffect(group, field, Number(input.value), api);
+  };
+  update(); input.addEventListener("input", update);
+  input.addEventListener("change", () => api.setValue(group.target, field.key, Number(input.value)));
+  const row = tweakNode("div", "tweak-percent-row"); row.append(input, shown);
+  wrapper.append(row);
+  if (effect.textContent) wrapper.append(effect);
+  return wrapper;
+}
+
 // Build the input control for one tweakable field.
 function controlForField(group, field, api) {
   const wrapper = tweakNode("label", "guided-setting-control");
   // Show the field label above its control.
   wrapper.append(tweakNode("span", "tweak-field-label", field.label));
   const value = api.value(group.target, field.key);
+  if (field.kind === "percent") return percentControl(wrapper, group, field, value, api);
   let input;
   // Boolean fields use an enabled or disabled choice.
   if (field.kind === "boolean") {
@@ -94,6 +128,12 @@ function renderGroup(group, api) {
       control.value = String(Boolean(api.value(field.key, "enabled")));
       control.addEventListener("change", () => api.setValue(field.key, "enabled", control.value === "true"));
       row.append(copy, control); section.append(row);
+      // A toggle that cannot use its stored original keeps the read state, locked, with the reason and way out (6.5).
+      const refusal = window.ServerManOperationMessages.zoneBaseline(api.state.snapshots.get(field.key)?.zone_baseline);
+      if (!refusal) return;
+      control.disabled = true;
+      const notice = tweakNode("p", "notice notice-warning", refusal);
+      notice.setAttribute("role", "status"); section.append(notice);
     });
     return section;
   }
@@ -183,9 +223,16 @@ function tabButton(label, active, action) {
   button.addEventListener("click", action); return button;
 }
 
+// Mount the map editor action before the tabs or the loading message.
+function renderMapEditorEntry(root) {
+  const slot = tweakNode("div", "panel-heading"); slot.id = "map-editor-entry";
+  root.prepend(slot); window.ServerManMapEditorEntry.render(slot);
+}
+
 // Render the full tweaks workspace for the current selection.
 function renderWorkspace(api) {
   const root = tweakNode("section", "panel tweaks-panel"); root.id = "tweaks-workspace";
+  renderMapEditorEntry(root);
   // Build the primary area tabs.
   const top = tweakNode("div", "tab-list primary-tabs"); top.setAttribute("role", "tablist");
   [["gameplay", "Gameplay Tweaks"], ["events", "In-Game Events"], ["population", "Vehicles & Animals"]]
@@ -214,4 +261,4 @@ function renderWorkspace(api) {
 }
 
 // Publish the tweaks render module.
-window.ServerManTweaksRender = Object.freeze({ workspace: renderWorkspace });
+window.ServerManTweaksRender = Object.freeze({ workspace: renderWorkspace, entry: renderMapEditorEntry });

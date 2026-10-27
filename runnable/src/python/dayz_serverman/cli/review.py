@@ -12,6 +12,7 @@ from typing import Any
 
 from ..application.activity_wording import plain_sentence
 from ..application import review_wording as texts
+from ..domain.restore_editor_texts import EDITOR_NOTES_HEADING
 from ..application.review_wording import BACKUP_AFTER_STOP_SENTENCE, LIFECYCLE_DIALOGS
 from .output import Block, Label, Table, Value, sentence
 
@@ -57,6 +58,8 @@ def restore_review(preview: Mapping[str, Any], local_time: Any) -> list[Block]:
             kind = texts.RESTORE_TARGET_KINDS.get(str(target.get("target_kind")), texts.RESTORE_TARGET_FALLBACK)
             action = texts.RESTORE_ACTIONS.get(str(target.get("action")), texts.RESTORE_ACTION_FALLBACK)
             blocks.append(sentence(f"{kind} — {action}: ", Value(str(target.get("target_relative", "")))))
+    # The map editor records of the restore, after the file list and before the question
+    blocks += _editor_notes(preview)
     title, warning = texts.RESTORE_DIALOG
     return [*blocks, sentence(title), sentence(warning)]
 
@@ -87,12 +90,20 @@ def profile_restore_review(preview: Mapping[str, Any], archive_name: str,
     missing = [str(item) for item in preview.get("missing_mods") or []]
     if missing:
         blocks.append(sentence("Missing mods: ", Value(", ".join(missing))))
+    # The same map editor sentences as `backup restore`, before the world replacement and the question
+    blocks += _editor_notes(preview)
     if preview.get("storage_policy") == "replace_existing":
         affected = [str(item) for item in preview.get("affected_profile_ids") or []]
         blocks += [sentence(texts.REPLACE_WORLD_LEAD),
                    _profile_table("Profile", tuple((names.get(item, item), item) for item in affected)),
                    sentence(texts.REPLACE_WORLD_TAIL)]
     return blocks
+
+
+def _editor_notes(preview: Mapping[str, Any]) -> list[Block]:
+    """Return the heading and the sentences of `editor_notes`, or nothing when the restore has no editor part."""
+    notes = [str(note) for note in preview.get("editor_notes") or []]
+    return [sentence(EDITOR_NOTES_HEADING), *(sentence(note) for note in notes)] if notes else []
 
 
 def _row(label: str, value: str) -> Block:

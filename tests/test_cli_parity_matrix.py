@@ -1,4 +1,4 @@
-"""Criterion 3: every GUI bridge method is in a CLI command, internal or excluded, as 01.04 says (task 2.5)."""
+"""Criterion 3: every GUI bridge method is in a CLI command, internal, excluded or pending, as 01.04 says (task 2.5)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runnable" / "src" 
 from dayz_serverman.bridge_composition import OBSERVER_READ_METHODS  # noqa: E402
 from dayz_serverman.cli.command_table import COMMANDS  # noqa: E402
 from dayz_serverman.cli.registry import (  # noqa: E402
-    EXCLUDED_METHODS, INTERNAL_METHODS, Confirm, Kind, ProfileRule,
+    EXCLUDED_METHODS, EXCLUSION_REASONS, INTERNAL_METHODS, PENDING_PREFIX, PENDING_TASK_10, Confirm, Kind,
+    ProfileRule,
 )
 from dayz_serverman.composition import build_composition  # noqa: E402
 
@@ -28,6 +29,9 @@ MATRIX: dict[str, int] = {
     **dict.fromkeys(("config set", "tweaks set", "tweaks convert-loadout", "tweaks medical set", "profile create",
                      "profile edit", "profile delete"), 6),
     **dict.fromkeys(("settings check-path", "settings set", "migrate preview", "migrate apply"), 7),
+    # Task 10 of the mission map plan (D20): each map leaf adds the commands that it builds
+    **dict.fromkeys(("map show", "map inspect", "map save", "map set-aside", "map preview", "map apply",
+                     "map restore", "map recover", "map export", "map import", "map copy", "map adopt"), 10),
 }
 # Commands built so far, by task
 BUILT = {
@@ -51,6 +55,12 @@ BUILT = {
     "settings check-path", "settings set",
     # Task 7.2: the legacy import
     "migrate preview", "migrate apply",
+    # Task 10.4: the map reads; task 10.15: the save and the set aside of the saved plan; task 10.5: preview, apply
+    "map show", "map inspect", "map save", "map set-aside", "map preview", "map apply",
+    # Task 10.32: the restore of both modes and the editor recovery; task 10.6: the export; task 10.33: the import
+    "map restore", "map recover", "map export", "map import",
+    # Task 10.7: the copy between profiles; task 10.36: the adoption
+    "map copy", "map adopt",
 }
 # Commands that a later task still builds; each task removes its commands, and the table is empty at phase 9
 PENDING = set(MATRIX) - BUILT
@@ -60,7 +70,20 @@ CONFIRMING = {
     "server start", "server stop", "server restart", "backup create", "backup restore", "profile restore",
     "mods update", "profile delete", "config set", "tweaks set", "tweaks medical set", "tweaks convert-loadout",
     "migrate apply",
+    # Task 10 of the mission map plan (D14): the commands whose window action confirms
+    "map set-aside", "map apply", "map restore", "map import", "map copy", "map adopt",
 }
+# Bridge methods that wait for a command of task 10 of the mission map plan. The CLI leaves removed them all;
+# leaf 10.36 removed the two adoption methods, which `map adopt` calls
+EXPECTED_PENDING_TASK_10: dict[str, str] = {}
+# The three methods of leaf 8.9 that `map restore` and `map recover` call since leaf 10.32, by command
+LEAF_10_32_METHODS = {"map restore": frozenset(("preview_mission_map_restore", "restore_mission_map")),
+                      "map recover": frozenset(("inspect_mission_map_recovery",))}
+# The two methods of leaf 8.9 that `map preview` and `map apply` call since leaf 10.5
+LEAF_10_5_METHODS = frozenset(("preview_mission_map", "apply_mission_map"))
+# Display reads of the map editor (3.17): permanent exclusions with the Product Owner reason of RQ1
+DISPLAY_REASON = "display-only rendering data; Inspect and the capability read give the same facts as text"
+DISPLAY_READS = frozenset(("read_mission_map_tier_layer", "read_mission_map_background"))
 
 
 class ParityMatrixTests(unittest.TestCase):
@@ -77,16 +100,67 @@ class ParityMatrixTests(unittest.TestCase):
                 composition.shutdown.request_shutdown()
                 composition.shutdown.wait_for_close(5)
 
-    def test_every_owner_method_is_used_internal_or_excluded(self) -> None:
-        """Each of the 60 methods is in a command's bridge methods, or internal, or excluded (53 + 4 + 3)."""
-        self.assertEqual(len(self.allowlist), 60)
+    def test_every_owner_method_is_used_internal_excluded_or_pending(self) -> None:
+        """Each of the 80 methods is in a command, internal or excluded (71 + 4 + 5); none is pending (10.36)."""
+        self.assertEqual(len(self.allowlist), 80)
         used = set().union(*(command.bridge_methods for command in COMMANDS))
-        self.assertEqual(self.allowlist - used - INTERNAL_METHODS - EXCLUDED_METHODS, set())
-        self.assertEqual(len(self.allowlist - INTERNAL_METHODS - EXCLUDED_METHODS), 53)
-        # Internal and excluded methods are never named by a command, and every named method exists
-        self.assertEqual(used & (INTERNAL_METHODS | EXCLUDED_METHODS), set())
+        pending = set(PENDING_TASK_10)
+        self.assertEqual(self.allowlist - used - INTERNAL_METHODS - EXCLUDED_METHODS - pending, set())
+        self.assertEqual(len(self.allowlist - INTERNAL_METHODS - EXCLUDED_METHODS - pending), 71)
+        # A pending method never counts as an exclusion
+        self.assertEqual((len(INTERNAL_METHODS), len(EXCLUDED_METHODS)), (4, 5))
+        # Internal, excluded and pending methods are never named by a command, and every named method exists
+        self.assertEqual(used & (INTERNAL_METHODS | EXCLUDED_METHODS | pending), set())
         self.assertEqual(used - self.allowlist, set())
-        self.assertTrue(INTERNAL_METHODS | EXCLUDED_METHODS <= self.allowlist)
+        self.assertTrue(INTERNAL_METHODS | EXCLUDED_METHODS | pending <= self.allowlist)
+
+    def test_dispositions_are_disjoint_with_reasons(self) -> None:
+        """Each method has one disposition; an exclusion has a reason and a pending entry names its command."""
+        self.assertEqual(EXCLUDED_METHODS, frozenset(EXCLUSION_REASONS))
+        self.assertEqual(INTERNAL_METHODS & EXCLUDED_METHODS, set())
+        self.assertEqual(set(PENDING_TASK_10) & (INTERNAL_METHODS | EXCLUDED_METHODS), set())
+        for method, reason in EXCLUSION_REASONS.items():
+            with self.subTest(excluded=method):
+                self.assertTrue(reason.strip())
+        for method, planned in PENDING_TASK_10.items():
+            with self.subTest(pending=method):
+                self.assertTrue(planned.startswith(PENDING_PREFIX))
+                self.assertTrue(planned[len(PENDING_PREFIX):].strip())
+
+    def test_pending_methods_are_pinned(self) -> None:
+        """The pending methods and their planned commands are exactly the expected ones."""
+        self.assertEqual(PENDING_PREFIX, "pending task 10: ")
+        self.assertEqual(dict(PENDING_TASK_10), EXPECTED_PENDING_TASK_10)
+
+    def test_the_methods_of_leaf_8_9_are_used_by_their_commands(self) -> None:
+        """Preview and Apply are used since 10.5; both restore methods and recovery since 10.32, never pending."""
+        specs = {command.name: command for command in COMMANDS}
+        used = set().union(*(command.bridge_methods for command in COMMANDS))
+        self.assertLessEqual(LEAF_10_5_METHODS, used & self.allowlist)
+        for name, methods in LEAF_10_32_METHODS.items():
+            with self.subTest(command=name):
+                self.assertLessEqual(methods, specs[name].bridge_methods & self.allowlist)
+        leaf_8_9 = LEAF_10_5_METHODS.union(*LEAF_10_32_METHODS.values())
+        self.assertEqual(leaf_8_9 & (set(PENDING_TASK_10) | INTERNAL_METHODS | EXCLUDED_METHODS), set())
+
+    def test_parity_gap_list_is_closed(self) -> None:
+        """Leaf 10.14: no pending table entry, no pending command and no map command without a handler stay."""
+        self.assertEqual(dict(PENDING_TASK_10), {})
+        self.assertEqual(EXPECTED_PENDING_TASK_10, {})
+        self.assertEqual(PENDING, set())
+        map_commands = [command for command in COMMANDS if command.path[0] == "map"]
+        self.assertEqual(len(map_commands), 12)
+        for command in map_commands:
+            with self.subTest(command=command.name):
+                self.assertFalse(command.pending)
+                self.assertTrue(command.bridge_methods)
+
+    def test_display_reads_are_permanent_exclusions(self) -> None:
+        """Both display reads are registered and excluded with the RQ1 reason; neither is ever pending (3.17)."""
+        self.assertLessEqual(DISPLAY_READS, self.allowlist)
+        self.assertEqual({method: EXCLUSION_REASONS[method] for method in DISPLAY_READS},
+                         dict.fromkeys(DISPLAY_READS, DISPLAY_REASON))
+        self.assertEqual(DISPLAY_READS & set(PENDING_TASK_10), set())
 
     def test_registry_names_the_commands_of_the_matrix(self) -> None:
         """The registry holds exactly the commands of 01.04, each once."""

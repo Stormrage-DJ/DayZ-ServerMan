@@ -9,7 +9,7 @@ from ..bridge.contracts import ErrorCode
 from ..bridge.facade import ApplicationCallError
 from ..domain.backups import SHA256
 from ..domain.lifecycle import LifecycleFailure
-from ..domain.models import RecordUnavailable, RevisionConflict
+from ..domain.models import RecordUnavailable, RepositoryError, RevisionConflict
 from ..domain.profiles import ProfileValidationError
 from ..repositories.backups import BackupStorageError
 from ..repositories.profiles import ProfileNotFound, ProfileStorageError
@@ -180,6 +180,7 @@ def _translate(error: Exception) -> ApplicationCallError:
         return ApplicationCallError(code, str(error), retryable=code == ErrorCode.STORAGE_FAILURE)
     if isinstance(error, (RecordUnavailable, ProfileStorageError, SettingsValidationError, RestoreJournalError)):
         return ApplicationCallError(ErrorCode.RECOVERY_REQUIRED, "Restore context requires recovery.")
-    if isinstance(error, OSError):
+    # A corrupt or conflicting editor record refuses before any write (10.10); it is never repaired by a restore
+    if isinstance(error, (OSError, RepositoryError)):
         return ApplicationCallError(ErrorCode.STORAGE_FAILURE, "Restore storage failed.", retryable=True)
     return ApplicationCallError(ErrorCode.INTERNAL_FAILURE, "Restore processing failed.")

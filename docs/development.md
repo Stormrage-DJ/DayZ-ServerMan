@@ -6,8 +6,11 @@
 DayZ-ServerMan/
 |-- README.md
 |-- .github/workflows/tests.yml
+|-- requirements-dev.txt
 |-- docs/
 |-- img/
+|-- legal/
+|-- tools/
 |-- runnable/
 |   |-- DayZ-ServerMan.py
 |   |-- requirements.txt
@@ -26,6 +29,12 @@ DayZ-ServerMan/
 - `runnable/src/python/dayz_serverman/` contains the Python application code.
 - `tests/` contains repository-level automated tests.
 - `img/` and `runnable/img/` hold the README pictures.
+- `requirements-dev.txt` pins the development tools. The application does not
+  use them.
+- `legal/THIRD-PARTY-NOTICES.md` lists third-party components with their
+  licence evidence under `legal/third-party/`.
+- `tools/` holds development scripts that are not shipped, such as the
+  generator of the Windows ordinal case table.
 
 The application loads source files directly. It does not compile or bundle the
 frontend. The Python starter composes the local frontend assets into the
@@ -42,6 +51,15 @@ py runnable\DayZ-ServerMan.py
 The starter creates `runnable/.venv` and installs
 `runnable/requirements.txt`. The repository does not vendor Python packages in
 `runnable/src/python`.
+
+Install the development tools into the same environment once:
+
+```powershell
+.\runnable\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+```
+
+A new development tool needs a licence intake first. Add its licence file and
+an entry to `legal/THIRD-PARTY-NOTICES.md` in the same change.
 
 Generated runtime files are ignored by Git. This includes the local virtual
 environment, application configuration, profiles, logs, operation records,
@@ -74,6 +92,13 @@ Compile-check the Python source:
 ```powershell
 .\runnable\.venv\Scripts\python.exe -m compileall -q runnable\src\python
 ```
+
+`tests/test_undefined_names.py` runs pyflakes over the application source,
+the starter scripts, and the tests. It reports only names that a module uses
+but never defines or imports, for example a missing import. Such a name fails
+only when its line runs, so ordinary tests can miss it. A star import also
+fails the check, because it hides such names. Without pyflakes the
+test is skipped on a local machine and fails in CI.
 
 No test opens a network connection, runs SteamCMD, or starts or stops a DayZ
 server. The Steam transport, SteamCMD, the A2S socket, the clock, and the
@@ -115,9 +140,10 @@ for `msedge.exe`.
 `windows-latest` with Python 3.12. It uses `actions/checkout@v5` and
 `actions/setup-python@v6`. It has two jobs:
 
-- **Unit and static tests** (time limit 20 minutes) compile-checks the Python
-  source and runs every test module that does not start Edge. A failing test
-  fails the run.
+- **Unit and static tests** (time limit 20 minutes) installs
+  `requirements-dev.txt` and compile-checks the Python source. Then it runs
+  every test module that does not start Edge, including the undefined-name
+  check. A failing test fails the run.
 - **Edge-driven interface tests** (time limit 30 minutes) first records the
   Edge version as a notice, then runs the modules that start Edge. It is marked
   `continue-on-error`, because hosted runners can keep the temporary Edge
@@ -169,10 +195,81 @@ network access, validation, and persistent mutations.
 
 Bridge changes are additive: new methods and new response fields only.
 `CONTRACT_VERSION` stays 1, and every handler requires the exact request field
-set. The command line did not change this rule. It added no bridge method, and
-the 60-method pins in `tests/test_readonly_host_api.py` and
-`tests/test_bridge_contracts.py` stay unchanged. The JSON output of the
-command line has its own `cli_version`, which also grows only by new fields.
+set. The command line did not change this rule.
+
+The mission-map editor adds 20 bridge methods.
+
+- Observer reads: `load_mission_map`, `inspect_mission_map`,
+  `continue_mission_map_inspection`, `cancel_mission_map_inspection` and
+  `export_mission_map_plan`.
+- Owner methods for plan data: `save_mission_map_plan` and
+  `set_aside_mission_map_plan`.
+- Owner methods for display: `read_mission_map_tier_layer` and
+  `read_mission_map_background`.
+- Owner previews: `preview_mission_map`, `preview_mission_map_restore`,
+  `preview_mission_map_import`, `preview_mission_map_copy` and
+  `preview_mission_map_adoption`.
+- Owner writers: `apply_mission_map`, `restore_mission_map`,
+  `import_mission_map_plan`, `copy_mission_map_plan` and `adopt_mission_map`.
+- Owner recovery: `inspect_mission_map_recovery` runs the editor recovery.
+
+Set aside renames invalid saved plan data to its dated name and deletes
+nothing. Apply and the restores are operations of the lane.
+
+### Method count and pins
+
+The owner allowlist has 80 bridge methods. How to count them again:
+
+1. Build a composition with `build_composition` on an empty manager folder.
+2. Read `composition.bridge.allowed_methods`. It is the key set of the handler
+   table that `composition.py` gives to `BridgeFacade`.
+3. Count its members. Of these, 20 names hold `mission_map`.
+
+`bridge_composition.py` divides the same 80 names: 26 in
+`OBSERVER_READ_METHODS` and 54 in `OWNER_ONLY_METHODS`. The two sets share no
+name. An observer session holds only the 26 reads.
+
+These tests pin the numbers and the names:
+
+- `tests/test_bridge_contracts.py` pins the owner allowlist name by name.
+- `tests/test_cli_parity_matrix.py` asserts that the allowlist has 80 methods.
+- `tests/test_split_sizes.py` pins the order of the handler table, with the 20
+  editor methods at their coordinator position.
+- `tests/test_mission_map_editor_api.py` pins the public methods of the editor
+  window API and the bridge methods that they call.
+- The main-window host API is pinned separately in
+  `tests/test_readonly_host_api.py`.
+
+Do not write a method count in this guide as a fixed claim without the count
+steps above. When you add a method, change these pins in the same change.
+
+### Parity reasons and the pending rule
+
+Every method of the allowlist has exactly one disposition in
+`cli/registry.py`. `tests/test_cli_parity_matrix.py` checks this:
+
+- 71 methods are used by a command.
+- 4 methods are in `INTERNAL_METHODS`: `get_operation`,
+  `read_operation_events`, `request_operation_cancellation` and
+  `request_shutdown`. Only the command-line machinery calls them.
+- 5 methods are in `EXCLUSION_REASONS`, each with a reason in words:
+  - `save_selected_profile`: window selection memory;
+  - the two legacy backup reference methods: never called by the window, so
+    not parity;
+  - the two display reads of the map editor. They carry only display-only
+    rendering data. Inspect and the capability read give the same facts as
+    text.
+- 0 methods are pending. `PENDING_TASK_10` is empty, and the test pins
+  `EXPECTED_PENDING_TASK_10` as empty too. `test_parity_gap_list_is_closed`
+  also requires that no command is pending and that each of the 12 `map`
+  commands has a handler and a bridge method.
+
+The pending rule stays in the code. A method whose command comes later goes
+into `PENDING_TASK_10` as `"pending task 10: <planned command>"`. A pending
+method is not an exclusion. A method cannot be pending and internal or
+excluded. The test pins each pending entry, so a new entry needs a change in
+both places.
+The command line has its own `cli_version`, which also grows only by new fields.
 
 ### Command line and sessions
 
@@ -260,8 +357,10 @@ change.
    a test against its frontend literal. Text output shows no internal
    identifier; `tests/test_cli_input_names.py` checks the input names.
 5. Update `tests/test_cli_parity_matrix.py`. Every bridge method must be in a
-   command, or in `INTERNAL_METHODS` or `EXCLUDED_METHODS`
-   (`cli/registry.py`). The "Confirm" set must match the window.
+   command, in `INTERNAL_METHODS`, in `EXCLUSION_REASONS` with its reason, or
+   in `PENDING_TASK_10` as "pending task 10: <planned command>"
+   (`cli/registry.py`). A pending method is not an exclusion, and the test pins
+   each pending entry. The "Confirm" set must match the window.
 6. A read command may call only `OBSERVER_READ_METHODS`. A new read method
    needs a reader class. Exempt it from the reader side only with a test that
    proves it opens nothing inside a folder that an owner step renames or
@@ -370,6 +469,136 @@ File hashes and engine readiness do not prove client persistence behavior.
 Use a disposable populated server fixture to verify known player/object state
 and representative mod persistence before accepting persistence portability.
 
+### Mission-map editor
+
+The editor is a second window with its own document. It edits the map plan of
+one profile. It writes no game file by itself. Apply and the restores do that
+in the operation lane.
+
+**Mission-map builder.** `mission_map_composition.build_mission_map` builds
+the editor services. `composition.py` calls it once and passes the logger.
+It returns a `MissionMapParts` value. The value holds:
+
+- the shared association locks;
+- the plan service, the transfer service and the coordinator;
+- the Inspect reader port and the image selection service;
+- the display reads and the recovery services.
+
+- One `AssociationLocks` instance serves the plan saves and the commit step.
+  They must meet on the same lock.
+- An owner session recovers inside the builder, before it returns the
+  services. An observer session creates no folder and runs no recovery.
+- `logger` is optional. With `None`, the recovery logs nothing.
+
+**Key spelling helper.** `repositories/mission_map_layout.ordinal_spelling`
+gives the comparison form of a path text. The editor uses it for target keys
+and for every comparison of a mission root.
+
+- It works on UTF-16 code units and maps each non-surrogate unit through the
+  table `domain/ordinal_upcase.txt`. This is the upper-case table that Windows
+  uses for an ordinal, case-blind comparison. `tools/generate_ordinal_upcase.py`
+  makes the table.
+- Separators become `/`. There is no case folding and no Unicode
+  normalization, so NTFS names that differ stay different.
+- A lone surrogate raises `ValueError`. Such a path has no key and no
+  comparison form.
+- `target_key` is the first 32 hex digits of SHA-256 over the target class,
+  the table version `windows-ordinal-1` and this form. The table has a pinned
+  SHA-256, and a changed table is refused when it loads.
+
+Do not compare mission roots with `str.lower` or `casefold`. Use the helper.
+`tests/test_mission_map_ordinal.py` checks it.
+
+**Editor document.** `host/editor_assets.compose_editor_html` composes the
+document from `frontend/editor.html`, `EDITOR_STYLES` and `EDITOR_SCRIPTS`.
+The document needs exactly one style marker and one script marker, and the
+composer refuses any other count. The list order is the load order. Add a new
+editor script to `EDITOR_SCRIPTS` and to the list in
+`tests/test_mission_map_editor_static.py`. That test also checks that each
+global name is declared once.
+
+The window API is `host/map_editor_window_api.MissionMapEditorApi`. It binds
+one profile and takes no profile ID and no path from the page. Only
+`UNBOUND_METHODS` (`get_operation`, `read_operation_events`,
+`inspect_mission_map_recovery` and `list_profiles`) run without the bound
+profile. `tests/test_mission_map_editor_api.py` pins the public methods.
+`open_map_editor` is a host method, not a bridge method. It opens or focuses
+the editor window of a profile.
+
+**Editor harness.** Edge tests start the composed editor in headless Edge.
+`run_editor_harness` in `tests/ui_harness_support.py` replaces
+`window.pywebview.api` with a fake. The test body sets the answers of the
+fake.
+
+- Support modules such as `tests/mission_map_transfer_support.py` and
+  `tests/mission_map_copy_support.py` add the fake answers of a larger flow.
+- Use neutral sample data.
+- The rules of "Interface tests in headless Edge" apply. Close Edge first.
+  Treat a lock-file cleanup error as an environment failure.
+
+**Window file transfer (9.1, 9.2).** Export plan, Import plan and Copy from
+another profile are in the "Plan file" section of the editor window.
+
+- `host/map_editor_transfer_api.py` holds the methods `export_plan`,
+  `select_import_file`, `preview_import`, `import_plan`, `copy_sources`,
+  `preview_copy` and `copy_plan`. `MissionMapEditorApi` inherits them.
+- The page never gets a path. Answers name only the base file name. The
+  host keeps the text of an import file in one pending slot, behind a random
+  selection ID. Copy names only the source profile. The host binds the
+  destination and only reads the source plan.
+- Export does not call the bridge. It writes the draft that the page sends.
+- `adapters/windows/user_files.py` holds the steps without wording: the
+  target check, the staged write, the read-back check and the bounded read.
+  `map export`, `map import`, `map save` and the window share them. A refusal
+  is `UserFileError` with one closed reason. The command line and the window
+  map the reason to their own texts.
+
+**Journal and recovery.** Apply, the restores and the adoption publish files
+through one journal for each operation.
+
+- Journals live in `data/operations/mission-map-journals/`. A journal holds
+  the per-file groups, the manager-folder record entries and a phase. The
+  phases are `PREPARED`, `PUBLISHING`, `PUBLISHED`, `COMMITTING`,
+  `COMPENSATING`, `ROLLED_BACK` and `COMMITTED`.
+- `COMMITTING` is the commit point. After it, recovery only rolls forward.
+- `repositories/journaled_publication.py` is the shared engine. Backup
+  restore uses it too. `repositories/mission_map_publication.py` sets the
+  editor policy.
+- `application/mission_map_recovery.MissionMapRecovery` resolves the journals.
+  It first proves that the server is stopped (`InstallationGuard`), then takes
+  the folder writer and the association locks. If a file is in a third state,
+  it refuses and keeps the journal.
+- `MissionMapRecoveryCoordinator` runs recovery once at owner startup, before
+  the handlers exist. It also serves `inspect_mission_map_recovery`: Check
+  again in the editor and `map recover`. It defers while the lane is busy. It
+  sets and lifts only the blocks of its own owner, `APPLY_MISSION_MAP`.
+
+*Recovery log lines (8.12).* The coordinator writes these lines to the
+manager log, `data/logs/manager.jsonl`. They are hidden from Manager activity
+and show in Logs, Manager diagnostics.
+
+| Event | Level | When | Fields |
+|---|---|---|---|
+| `mission_map.recovery_resolved` | WARNING | A journal is resolved | `operation_kind`, `phase`, `result`, `trigger` |
+| `mission_map.recovery_blocked` | WARNING | A journal stays, or journals cannot be read | `operation_kind`, `phase`, `reason`, `trigger`; for unreadable journals `reason`, `unreadable` (the count), `trigger` |
+| `operation_lane.recovery_block_cleared` | INFO | A lane call removes at least one block | `reasons`, and `owner` when one owner is cleared |
+
+- `operation_id` is the top-level field of a line. It is the ID of the
+  interrupted operation. A line for unreadable journals has none.
+- `phase` is the phase found before recovery. `result` is `COMMITTED` when the
+  journal was rolled forward and `ROLLED_BACK` when it was rolled back. A
+  journal that stays active has no result.
+- `trigger` is `STARTUP` or `ON_DEMAND`.
+- A line holds no path, root, profile ID or mission key.
+- A clean start writes no recovery line.
+- Operation records live in the memory of one session. After a restart,
+  `get_operation` gives `NOT_FOUND` for the old ID. Use the log line to
+  find the result of the interrupted operation.
+
+Tests: `tests/test_mission_map_recovery_log_lines.py`,
+`tests/test_recovery_block_cleared_log.py` and
+`tests/test_mission_map_recovery_phases.py`.
+
 ## Frontend rules
 
 ### Section registry
@@ -428,19 +657,30 @@ add one `registerSection` call for its page module.
 Operator-facing text never shows an internal identifier, enum name, raw phase,
 or error code. Raw detail stays in **Logs → Manager diagnostics**.
 
-The frontend catalogue is frozen data in four modules:
+The frontend catalogue is frozen data in six modules:
 
 - `frontend/operation_labels.js`: operation names, phases, and result
   sentences;
 - `frontend/operation_messages.js`: error and conflict messages;
+- `frontend/operation_results.js`: the result of a finished operation and its
+  success sentences. Each document that loads `operation_messages.js` also
+  loads this module, because `ServerManOperationMessages.result` is declared
+  here; `tests/test_wording_catalogue_composition.py` checks it;
+- `frontend/operation_failures.js`: failed and cancelled operation results,
+  guard codes, and lifecycle and restart failure sentences;
 - `frontend/diagnostic_labels.js`: state labels, path and process diagnostics,
   and per-mod outcomes;
 - `frontend/host_sentences.js`: translation of identifiers inside host
   sentences, and the reasons of recovery blocks.
 
 The backend composes **Manager activity** with
-`application/activity_wording.py` and `application/log_activity.py`. Add every
-new operation kind, phase, error code, and block reason to both sides.
+`application/activity_wording.py` and `application/log_activity.py`.
+`application/host_sentence_wording.py` holds the role labels, the identifier
+check, and the block reasons and their texts.
+`application/activity_result_wording.py` holds the neutral success sentences
+and the sentences of "apply mods and restart". `activity_wording.py`
+re-exports the names of both modules. Add every new operation kind,
+phase, error code, and block reason to both sides.
 `tests/test_operator_wording.py`, `tests/test_activity_wording.py`, and
 `tests/test_block_reason_wording.py` (block reasons) fail when an entry is
 missing, when the two sides differ, or when a text holds a raw identifier.
@@ -449,10 +689,37 @@ missing, when the two sides differ, or when a text holds a raw identifier.
 
 Keep each first-party source file at 300 lines or fewer. Split a file before it
 grows past that limit. Tests enforce this for every frontend file, and
-`tests/test_cli_sizes.py` for every file in `cli/` and the Python wording
-modules. Some older Python modules are still above 300 lines. Such a file must
+`tests/test_cli_sizes.py` for every file in `cli/` and for
+`phase_wording.py` and `field_wording.py`. Other Python modules follow the
+rule by review.
+
+Some older Python modules are still above 300 lines. Such a file must
 not grow: split it before you add to it. A change that keeps its line count
 needs a real simplification, never removed comments or joined statements.
+
+The editor scripts in `EDITOR_SCRIPTS` have a tighter bound.
+`tests/test_mission_map_editor_static.py` allows 200 lines for each editor
+script and 212 for `map_editor_model.js`. `tests/test_split_sizes.py` checks
+300 lines for `composition.py`, `composition_model.py`,
+`bridge_composition.py` and every `application/lifecycle*.py` file.
+
+The mission-map work made these splits before it added code. Each split moved
+code without a change of behavior:
+
+- `host/legacy_import_api.py` took the legacy-import methods from
+  `host/api.py`.
+- `repositories/journaled_publication.py` took the publication engine from
+  `repositories/restore_storage.py`, so the editor journal can reuse it.
+- `operation_results.js` and `operation_failures.js` took parts of the
+  operation wording (see Wording catalogues).
+- `application/restore_recovery.py` and `application/restore_validation.py`
+  came out of `application/restores.py`. `domain/backup_entries.py` came out
+  of `domain/backups.py`. `domain/mission_map_record_checks.py` came out of
+  `domain/mission_map_records.py`.
+- `adapters/windows/user_files.py` took the file steps from `cli/map_files.py`.
+  `host/map_editor_transfer_api.py` holds the window transfer methods, and
+  `map_editor_transfer_import.js` holds the import flow, so each file stays in
+  its bound.
 
 ## Change checklist
 
@@ -464,6 +731,8 @@ needs a real simplification, never removed comments or joined statements.
 5. Add catalogue entries on both sides for new operator-facing values.
 6. Add focused tests for changed behavior. Route every file read, replace,
    and rename through `shared_files`.
-7. Run the complete test suite before release-oriented work.
+7. Run the complete test suite before release-oriented work. Keep the
+   undefined-name check green. Add the missing import; do not add an exemption
+   or a star import.
 8. Update the operator guide and its pictures when visible behavior changes,
    also the command line section and its exit codes.

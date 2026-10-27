@@ -3,6 +3,10 @@
 
 // Per operation kind: name while active, success sentence, failure sentence, cancellation sentence.
 const operationKindLabels = Object.freeze({
+  APPLY_MISSION_MAP: ["Applying mission map", "Mission map applied.", "The mission map could not be applied.", "Mission map apply cancelled."],
+  RESTORE_MISSION_MAP_ORIGINAL: ["Restoring original mission map", "Original mission map restored.", "The original mission map could not be restored.", "Original mission map restore cancelled."],
+  RESTORE_MISSION_MAP_PREVIOUS: ["Restoring previous mission map", "Previous mission map restored.", "The previous mission map could not be restored.", "Previous mission map restore cancelled."],
+  ADOPT_MISSION_MAP: ["Adopting mission map records", "Mission map records adopted.", "The mission map records could not be adopted.", "Mission map adoption cancelled."],
   START_SERVER: ["Starting server", "Server started.", "The server could not be started.", "Server start cancelled."],
   STOP_SERVER: ["Stopping server", "Server stopped.", "The server could not be stopped.", "Backup cancelled. The server stays stopped."],
   RESTART_SERVER: ["Restarting server", "Server restarted.", "The server could not be restarted.", "Restart cancelled during the backup. The server stays stopped."],
@@ -179,8 +183,17 @@ function operationCancellingText(kind) {
     : "Cancelling. The operation stops at the next safe moment.";
 }
 
+// Texts for the main-window action that opens the separate map editor.
+const operationMapEditorEntryTexts = Object.freeze({
+  open: "Open map editor", separate: "Opens a separate window.",
+  noProfile: "Select a server profile first.", reading: "Reading the mission of this profile.",
+  focused: "The map editor of this profile is already open.",
+  failed: "The map editor could not be opened.", missionFailed: "The mission of this profile could not be read.",
+});
+
 // Publish the catalogue lookups; the tables themselves stay private to this module.
 window.ServerManOperationLabels = Object.freeze({
+  mapEditorEntry: operationMapEditorEntryTexts,
   kind: operationKindText,
   phase: operationPhaseText,
   state: operationStateText,

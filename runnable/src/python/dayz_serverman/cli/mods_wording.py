@@ -21,7 +21,7 @@ UPDATE_TEXTS: dict[str, str] = {
     "notStarted": " The server was not started.",
     "keepsRunning": " The server keeps running; nothing was applied.",
 }
-# `frontend/operation_messages.js` `operationDownloadResults`: the end of an update by its download state
+# `frontend/operation_results.js` `operationDownloadResults`: the end of an update by its download state
 DOWNLOAD_RESULTS: dict[str, str] = {
     "VERIFIED": "Mods are downloaded and checked.",
     "EMPTY": "This profile has no Workshop mods.",
@@ -59,7 +59,7 @@ VERIFY_PROBLEM = "1 problem found"
 VERIFY_PROBLEMS = " problems found"
 # The Mods page's word for a mod without a problem in the verification table (CLI-only)
 VERIFIED = "Verified"
-# `frontend/operation_messages.js` `successPresentation`: what an apply says about its server start
+# `frontend/operation_results.js` `successPresentation`: what an apply says about its server start
 START_TEXTS: dict[str, str] = {
     "STARTED": " The server was started.",
     "CANCELLED": " The server start was cancelled.",

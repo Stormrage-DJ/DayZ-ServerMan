@@ -19,6 +19,7 @@ from dayz_serverman.adapters.windows import shared_files  # noqa: E402
 from dayz_serverman.bridge_composition import OBSERVER_READ_METHODS, READER_EXEMPT_METHODS  # noqa: E402
 from dayz_serverman.composition import build_composition  # noqa: E402
 from dayz_serverman.composition_model import SessionMode  # noqa: E402
+from dayz_serverman.repositories.mission_map_read_pass import MissionReadPass  # noqa: E402
 
 # The functions through which a call can open, list or stat a path
 RECORDED = (
@@ -76,7 +77,11 @@ class ObserverExemptionTests(unittest.TestCase):
         calls = [(method, parameters) for method, parameters in read_calls(self.dayz, None, self.dayz)
                  if method in READER_EXEMPT_METHODS]
         self.assertEqual({method for method, _ in calls}, READER_EXEMPT_METHODS)
+        job_id = self.live_inspection(composition)
         for method, parameters in calls:
+            # Cancel retires a live Inspect job, so the call succeeds
+            if method == "cancel_mission_map_inspection":
+                parameters = {**parameters, "job_id": job_id}
             with self.subTest(method=method, parameters=parameters):
                 with recorded_paths() as seen:
                     answer = composition.bridge.dispatch(
@@ -85,6 +90,16 @@ class ObserverExemptionTests(unittest.TestCase):
                 canonical = {os.path.normcase(os.path.realpath(path)) for path in seen}
                 offending = sorted(path for path in canonical for folder in self.protected if inside(path, folder))
                 self.assertEqual(offending, [])
+
+    @staticmethod
+    def live_inspection(composition) -> str:
+        """Start a saved-plan Inspect whose capture pass reads nothing yet, and return its job ID."""
+        with patch.object(MissionReadPass, "read_slice", lambda self, deadline: None):
+            answer = composition.bridge.dispatch({
+                "contract_version": 1, "request_id": "start", "method": "inspect_mission_map",
+                "parameters": {"profile_id": PROFILE_ID, "plan": None, "target": {"point": {"x": 1.0, "z": 1.0}}}})
+        assert answer["success"] and answer["value"]["status"] == "running", answer
+        return answer["value"]["job"]["id"]
 
     def test_the_recorder_sees_a_read_under_the_reader_side(self) -> None:
         """Control: a reader-side call (the mission configuration) is recorded inside the mission folder."""

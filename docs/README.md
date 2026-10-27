@@ -5,6 +5,7 @@ Choose the guide that matches your task:
 - [Operator guide](../runnable/README.md) — install, configure, and use the movable application
 - [Operations guide](./operations.md) — lifecycle, update checks, mods, server build, backups, restores, portability, and recovery behavior
 - [Development guide](./development.md) — repository layout, local setup, source boundaries, frontend rules, tests, and CI
+- [Release notes](./release-notes.md) — what each release adds, and its known limitations
 
 Frequent topics:
 

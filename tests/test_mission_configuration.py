@@ -47,7 +47,7 @@ class MissionFileTests(unittest.TestCase):
             "CleanupLifetimeDeadInfected", "ZoneSpawnDist", "AnimalMaxCount",
             "CleanupLifetimeDeadAnimal", "CleanupAvoidance", "LootSpawnAvoidance",
             "CleanupLifetimeRuined", "CleanupLifetimeDefault", "CleanupLifetimeDeadPlayer",
-            "TimeLogin", "TimeLogout", "TimePenalty",
+            "TimeLogin", "TimeLogout", "TimePenalty", "InitialSpawn", "RespawnTypes", "RespawnLimit", "RestartSpawn",
         })
         # Apply a mixed update across integers, decimals, and booleans
         proposed = transform_mission_file(snapshot, "economy", {

@@ -7,6 +7,9 @@ from collections.abc import Callable
 from typing import Any
 
 from ..adapters.windows.shared_files import rename_directory
+from .paths import PortablePaths
+from .profile_restore_editor import ProfileEditorGroup
+from .profile_restore_editor_shapes import EDITOR_ROLE, EditorFile, publication_order
 from .profile_restore_inventory import inventory, safe_exists
 from .profile_restore_preparation import group_paths, stage_groups, remove_owned
 from .profile_restore_journal import ProfileRestoreJournal
@@ -16,9 +19,14 @@ class ProfileRestoreStorage:
     """Publish under a durable journal and compensate only matching operation content."""
 
     def __init__(self, journals: ProfileRestoreJournal, profile_root: Path, recovery_root: Path,
-                 phase_hook: Callable[[str], None] | None = None, disk_usage: Callable[[Path], Any] = shutil.disk_usage) -> None:
-        """Bind storage roots and injectable failure/space probes."""
+                 phase_hook: Callable[[str], None] | None = None, disk_usage: Callable[[Path], Any] = shutil.disk_usage,
+                 manager: PortablePaths | None = None) -> None:
+        """Bind storage roots, injectable failure/space probes and the manager layout of the editor group.
+
+        Without `manager`, a journal with an editor group cannot be recovered, so it blocks.
+        """
         self.journals = journals
+        self.editor_group = None if manager is None else ProfileEditorGroup(manager)
         self.profile_root = profile_root
         self.recovery_root = recovery_root
         self.hook = phase_hook or (lambda phase: None)
@@ -36,8 +44,13 @@ class ProfileRestoreStorage:
         self.hook(phase)
 
     def restore(self, root: Path, operation_id: str, directory: Path, manifest: Any, preview: dict[str, Any],
-                config: bytes, mapping: dict[str, str], before: dict | None, checkpoint: Callable[[str, int], None]) -> dict[str, Any]:
-        """Stage whole groups and exclusively publish a revision-zero profile record."""
+                config: bytes, mapping: dict[str, str], before: dict | None, checkpoint: Callable[[str, int], None],
+                editor: tuple[EditorFile, ...] = ()) -> dict[str, Any]:
+        """Stage whole groups and exclusively publish a revision-zero profile record.
+
+        `editor` holds the editor records of the new profile. With them, the journal has version 2 and a fourth
+        group that commits with the profile record or rolls back with it (D5). Without them, it stays version 1.
+        """
         for prior in self.journals.records():
             if prior["operation_id"] == operation_id:
                 if prior["phase"] == "COMMITTED":
@@ -60,7 +73,10 @@ class ProfileRestoreStorage:
                    "published": False, "held": False, "recovery": None}
                   for role, relative, old in (("generated", f"serverman\\{identifier}", None),
                                               ("mission", mission_relative, before), ("profile", f"{identifier}.json", None))]
-        record = {"type": "DIRECT_PROFILE_RESTORE", "version": 1, "operation_id": operation_id,
+        # The editor files are checked before the journal starts, so a refusal writes nothing
+        if editor:
+            groups.append(self.editor().plan(operation_id, identifier, editor))
+        record = {"type": "DIRECT_PROFILE_RESTORE", "version": 2 if editor else 1, "operation_id": operation_id,
                   "phase": "PLANNED", "dayz_root": str(root), "profile_root": str(self.profile_root),
                   "profile_id": identifier, "groups": groups, "result": result, "cleanup_complete": False}
         self.preflight(record, root, manifest)
@@ -68,17 +84,19 @@ class ProfileRestoreStorage:
         try:
             self.phase(record, "PREPARING")
             checkpoint("PREPARING", 20)
-            for group in groups:
+            for group in groups[:3]:
                 target, stage, holding = group_paths(record, group, root, self.profile_root)
                 if inventory(target) != group["before"] or safe_exists(stage) or safe_exists(holding):
                     raise ValueError("Restore target changed before staging.")
                 target.parent.mkdir(parents=True, exist_ok=True)
-            stage_groups(record, directory, manifest, config, mapping, (root, self.profile_root), self.recovery_root)
+            stage_groups({**record, "groups": groups[:3]}, directory, manifest, config, mapping, (root, self.profile_root), self.recovery_root)
+            if editor:
+                self.editor().stage(record, groups[3], editor)
             self.phase(record, "PREPARED")
             checkpoint("PREPARED", 50)
             self.phase(record, "PUBLISHING")
             checkpoint("PUBLISHING", 60)
-            for group in groups:
+            for group in publication_order(groups):
                 if group["role"] == "profile":
                     self.phase(record, "FILES_PUBLISHED")
                     self.phase(record, "PROFILE_PUBLISHING")
@@ -128,6 +146,9 @@ class ProfileRestoreStorage:
 
     def publish(self, record: dict, group: dict, root: Path) -> None:
         """Hold the original tree and publish complete staged content without merging worlds."""
+        if group["role"] == EDITOR_ROLE:
+            self.editor().publish(record, group, self.journals.write, self.hook)
+            return
         target, stage, holding = group_paths(record, group, root, self.profile_root)
         if inventory(target) != group["before"] or inventory(stage) != group["after"]:
             raise ValueError("Restore target or staged content changed before publication.")
@@ -153,6 +174,9 @@ class ProfileRestoreStorage:
         """Keep a committed profile only when all its published bytes still match."""
         self.validate_roots(record, root)
         for group in record["groups"]:
+            if group["role"] == EDITOR_ROLE:
+                self.editor().verify(record, group)
+                continue
             target, _stage, _holding = group_paths(record, group, root, self.profile_root)
             expected_absence = group["role"] == "mission" and record["result"]["storage_policy"] == "replace_existing" and not record["result"]["selected_storage_present"]
             if (group["after"] is None and not expected_absence) or inventory(target) != group["after"]:
@@ -162,7 +186,10 @@ class ProfileRestoreStorage:
         """Undo even fully published work unless its commit was durably recorded."""
         self.validate_roots(record, root)
         self.phase(record, "COMPENSATING")
-        for group in reversed(record["groups"]):
+        for group in reversed(publication_order(record["groups"])):
+            if group["role"] == EDITOR_ROLE:
+                self.editor().rollback(record, group)
+                continue
             target, stage, holding = group_paths(record, group, root, self.profile_root)
             current = inventory(target)
             held = inventory(holding)
@@ -187,6 +214,9 @@ class ProfileRestoreStorage:
     def cleanup(self, record: dict, root: Path) -> None:
         """Discard verified operation-private staging/holding content, retaining recovery copies."""
         for group in record["groups"]:
+            if group["role"] == EDITOR_ROLE:
+                self.editor().cleanup(record, group)
+                continue
             _target, stage, holding = group_paths(record, group, root, self.profile_root)
             for path, expected in ((stage, group["after"]), (holding, group["before"])):
                 actual = inventory(path)
@@ -199,6 +229,14 @@ class ProfileRestoreStorage:
         """Refuse recovery against another installation or profile repository."""
         if Path(record["dayz_root"]).resolve(strict=True) != root.resolve(strict=True) or Path(record["profile_root"]).resolve(strict=False) != self.profile_root.resolve(strict=False):
             raise ValueError("Restore journal roots differ from current settings.")
+        for group in record["groups"][3:]:
+            self.editor().validate_root(group)
+
+    def editor(self) -> ProfileEditorGroup:
+        """Return the editor group owner; a journal with editor records needs the manager layout."""
+        if self.editor_group is None:
+            raise ValueError("Restore editor records need the manager layout.")
+        return self.editor_group
 
     def inspect(self, root: Path) -> dict[str, Any]:
         """Recover incomplete transactions and report any mismatch as a mutation blocker."""

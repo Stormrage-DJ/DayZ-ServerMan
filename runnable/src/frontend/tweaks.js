@@ -8,11 +8,11 @@ const tweaksState = {
   area: "gameplay", subtab: "player",
 };
 // Targets backed by mission configuration files.
-const missionTargets = new Set(["economy", "weather", "starter_loadout", "events"]);
+const missionTargets = new Set(["economy", "weather", "starter_loadout", "events", "loot_supply", "weapon_magazines"]);
 // Every managed target loaded for the tweaks workspace.
-const loadTargets = ["gameplay", "economy", "weather", "starter_loadout", "events"];
+const loadTargets = ["gameplay", "economy", "weather", "starter_loadout", "events", "loot_supply", "weapon_magazines"];
 // Medical feature targets backed by the legacy feature adapter.
-const medicalTargets = new Set(["medical_loot_zones", "medical_item_spawns"]);
+const medicalTargets = new Set(["medical_loot_zones"]);
 
 // Copy a tweak value so drafts never alias stored snapshots.
 function tweakCopy(value) { return JSON.parse(JSON.stringify(value)); }
@@ -50,8 +50,10 @@ async function loadTweaks() {
   const profileId = window.ServerManProfileContext.selectedId();
   const generation = ++tweaksState.generation;
   const workspace = window.ServerManWorkspace.capture("tweaks");
+  const entryLoad = window.ServerManMapEditorEntry.beginLoad(profileId, workspace);
   // Show the loading state while each target is read.
   window.ServerManUi.renderLoading("Loading tweaks", "Reading each managed DayZ configuration target.");
+  window.ServerManTweaksRender.entry(document.getElementById("content-region").firstElementChild);
   try {
     // Load the mission, standard, and medical targets together.
     const results = await Promise.all(loadTargets.map(async (target) => {
@@ -60,6 +62,7 @@ async function loadTweaks() {
     }));
     const medical = await window.pywebview.api.load_medical_features(profileId);
     if (generation !== tweaksState.generation || !window.ServerManWorkspace.isActive(workspace)) return;
+    window.ServerManMapEditorEntry.loaded(entryLoad, results.find(([target]) => target === "economy")[1]);
     // Collect per-target failures for partial rendering.
     tweaksState.errors = new Map(results.filter(([, result]) => !result.success)
       .map(([target, result]) => [target, window.ServerManOperationMessages.bridgeError(
@@ -83,10 +86,12 @@ async function loadTweaks() {
     tweaksState.reviewed.clear(); tweaksState.pending.clear(); setTweakDirty(); renderTweaks();
   } catch (error) {
     if (generation !== tweaksState.generation || !window.ServerManWorkspace.isActive(workspace)) return;
+    window.ServerManMapEditorEntry.loaded(entryLoad, { error: { message: error instanceof Error ? error.message : "" } });
     // Report unexpected load failures through the host error panel.
     window.ServerManUi.renderHostError({ error: {
       message: error instanceof Error ? error.message : "Tweaks could not be loaded.",
     } });
+    window.ServerManTweaksRender.entry(document.getElementById("content-region").firstElementChild);
   }
 }
 
@@ -144,37 +149,68 @@ function editArguments(target, updates) {
     snapshot.digest, snapshot.server_config_digest, updates];
 }
 
-// Review changed values first, then apply the reviewed arguments.
+// Report whether a target's current changes have a review that still matches them.
+function targetReviewed(target) {
+  return tweaksState.reviewed.get(target)?.fingerprint === tweakFingerprint(changedUpdates(target));
+}
+
+// Report whether the workspace is still the one that started an asynchronous step.
+function tweakStepCurrent(step) {
+  return step.generation === tweaksState.generation && step.profileId === tweaksState.profileId
+    && window.ServerManWorkspace.isActive(step.workspace);
+}
+
+// Capture the workspace that an asynchronous step belongs to.
+function tweakStep() {
+  return { generation: tweaksState.generation, profileId: tweaksState.profileId,
+    workspace: window.ServerManWorkspace.capture("tweaks") };
+}
+
+// Review one target's changes. Return the preview value, or null after a refusal that the feedback shows.
+async function reviewTweakTarget(target) {
+  const updates = changedUpdates(target); const step = tweakStep();
+  const args = editArguments(target, window.ServerManTransitions.immutableCopy(updates));
+  const method = medicalTargets.has(target) ? "preview_medical_feature"
+    : missionTargets.has(target) ? "preview_mission_configuration" : "preview_configuration";
+  const result = await window.pywebview.api[method](...args);
+  if (!tweakStepCurrent(step)) return null;
+  if (!result.success) { showTweakError(result, "Changes could not be reviewed."); return null; }
+  // Remember the reviewed arguments. A zone review of an editor-managed mission returns a fingerprint, and its
+  // Apply sends it back (8.13).
+  const reviewedFingerprint = result.value.preview_fingerprint;
+  tweaksState.reviewed.set(target, { fingerprint: tweakFingerprint(updates),
+    args: typeof reviewedFingerprint === "string" ? [...args, reviewedFingerprint] : args });
+  return result.value;
+}
+
+// Queue the reviewed change of one target. Return false after a refusal that the feedback shows.
+async function applyTweakTarget(target) {
+  const step = tweakStep();
+  const method = medicalTargets.has(target) ? "apply_medical_feature"
+    : missionTargets.has(target) ? "apply_mission_configuration" : "apply_configuration";
+  const result = await window.pywebview.api[method](...tweaksState.reviewed.get(target).args);
+  if (!tweakStepCurrent(step)) return false;
+  if (!result.success) { showTweakError(result, "Changes could not be queued."); return false; }
+  // Track the queued operation; the operation bar shows it.
+  tweaksState.pending.set(result.value.operation_id, target);
+  window.ServerManOperationBar?.adopt(result.value.operation_id);
+  return true;
+}
+
+// Review one target's changes first, then apply the reviewed arguments.
 async function reviewOrApplyTweakTarget(target) {
   const updates = changedUpdates(target);
   if (!Object.keys(updates).length || (updates.events && !Object.keys(updates.events).length)) return;
-  const fingerprint = tweakFingerprint(updates);
-  const generation = tweaksState.generation; const profileId = tweaksState.profileId;
-  const workspace = window.ServerManWorkspace.capture("tweaks");
-  const reviewed = tweaksState.reviewed.get(target);
-  const args = editArguments(target, window.ServerManTransitions.immutableCopy(updates));
-  // Review again when the values changed since the last review.
-  if (!reviewed || reviewed.fingerprint !== fingerprint) {
-    const method = medicalTargets.has(target) ? "preview_medical_feature"
-      : missionTargets.has(target) ? "preview_mission_configuration" : "preview_configuration";
-    const result = await window.pywebview.api[method](...args);
-    if (generation !== tweaksState.generation || profileId !== tweaksState.profileId
-        || !window.ServerManWorkspace.isActive(workspace)) return;
-    if (!result.success) return showTweakError(result, "Changes could not be reviewed.");
-    // Remember the reviewed arguments and ask the operator to apply.
-    tweaksState.reviewed.set(target, { fingerprint, args });
-    showTweakFeedback(`${result.value.changed_fields.length} ${target.replaceAll("_", " ")} change(s) validated. Select Apply to publish one file.`);
+  if (targetReviewed(target)) {
+    await applyTweakTarget(target);
     return renderTweaksActions();
   }
-  const method = medicalTargets.has(target) ? "apply_medical_feature"
-    : missionTargets.has(target) ? "apply_mission_configuration" : "apply_configuration";
-  const result = await window.pywebview.api[method](...reviewed.args);
-  if (generation !== tweaksState.generation || profileId !== tweaksState.profileId
-      || !window.ServerManWorkspace.isActive(workspace)) return;
-  if (!result.success) return showTweakError(result, "Changes could not be queued.");
-  // Track the queued operation and refresh the actions; the operation bar shows it.
-  tweaksState.pending.set(result.value.operation_id, target);
-  window.ServerManOperationBar?.adopt(result.value.operation_id);
+  const review = await reviewTweakTarget(target);
+  if (!review) return;
+  // A medical toggle that changes no group says so instead of counting changes.
+  const unchanged = window.ServerManOperationMessages.medicalUnchanged;
+  showTweakFeedback(review.message === unchanged ? unchanged
+    : `${review.changed_fields.length} ${target.replaceAll("_", " ")} change(s) validated. Select Apply to publish one file.`);
   renderTweaksActions();
 }
 
@@ -198,29 +234,6 @@ function activeTargets() {
   return [...new Set(window.ServerManTweaksCatalog.gameplayTabs
     .find((tab) => tab.id === tweaksState.subtab).groups.flatMap((item) =>
       item.target === "medical" ? item.fields.map((field) => field.key) : [item.target]))];
-}
-
-// Rebuild the review, apply, and discard actions for the current drafts.
-function renderTweaksActions() {
-  const row = document.getElementById("tweaks-actions"); if (!row) return;
-  row.replaceChildren();
-  // Show the aggregate unsaved indicator.
-  const status = window.ServerManUi.element("span", "unsaved-indicator",
-    anyTweakDirty() ? "Unsaved tweak changes" : "No unsaved changes");
-  if (anyTweakDirty()) status.classList.add("is-dirty"); row.append(status);
-  // Offer review or apply per dirty target.
-  activeTargets().forEach((target) => {
-    if (!targetDirty(target)) return;
-    const button = window.ServerManUi.element("button", "button button-primary",
-      tweaksState.reviewed.has(target) ? `Apply ${target.replaceAll("_", " ")}` : `Review ${target.replaceAll("_", " ")}`);
-    button.type = "button"; button.disabled = [...tweaksState.pending.values()].includes(target);
-    // Only the apply step submits an operation and is locked while another one runs or waits.
-    if (tweaksState.reviewed.has(target)) window.ServerManBusy?.mark(button);
-    button.addEventListener("click", () => reviewOrApplyTweakTarget(target)); row.append(button);
-  });
-  // Offer discarding every draft at once.
-  const discard = window.ServerManUi.element("button", "button", "Discard all changes");
-  discard.type = "button"; discard.disabled = !anyTweakDirty(); discard.addEventListener("click", discardTweaks); row.append(discard);
 }
 
 // Switch the tweaks area and rerender.
@@ -253,22 +266,5 @@ function renderTweaks() {
   renderTweaksActions(); document.getElementById("content-region").setAttribute("aria-busy", "false");
 }
 
-// Track tweak applies until they settle, then reload or report.
-function tweakOperationFinished(operation) {
-  const target = tweaksState.pending.get(operation.operation_id); if (!target) return false;
-  if (!["SUCCEEDED", "FAILED", "CANCELLED", "RECOVERY_REQUIRED"].includes(operation.state)) return true;
-  tweaksState.pending.delete(operation.operation_id);
-  // Reload after success, otherwise return the target to review.
-  if (operation.state === "SUCCEEDED") void loadTweaks();
-  else {
-    tweaksState.reviewed.delete(target);
-    showTweakFeedback(window.ServerManOperationBar?.pageResult(operation).text || "Tweak publication failed.", true);
-    renderTweaksActions();
-  }
-  return true;
-}
-
 // Register the tweaks workspace with the shared transition guard.
 window.ServerManTransitions.registerOwner("tweaks", discardTweaks, focusTweaks);
-// Publish the tweaks workspace entry points.
-window.ServerManTweaks = Object.freeze({ open: loadTweaks, operationFinished: tweakOperationFinished });

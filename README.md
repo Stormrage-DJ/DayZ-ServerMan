@@ -13,6 +13,8 @@ It uses Python and the Windows WebView2 runtime. It does not need a build step.
 - Updates the mods in one action: **Update all**, **Update & start**, or
   **Update & restart**. A review comes before any change to the server folder.
 - Creates verified backups and restores them, also into a deleted profile.
+- Sets the loot supply of the mission per item group, such as weapons, ammunition
+  or food, from 0% to 300%. See [loot supply](./runnable/README.md#loot-supply).
 - Runs every action also as a command for scripts and Windows Task Scheduler:
   `py runnable\DayZ-ServerMan.py --cli help`. See the
   [command line](./runnable/README.md#command-line).
@@ -53,6 +55,7 @@ mods also runs the mod check. See
 - [`docs/`](./docs/) — operations and development documentation
 - [`tests/`](./tests/) — automated tests
 - [`.github/workflows/`](./.github/workflows/) — the test run on GitHub Actions
+- [`legal/`](./legal/) — licence notices of third-party development tools
 
 See the [documentation index](./docs/README.md) for deeper guidance.
 

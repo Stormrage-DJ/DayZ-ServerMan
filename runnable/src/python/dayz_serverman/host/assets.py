@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..adapters.windows.shared_files import read_text_shared
+
 
 # Marker in the shell document replaced with the concatenated stylesheets
 STYLE_MARKER = "<!-- INLINE_STYLES -->"
@@ -49,12 +51,14 @@ def compose_shell_html(frontend_root: Path) -> str:
     operation_bar_styles = (root / "operation_bar.css").read_text(encoding="utf-8")
     # Read every script in the order the shell expects
     shell_ui_script = (root / "shell_ui.js").read_text(encoding="utf-8")
-    # Wording, announcements, the operation bar and the busy helper follow the shell helpers
+    # Wording, announcements, the operation bar and the busy helper follow the shell helpers; the operation
+    # results follow the messages, whose result lookup they declare (8.14)
     shell_ui_script += "".join(
         "\n" + (root / name).read_text(encoding="utf-8")
         for name in (
             "operation_labels.js", "diagnostic_labels.js", "host_sentences.js", "operation_messages.js",
-            "operation_announcer.js", "operation_bar_view.js", "operation_bar.js", "busy_controls.js",
+            "operation_results.js", "operation_failures.js", "operation_announcer.js", "operation_bar_view.js",
+            "operation_bar.js", "busy_controls.js",
         )
     )
     workspace_script = (root / "workspace_context.js").read_text(encoding="utf-8")
@@ -63,10 +67,13 @@ def compose_shell_html(frontend_root: Path) -> str:
     configuration_catalog_script = (root / "configuration_catalog.js").read_text(encoding="utf-8")
     tweaks_catalog_script = (root / "tweaks_catalog.js").read_text(encoding="utf-8")
     tweaks_render_script = (root / "tweaks_render.js").read_text(encoding="utf-8")
+    tweaks_render_script += "\n" + read_text_shared(root / "map_editor_entry.js", encoding="utf-8")
     tweaks_script = (root / "tweaks.js").read_text(encoding="utf-8")
+    tweaks_script += "\n" + (root / "tweaks_page.js").read_text(encoding="utf-8")
     tweaks_script += "\n" + (root / "tweaks_dialog.js").read_text(encoding="utf-8")
     configuration_edit_script = (root / "configuration_edit.js").read_text(encoding="utf-8")
     configuration_context_script = (root / "configuration_context.js").read_text(encoding="utf-8")
+    configuration_network_script = (root / "configuration_network.js").read_text(encoding="utf-8")
     configuration_script = (root / "configuration_fields.js").read_text(encoding="utf-8")
     configuration_script += "\n" + (root / "configuration.js").read_text(encoding="utf-8")
     backup_display_script = (root / "backup_display.js").read_text(encoding="utf-8")
@@ -119,6 +126,6 @@ def compose_shell_html(frontend_root: Path) -> str:
         STYLE_MARKER,
         f"<style>\n{tokens}\n{controls}\n{styles}\n{mods_styles}\n{overview_styles}\n{profiles_styles}\n{operation_bar_styles}\n</style>",
     )
-    script = f"{shell_ui_script}\n{workspace_script}\n{transition_script}\n{profile_context_script}\n{configuration_catalog_script}\n{tweaks_catalog_script}\n{tweaks_render_script}\n{tweaks_script}\n{configuration_edit_script}\n{configuration_context_script}\n{configuration_script}\n{backup_display_script}\n{backup_script}\n{restore_script}\n{profiles_mods_script}\n{profile_copy_mods_script}\n{profile_create_script}\n{profiles_script}\n{profile_delete_script}\n{migration_script}\n{settings_script}\n{update_status_script}\n{mods_script}\n{mods_display_script}\n{mod_publication_script}\n{overview_backup_script}\n{overview_schedule_script}\n{overview_readiness_script}\n{overview_dialog_script}\n{overview_script}\n{overview_status_script}\n{logs_script}\n{sections_script}\n{app_script}"
+    script = f"{shell_ui_script}\n{workspace_script}\n{transition_script}\n{profile_context_script}\n{configuration_catalog_script}\n{tweaks_catalog_script}\n{tweaks_render_script}\n{tweaks_script}\n{configuration_edit_script}\n{configuration_context_script}\n{configuration_network_script}\n{configuration_script}\n{backup_display_script}\n{backup_script}\n{restore_script}\n{profiles_mods_script}\n{profile_copy_mods_script}\n{profile_create_script}\n{profiles_script}\n{profile_delete_script}\n{migration_script}\n{settings_script}\n{update_status_script}\n{mods_script}\n{mods_display_script}\n{mod_publication_script}\n{overview_backup_script}\n{overview_schedule_script}\n{overview_readiness_script}\n{overview_dialog_script}\n{overview_script}\n{overview_status_script}\n{logs_script}\n{sections_script}\n{app_script}"
     # Substitute the script marker and return the composed document
     return document.replace(SCRIPT_MARKER, f"<script>\n{script}\n</script>")

@@ -12,10 +12,11 @@ from ..application.shutdown import ShutdownCoordinator, ShutdownState
 
 class SafeCloseController:
     """Coordinate an approved window close with the shutdown coordinator."""
-    def __init__(self, window: Any, shutdown: ShutdownCoordinator) -> None:
+    def __init__(self, window: Any, shutdown: ShutdownCoordinator, *, editors: Any = None) -> None:
         """Store the window and shutdown services with close state guards."""
         self._window = window
         self._shutdown = shutdown
+        self._editors = editors
         # Track the worker threads and approval flag shared between attempts
         self._close_request: threading.Thread | None = None
         self._watcher: threading.Thread | None = None
@@ -50,6 +51,11 @@ class SafeCloseController:
         # Abort when the shell still holds unsaved work
         if not self._frontend_allows_close():
             return
+        # Settle all editors before destruction or backend shutdown begins
+        if self._editors is not None:
+            if not self._editors.settle_for_application():
+                return
+            self._editors.destroy_all()
         # Drain backend work and publish the shutdown state
         snapshot = self._shutdown.request_shutdown()
         self._render(snapshot.to_dict())
@@ -62,6 +68,9 @@ class SafeCloseController:
 
     def close_after_shutdown(self, timeout: float) -> bool:
         """Drain the backend and close an owned non-interactive window."""
+        # Smoke teardown owns every editor and skips interactive settlement
+        if self._editors is not None:
+            self._editors.destroy_all()
         # Request the drain and wait for it within the timeout
         snapshot = self._shutdown.request_shutdown()
         if snapshot.state != ShutdownState.CLOSED:

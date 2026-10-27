@@ -5,7 +5,7 @@
 function configurationInput(field) {
   const input = field.kind === "boolean" ? document.createElement("select") : document.createElement("input");
   input.dataset.configurationField = field.key;
-  input.id = `configuration-${field.key.replaceAll(".", "-")}`;
+  input.id = `configuration-${field.key.replace(/[._]/g, "-")}`;
   if (field.kind === "boolean") {
     if (!field.present) {
       const unset = configElement("option", "", "Not set");
@@ -19,12 +19,14 @@ function configurationInput(field) {
       input.append(option);
     });
     input.value = field.present ? String(field.value) : "";
+    if (["steamQueryPort", "game_port"].includes(field.key)) { input.min = "1"; input.max = "65535"; }
   } else {
     // Mirror the field kind through the input type and step rules.
     input.type = field.secret ? "password" : field.kind === "string" ? "text" : "number";
     if (field.kind === "number") input.step = "any";
     if (field.kind === "integer") input.step = "1";
     input.value = field.present ? String(field.value) : "";
+    if (["steamQueryPort", "game_port"].includes(field.key)) { input.min = "1"; input.max = "65535"; }
   }
   // Recompute the unsaved state on every edit.
   input.addEventListener("input", updateUnsavedState);
@@ -64,12 +66,15 @@ function renderConfigurationGroup(group, available) {
     item.append(controls, configElement("p", "guided-setting-hint", row.fields[0].hint));
     rows.append(item);
   });
-  section.append(rows); return section;
+  section.append(rows);
+  if (group.title === "Network") window.ServerManConfigurationNetwork.mount(section);
+  return section;
 }
 
 // Replace the form with groups built from the loaded field set.
 function renderConfigurationFields(loaded) {
   configurationState.loaded = loaded;
+  configurationState.refreshRequired = false;
   configurationState.reviewed = null;
   // Rebuild the editable value map from the loaded target.
   configurationState.values = new Map(loaded.fields.map((field) => [field.key, field]));

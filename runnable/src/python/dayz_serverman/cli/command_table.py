@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .map_command_table import MAP_COMMANDS
 from .registry import CommandSpec, Confirm, Form, Kind, OptionSpec, ProfileRule
 
 # Options that several commands share
@@ -17,7 +18,8 @@ ON_OFF = OptionSpec("state", Form.POSITIONAL, choices=("on", "off"))
 # Revisions that a write sends, and the profile that it needs
 REVISIONS = (PROFILE, EXPECT_PROFILE, EXPECT_SETTINGS)
 CONFIG_TARGETS = ("server", "gameplay")
-TWEAK_TARGETS = ("economy", "weather", "spawnable-damage", "starter-loadout", "events")
+TWEAK_TARGETS = ("economy", "weather", "spawnable-damage", "starter-loadout", "events", "loot-supply",
+                 "weapon-magazines")
 
 
 def read(path: str, phase: int, methods: tuple[str, ...], *options: OptionSpec,
@@ -184,4 +186,5 @@ COMMANDS: tuple[CommandSpec, ...] = (
           OptionSpec("item", Form.APPEND, "--item", group="items", metavar="ID"),
           OptionSpec("all_items", Form.FLAG, "--all-items", group="items"),
           confirm=Confirm.REVIEW, prestep="commands.migrate:item_selection", handler="commands.migrate:apply"),
+    *MAP_COMMANDS,
 )

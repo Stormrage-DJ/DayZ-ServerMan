@@ -21,6 +21,7 @@ function value() { return { profile: { profile_id: "test20261001", display_name:
   runtime_profile: "serverman/test/profile" }, mission_root: "mpmissions/serverman-test.chernarusplus", instance_id: 9,
   storage_policy: replacing ? "replace_existing" : "allocate_new", game_port: 3302, steam_query_port: 3305,
   affected_profile_ids: replacing ? ["consumer"] : [], missing_mods: [], warnings: [], server_executable_present: true,
+  editor_notes: replacing ? ["First map editor note.", "Second map editor note."] : [],
   manifest_digest: "a".repeat(64), preview_fingerprint: "b".repeat(64) }; }
 window.pywebview = { api: {
   list_profiles: async () => ({ success: true, value: profiles }),
@@ -32,7 +33,8 @@ window.pywebview = { api: {
   list_backups: async () => ({ success: true, value: { profile_id: "test20261001", profile_revision: 0, settings_revision: 1,
     destination_kind: "default", runtime_profile: "profile", backups: [], diagnostics: [] } }),
 } };
-window.ServerManUi = { renderHostError() {}, render() {}, setHostStatus() {}, clearHostStatus() {} };
+let status = "";
+window.ServerManUi = { renderHostError() {}, render() {}, setHostStatus(message) { status = message; }, clearHostStatus() {} };
 (async () => {
   window.ServerManWorkspace.activate("backups");
   await window.ServerManBackups.open(); await flush();
@@ -67,13 +69,20 @@ window.ServerManUi = { renderHostError() {}, render() {}, setHostStatus() {}, cl
   const replacement = reviewDirectRestore("test-backup"); previewResolve({ success: true, value: value() }); await replacement;
   check(document.getElementById("direct-apply").disabled, "replacement enabled without confirmation");
   check(document.getElementById("direct-review").textContent.includes("consumer"), "affected consumers omitted");
+  const notes = document.getElementById("direct-editor-notes");
+  check(notes && notes.querySelector("h3").textContent === "Map editor records" && notes.querySelectorAll("p").length === 2
+    && !notes.querySelector(".notice"), "map editor notes missing or styled as warnings");
+  check(notes.compareDocumentPosition(document.getElementById("direct-overwrite")) & Node.DOCUMENT_POSITION_FOLLOWING, "notes not before the replacement question");
+  check(document.getElementById("direct-apply").getAttribute("aria-describedby") === "direct-editor-notes", "restore button does not name the notes");
   const confirmation = document.getElementById("direct-overwrite"); confirmation.checked = true; confirmation.dispatchEvent(new Event("change"));
   check(!document.getElementById("direct-apply").disabled, "replacement remained disabled after confirmation");
   await applyDirectRestore();
   check(submitted[8].affected_profile_ids[0] === "consumer" && submitted[8].preview_fingerprint === "b".repeat(64), "confirmation not bound to reviewed consumers/fingerprint");
   profiles = [{ profile_id: "test20261001", display_name: "TEST" }];
-  check(directOperationFinished({ operation_id: "direct-op", state: "SUCCEEDED", result: { profile: profiles[0] } }), "commit not correlated");
+  const moved = "Map editor records of an earlier profile with this ID were moved to the folder for deleted records.";
+  check(directOperationFinished({ operation_id: "direct-op", state: "SUCCEEDED", result: { profile: profiles[0], editor_remnant_notice: moved } }), "commit not correlated");
   await flush();
+  check(status === `Profile restored. Check readiness before starting. ${moved}`, "editor remnant move not reported after the success sentence");
   check(selected === "test20261001" && window.ServerManProfileContext.selectedId() === selected, "restored profile not selected and remembered");
   check(document.getElementById("global-profile").value === selected, "global selector stale");
   output.textContent = "PASS";
@@ -88,7 +97,7 @@ class DirectRestoreUiTests(unittest.TestCase):
     def test_empty_catalog_review_confirmation_and_selection(self):
         """Verify independent access, stale edit guards and selected profile after commit."""
         scripts = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in
-            ("operation_labels.js", "operation_messages.js", "diagnostic_labels.js", "workspace_context.js", "transition_guard.js",
+            ("operation_labels.js", "operation_messages.js", "operation_results.js", "diagnostic_labels.js", "workspace_context.js", "transition_guard.js",
              "profile_context.js", "backup_display.js", "backups.js", "backup_history.js", "profile_restore.js"))
         page = '<!doctype html><html><body><select id="global-profile"></select><div id="content-region"></div><pre id="result">PENDING</pre><script>' + scripts + HARNESS + '</script></body></html>'
         with tempfile.TemporaryDirectory() as temporary:

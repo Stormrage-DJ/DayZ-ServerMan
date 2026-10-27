@@ -20,6 +20,7 @@ from ..repositories.restore_journal import RestoreJournalRepository
 from ..repositories.restore_paths import journal_paths_safe
 from .operations.models import OperationFailure
 from .settings import SETTINGS_FIELDS, SettingsService, SettingsValidationError
+from .mission_map_recovery import MissionMapRecovery
 
 # The DayZ server program below the folder, as the normal save derives it
 DAYZ_PROGRAM = "DayZServer_x64.exe"
@@ -64,12 +65,15 @@ class SettingsRepair:
     def __init__(
         self, settings: SettingsService, restore_journals: RestoreJournalRepository,
         backup_recovery: Path, profile_restores: ProfileRestoreStorage,
+        *, editor_recovery: MissionMapRecovery | None = None, configuration_recovery=None,
     ) -> None:
         """Bind the settings service, the backup-restore journals and the direct-restore storage."""
         self._settings = settings
         self._restore_journals = restore_journals
         self._backup_recovery = backup_recovery
         self._profile_restores = profile_restores
+        self._editor_recovery = editor_recovery
+        self._configuration_recovery = configuration_recovery
 
     def is_repair_shaped(self, values: Mapping[str, object]) -> bool:
         """Report the shape against the stored settings; a record that cannot be read is no repair."""
@@ -81,9 +85,9 @@ class SettingsRepair:
     def save(self, values: Mapping[str, object], expected_revision: int | None) -> ManagerSettings:
         """Save the DayZ server folder of a repair request; any failure writes nothing.
 
-        Raises OperationFailure without recovery_required: REVISION_CONFLICT for a
-        stale or no longer repair-shaped request, PATH_INVALID for a folder that is
-        not usable or not the one that an unfinished restore used.
+        Raises OperationFailure without recovery_required. REVISION_CONFLICT means
+        a stale or changed repair request. PATH_INVALID means that the folder is
+        unusable or differs from the installation recorded by interrupted work.
         """
         try:
             current = self._settings.load()
@@ -113,13 +117,17 @@ class SettingsRepair:
             raise SettingsValidationError(NOT_A_SERVER_FOLDER)
 
     def _require_journal_match(self, candidate: Path) -> None:
-        """Refuse a folder that a readable backup-restore or a pending direct-restore journal does not name.
+        """Refuse a folder that readable restore or editor journals do not name.
 
         Read only and under no mutex. An unreadable journal does not refuse; the
-        recovery after the restart fails closed on it. Publication journals record
+        recovery after the restart fails closed on it. Mod publication journals record
         no DayZ root, so they are not checked here.
         """
         try:
+            if self._configuration_recovery is not None and not self._configuration_recovery.require_root_match(candidate):
+                raise SettingsValidationError(NOT_THE_USED_FOLDER)
+            if self._editor_recovery is not None and not self._editor_recovery.require_root_match(candidate):
+                raise SettingsValidationError(NOT_THE_USED_FOLDER)
             for _path, journal in self._restore_journals.records():
                 if journal is not None and not journal_paths_safe(journal, candidate, self._backup_recovery):
                     raise SettingsValidationError(NOT_THE_USED_FOLDER)

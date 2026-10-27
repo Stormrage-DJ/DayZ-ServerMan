@@ -1,4 +1,4 @@
-"""`tweaks show --target …` and `tweaks medical show` (10.1); the tweak writes come with phase 6."""
+"""`tweaks show --target …` and `tweaks medical show` (10.1, 6.5); the tweak writes come with phase 6."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 
 from ...application.field_wording import SPAWNABLE_DAMAGE_LABELS, entry_name, field_label, readable_key
 from ..output import CommandResult, Line, Table, sentence
-from ..wording import missing_mission
+from ..wording import missing_mission, zone_baseline_line
 from .common import labelled, profile_id, profile_line, profile_name, read_data
 from .config import stored_text
 
@@ -63,4 +63,9 @@ def medical_show(context: Any) -> CommandResult:
     rows = tuple((field_label("medical", name), MEDICAL_STATES[bool((state or {}).get("enabled"))], name)
                  for name, state in features.items())
     table = Table(("Setting", "State", "Feature"), rows, input_columns=frozenset({2}))
-    return CommandResult(loaded, [profile_line(context.profile), table])
+    blocks: list[Line | Table] = [profile_line(context.profile), table]
+    # A loot-zone toggle that cannot run says why and what to do; the read still succeeds (6.5)
+    zone = zone_baseline_line((features.get("medical_loot_zones") or {}).get("zone_baseline"))
+    if zone is not None:
+        blocks.append(zone)
+    return CommandResult(loaded, blocks)

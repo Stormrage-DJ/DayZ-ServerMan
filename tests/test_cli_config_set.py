@@ -171,7 +171,7 @@ class ConfigSetTests(EditRoot):
             for arguments in (SET + ["--set", "maxPlayers=8"],
                               ["tweaks", "set", *PROFILE, "--target", "economy", "--set", "ZombieMaxCount=400"],
                               ["tweaks", "convert-loadout", *PROFILE],
-                              ["tweaks", "medical", "set", *PROFILE, "medical_item_spawns", "on"]):
+                              ["tweaks", "medical", "set", *PROFILE, "medical_loot_zones", "on"]):
                 with self.subTest(command=arguments[:2]):
                     code, stdout, _stderr = self.cli(*arguments, "--yes", "--json")
                     self.assertEqual((code, json.loads(stdout)["error"]["code"]), (3, "INSTANCE_ACTIVE"))

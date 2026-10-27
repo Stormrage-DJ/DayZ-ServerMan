@@ -6,17 +6,18 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 
-from ..domain.configuration import describe_fields, validate_updates
+from ..domain.configuration import validate_updates
 from ..domain.models import RevisionConflict
 from ..domain.profiles import ProfileRecord
 from ..repositories.atomic_file import AtomicFilePublisher, ContentChangedError
 from ..repositories.configuration_files import (
     ConfigurationFileError,
     ConfigurationSnapshot,
-    digest_bytes,
     load_configuration_file,
-    transform_configuration,
 )
+from ..repositories.configuration_publication import ConfigurationPublication
+from ..repositories.configuration_journal import ConfigurationPublicationError
+from .configuration_prepare import configuration_fields, prepare_configuration, preview_document
 from .profiles import ProfileService
 from .settings import SettingsService, SettingsValidationError
 from .mission_configuration import MissionPathError, resolve_profile_mission
@@ -49,6 +50,11 @@ class ConfigurationService:
         self._profiles = profiles
         self._settings = settings
         self._publisher = publisher or AtomicFilePublisher()
+        self._publication: ConfigurationPublication | None = None
+
+    def bind_publication(self, publication: ConfigurationPublication) -> None:
+        """Attach the coordinated owner after lifecycle composition is ready."""
+        self._publication = publication
 
     def load(self, profile_id: object, target: str) -> dict[str, Any]:
         """Return the current configuration view for one target."""
@@ -71,8 +77,6 @@ class ConfigurationService:
         raw_updates: object,
     ) -> dict[str, Any]:
         """Validate proposed updates and return the projected change without writing."""
-        # Validate and normalize the proposed field updates
-        updates = validate_updates(target, raw_updates)
         # Resolve the target file together with its current revisions
         profile, settings_revision, root, path, relative = self._resolve(profile_id, target)
         # Require the revisions and digest the caller loaded
@@ -90,21 +94,9 @@ class ConfigurationService:
         snapshot = load_configuration_file(path, target)
         if snapshot.digest != digest:
             raise ContentChangedError("configuration changed after it was loaded")
-        # Project the updated bytes and describe the resulting fields
-        proposed = transform_configuration(snapshot, updates)
-        values = {**snapshot.values, **updates}
-        return {
-            "profile_id": profile.values.profile_id,
-            "target": target,
-            "relative_path": relative,
-            "profile_revision": profile.revision,
-            "settings_revision": settings_revision,
-            "expected_digest": snapshot.digest,
-            "server_config_digest": prerequisite,
-            "proposed_digest": digest_bytes(proposed),
-            "changed_fields": list(updates),
-            "fields": describe_fields(target, values),
-        }
+        # Prepare both owners in memory; the virtual field never reaches native serialization.
+        prepared = prepare_configuration(profile, snapshot, raw_updates)
+        return preview_document(prepared, snapshot, settings_revision, relative, prerequisite)
 
     def apply(
         self,
@@ -118,8 +110,6 @@ class ConfigurationService:
         checkpoint: Callable[[str, int], None],
     ) -> dict[str, Any]:
         """Atomically publish validated updates and return the published digest."""
-        # Validate and normalize the proposed field updates
-        updates = validate_updates(target, raw_updates)
         # Resolve the target file together with its current revisions
         profile, settings_revision, root, path, relative = self._resolve(profile_id, target)
         # Require the revisions and digest the caller loaded
@@ -139,17 +129,33 @@ class ConfigurationService:
         if snapshot.digest != digest:
             raise ContentChangedError("configuration changed after it was loaded")
         # Transform, re-verify the prerequisite, and publish atomically
-        proposed = transform_configuration(snapshot, updates)
+        prepared = prepare_configuration(profile, snapshot, raw_updates)
         checkpoint("validated", 60)
         self._gameplay_prerequisite(profile, root, target, prerequisite)
-        published_digest = self._publisher.publish(path, proposed, snapshot.digest)
+        if prepared.profile_changed:
+            if prepared.proposed != snapshot.content:
+                if self._publication is None:
+                    raise ConfigurationPublicationError("STORAGE_FAILURE", "Configuration publication is unavailable.")
+                published_digest = self._publication.publish(root, profile, settings_revision,
+                                                             prepared.proposed, snapshot.digest,
+                                                             prepared.candidate.game_port)
+            else:
+                # One operation invokes the existing profile authority; no nested save is queued.
+                if load_configuration_file(path, target).digest != snapshot.digest:
+                    raise ContentChangedError("configuration changed before profile publication")
+                self._profiles.save(prepared.candidate, profile.revision)
+                published_digest = snapshot.digest
+        elif prepared.native_updates:
+            published_digest = self._publisher.publish(path, prepared.proposed, snapshot.digest)
+        else:
+            published_digest = snapshot.digest
         checkpoint("verified", 100)
         return {
             "profile_id": profile.values.profile_id,
             "target": target,
             "relative_path": relative,
             "digest": published_digest,
-            "changed_fields": list(updates),
+            "changed_fields": list(prepared.updates),
         }
 
     def _resolve(
@@ -226,7 +232,7 @@ class ConfigurationService:
             "settings_revision": settings_revision,
             "digest": snapshot.digest,
             "server_config_digest": prerequisite,
-            "fields": describe_fields(snapshot.target, snapshot.values),
+            "fields": configuration_fields(snapshot.target, snapshot.values, profile.values),
         }
 
 

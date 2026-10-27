@@ -27,7 +27,8 @@ class SelectedBackups:
         verify_archive(path, manifest)
         if before != sha256_file(path):
             raise ValueError("The selected archive changed during verification. Browse again.")
-        if manifest.schema_version != 3:
+        # Schema 4 has every schema 3 field, so its profile definition is complete (10.10, D18)
+        if manifest.schema_version not in (3, 4):
             raise ValueError("This older backup lacks a complete profile definition. Select a new full backup.")
         if len(self.selections) >= 256:
             raise ValueError("Too many archive selections. Restart the manager before browsing again.")

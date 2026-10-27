@@ -10,6 +10,8 @@ from typing import Any
 
 # Current journal schema version; older files support fewer fields
 RESTORE_JOURNAL_SCHEMA = 3
+# Journal schema of a restore that also writes editor records: each group names its target class (D19, 10.10)
+EDITOR_JOURNAL_SCHEMA = 4
 
 
 def canonical_digest(value: object) -> str:
@@ -60,10 +62,14 @@ class RestorePreview:
     manifest_digest: str
     targets: tuple[RestoreTarget, ...]
     fingerprint: str = ""
+    # The editor records that the restore reads, the D5 row of each and the skipped parts (10.10); None without
+    # an editor part. `editor_notes` holds the Product Owner sentences of that part, in review order.
+    editor: dict[str, Any] | None = None
+    editor_notes: tuple[str, ...] = ()
 
     def body(self) -> dict[str, Any]:
         """Return the preview fields covered by the fingerprint."""
-        return {
+        body = {
             "backup_id": self.backup_id,
             "created_at": self.created_at,
             "profile_id": self.profile_id,
@@ -72,6 +78,10 @@ class RestorePreview:
             "manifest_digest": self.manifest_digest,
             "targets": [item.to_dict() for item in self.targets],
         }
+        # Only a restore with editor records adds the field, so other previews keep their fingerprint
+        if self.editor is not None:
+            body["editor"], body["editor_notes"] = self.editor, list(self.editor_notes)
+        return body
 
     def signed(self) -> RestorePreview:
         """Return a copy carrying the fingerprint of its body."""
@@ -84,7 +94,11 @@ class RestorePreview:
 
 @dataclass
 class RestoreGroup:
-    """Durable per-target progress of one restore publication."""
+    """Durable per-target progress of one restore publication.
+
+    A group of the DayZ root names its archive entry. A group of the manager root (schema 4) names its target
+    in `entry_path`, relative to the manager root. Such a group can also require absence (`new_exists` false).
+    """
 
     entry_path: str
     target_path: str
@@ -92,9 +106,12 @@ class RestoreGroup:
     recovery_path: str | None
     old_existed: bool
     old_digest: str | None
-    new_digest: str
+    # None only when the file must end absent
+    new_digest: str | None
     state: str = "READY"
     created_ancestors: tuple[str, ...] = ()
+    target_class: str = "dayz"
+    new_exists: bool = True
 
     def to_dict(self) -> dict[str, object]:
         """Return the group as its journal JSON object."""
@@ -136,10 +153,13 @@ class RestoreJournal:
             "result": self.result,
             "groups": [group.to_dict() for group in self.groups],
         }
-        # Older schemas never wrote ancestor tracking
-        if self.schema_version < 3:
-            for group in result["groups"]:
+        # Older schemas never wrote ancestor tracking, and only schema 4 names the target class
+        for group in result["groups"]:
+            if self.schema_version < 3:
                 group.pop("created_ancestors", None)
+            if self.schema_version < EDITOR_JOURNAL_SCHEMA:
+                group.pop("target_class", None)
+                group.pop("new_exists", None)
         # Runtime profile identity exists from schema 2 onward
         if self.schema_version >= 2:
             result["runtime_profile"] = self.runtime_profile

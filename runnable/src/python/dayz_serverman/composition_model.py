@@ -7,6 +7,7 @@ from enum import Enum
 
 from .adapters.windows.diagnostics import WindowsPathDiagnostics
 from .application.coordinator import ApplicationCoordinator
+from .application.editor_guard import DelegatingEditorGuard
 from .application.backup_coordinator import BackupCoordinator
 from .application.backups import BackupService
 from .application.configuration import ConfigurationService
@@ -45,6 +46,7 @@ from .observability.structured_log import StructuredLogger
 from .repositories.json_store import VersionedJsonRepository
 from .repositories.paths import PortablePaths
 from .repositories.profiles import ProfileRepository
+from .mission_map_composition import MissionMapParts
 from .update_check_composition import ServerBuildParts
 
 
@@ -71,6 +73,7 @@ class ApplicationComposition:
     profile_repository: ProfileRepository
     profiles: ProfileService
     profile_coordinator: ProfileCoordinator
+    editor_guard: DelegatingEditorGuard
     preferences: PreferenceCoordinator
     backups: BackupService
     backup_coordinator: BackupCoordinator
@@ -100,6 +103,7 @@ class ApplicationComposition:
     update_check_scheduler: UpdateCheckScheduler
     update_check_coordinator: UpdateCheckCoordinator
     server_build: ServerBuildParts
+    mission_map: MissionMapParts
     coordinator: ApplicationCoordinator
     bridge: BridgeFacade
     host_bridge: BridgeFacade

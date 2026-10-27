@@ -145,6 +145,11 @@ async function reviewDirectRestore(backupId) {
     const mods = directNode("button", `Open Mods: ${preview.missing_mods.join(", ")}`, "button"); mods.type = "button";
     mods.addEventListener("click", () => { closeDirectRestore(); document.querySelector('[data-section="mods"]')?.click(); }); review.append(mods);
   }
+  // The map editor sentences come before the replacement question; the Restore button names them
+  const notes = directEditorNotes(preview);
+  review.append(...notes);
+  if (notes.length) document.getElementById("direct-apply").setAttribute("aria-describedby", "direct-editor-notes");
+  else document.getElementById("direct-apply").removeAttribute("aria-describedby");
   if (preview.storage_policy === "replace_existing") {
     const row = directNode("label", "", "notice notice-warning");
     const confirm = document.createElement("input"); confirm.type = "checkbox"; confirm.id = "direct-overwrite";
@@ -152,6 +157,15 @@ async function reviewDirectRestore(backupId) {
     review.append(row);
     confirm.addEventListener("change", () => { document.getElementById("direct-apply").disabled = !confirm.checked; });
   } else document.getElementById("direct-apply").disabled = false;
+}
+
+// Show the map editor sentences of the restore under their heading, as the backup restore review does.
+function directEditorNotes(preview) {
+  const notes = Array.isArray(preview.editor_notes) ? preview.editor_notes : [];
+  if (!notes.length) return [];
+  const container = directNode("div", ""); container.id = "direct-editor-notes";
+  container.append(directNode("h3", "Map editor records"), ...notes.map((note) => directNode("p", String(note))));
+  return [container];
 }
 
 // Submit the exact reviewed request; freeze controls while its handle is acquired.
@@ -190,6 +204,8 @@ function directOperationFinished(operation) {
       const reasons = operation.result.readiness?.reasons || [];
       let message = operation.result.cleanup_pending ? "Profile restored; recovery cleanup is pending."
         : reasons.length ? `Profile restored. ${reasons.join(" ")}` : "Profile restored. Check readiness before starting.";
+      // The move of editor records that an interrupted deletion left follows the success sentence
+      if (operation.result.editor_remnant_notice) message += ` ${operation.result.editor_remnant_notice}`;
       if (operation.result.recovery_copy) message += ` World recovery copy: ${operation.result.recovery_copy}`;
       window.ServerManUi.setHostStatus(message, reasons.length || operation.result.cleanup_pending ? "is-warning" : "", "profile-restore");
     });

@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from collections.abc import Mapping
 from typing import Any, Callable
 
 from ..bridge.contracts import ErrorCode
 from ..bridge.facade import ApplicationCallError
 from ..domain.configuration import ConfigurationValidationError
+from ..domain.lifecycle import LifecycleFailure
 from ..domain.models import RecordUnavailable, RevisionConflict
 from ..domain.profiles import ProfileValidationError
 from ..repositories.atomic_file import ContentChangedError
+from ..repositories.configuration_journal import ConfigurationPublicationError
 from ..repositories.configuration_files import ConfigurationFileError
 from ..repositories.profiles import ProfileNotFound, ProfileStorageError
 from .configuration import (
@@ -30,6 +33,11 @@ class ConfigurationCoordinator:
         """Bind the configuration service and the operation manager."""
         self._service = service
         self._operations = operations
+        self._admission = nullcontext
+
+    def bind_admission(self, admission: Callable) -> None:
+        """Attach the existing lifecycle and folder-writer mutation scope."""
+        self._admission = admission
 
     def handlers(self) -> dict[str, Callable[[Mapping[str, Any]], Any]]:
         """Return the bridge handler table for configuration use cases."""
@@ -69,7 +77,8 @@ class ConfigurationCoordinator:
         def work(context: Any) -> dict[str, Any]:
             """Apply the configuration inside the mutation lane."""
             try:
-                return self._service.apply(**arguments, checkpoint=context.checkpoint)
+                with self._admission():
+                    return self._service.apply(**arguments, checkpoint=context.checkpoint)
             except Exception as error:
                 raise _operation_error(error) from error
 
@@ -134,6 +143,10 @@ def _edit_arguments(parameters: Mapping[str, Any]) -> dict[str, Any]:
 
 def _query_error(error: Exception) -> ApplicationCallError:
     """Map configuration failures to stable bridge error codes."""
+    if isinstance(error, LifecycleFailure):
+        return ApplicationCallError(ErrorCode(error.code), error.safe_message)
+    if isinstance(error, ConfigurationPublicationError):
+        return ApplicationCallError(ErrorCode(error.code), str(error), retryable=error.code == "REVISION_CONFLICT")
     if isinstance(error, (ConfigurationValidationError, ProfileValidationError)):
         return ApplicationCallError(ErrorCode.INVALID_REQUEST, str(error))
     if isinstance(error, (ProfileNotFound, ConfigurationPathError)):

@@ -4,6 +4,8 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
@@ -45,6 +47,61 @@ class UiPreferenceTests(unittest.TestCase):
     def create_profile(self) -> None:
         """Persist the fixture profile so preference writes can reference it."""
         self.composition.profiles.save(ProfileInput.parse(profile_payload()), None)
+
+    def test_editor_layout_patches_are_scoped_and_survive_restart(self) -> None:
+        """Partial patches preserve other preferences and ignore stale profile choices."""
+        self.create_profile()
+        self.dispatch("save_selected_profile", {"profile_id": "livonia-main"})
+        self.assertTrue(self.dispatch("save_editor_layout", {"patch": {"navigation_width": 277}})["success"])
+        self.assertTrue(self.dispatch("save_editor_layout", {"patch": {"report_open": True,
+                        "last_explicit_opened_region": "report"}})["success"])
+        self.assertEqual(self.dispatch("get_ui_preferences")["value"]["selected_profile_id"], "livonia-main")
+        self.composition.operations.shutdown(2)
+        self.composition = build_composition(self.manager_root)
+        self.assertEqual(self.dispatch("get_editor_layout")["value"]["editor_layout"],
+                         {"navigation_width": 277, "report_open": True, "last_explicit_opened_region": "report"})
+        for patch in ({}, {"navigation_width": True}, {"report_height": 601}, {"report_open": 1},
+                      {"selected_profile_id": "other"}, {"last_explicit_opened_region": "setup"}):
+            self.assertEqual(self.dispatch("save_editor_layout", {"patch": patch})["error"]["code"], "INVALID_REQUEST")
+
+    def test_layout_retry_merges_fresh_fields_and_stops_after_two_attempts(self) -> None:
+        """A competing revision is merged once; repeated conflicts remain visible."""
+        from dayz_serverman.domain.models import RevisionConflict
+        repository = self.composition.preferences._repository
+        save = repository.save
+        attempts = []
+        def competing(fields, expected):
+            attempts.append(expected)
+            if len(attempts) == 1:
+                save({"selected_profile_id": "deleted-profile", "unknown_setting": 42}, expected)
+                raise RevisionConflict("competing preference update")
+            return save(fields, expected)
+        with patch.object(repository, "save", side_effect=competing):
+            self.assertTrue(self.dispatch("save_editor_layout", {"patch": {"report_height": 181}})["success"])
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(repository.inspect().document.fields["unknown_setting"], 42)
+        self.assertEqual(self.dispatch("get_editor_layout")["value"]["editor_layout"], {"report_height": 181})
+        with patch.object(repository, "save", side_effect=RevisionConflict("still competing")) as mocked:
+            answer = self.dispatch("save_editor_layout", {"patch": {"report_height": 191}})
+            self.assertEqual(answer["error"]["code"], "REVISION_CONFLICT")
+            self.assertEqual(mocked.call_count, 2)
+
+    def test_shared_preference_writers_preserve_each_other(self) -> None:
+        """Concurrent layout and ordinary preference writes keep every independent field."""
+        self.create_profile()
+        jobs = [("save_editor_layout", {"patch": {"navigation_width": 263}}),
+                ("save_editor_layout", {"patch": {"inspector_width": 417}}),
+                ("save_automatic_update_checks", {"enabled": False}),
+                ("save_backup_after_stop", {"profile_id": "livonia-main", "enabled": True}),
+                ("save_selected_profile", {"profile_id": "livonia-main"})]
+        with ThreadPoolExecutor(max_workers=5) as workers:
+            results = list(workers.map(lambda job: self.dispatch(*job), jobs))
+        self.assertTrue(all(result["success"] for result in results), results)
+        fields = self.composition.preferences._repository.inspect().document.fields
+        self.assertEqual(fields["editor_layout"], {"navigation_width": 263, "inspector_width": 417})
+        self.assertEqual(fields["backup_after_stop_profiles"], ["livonia-main"])
+        self.assertIs(fields["automatic_update_checks"], False)
+        self.assertEqual(fields["selected_profile_id"], "livonia-main")
 
     def test_missing_preference_is_a_successful_empty_selection(self) -> None:
         """A missing preference file reports an empty selection with MISSING status."""

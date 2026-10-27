@@ -120,7 +120,8 @@ def _exact(parameters: Mapping[str, Any], expected: set[str]) -> None:
 def _target(value: object) -> str:
     """Validate a mission target role before it reaches the service."""
     # Reject targets that the mission workflow does not support
-    if value not in ("economy", "weather", "spawnable_damage", "starter_loadout", "events"):
+    if value not in ("economy", "weather", "spawnable_damage", "starter_loadout", "events", "loot_supply",
+                     "weapon_magazines"):
         raise ApplicationCallError(ErrorCode.INVALID_REQUEST, "mission target is not supported")
     return str(value)
 

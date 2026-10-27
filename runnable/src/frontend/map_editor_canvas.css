@@ -1,0 +1,167 @@
+/* Editor component tokens of the map rendering; the shared tokens stay unchanged. */
+:root {
+  --map-tier-1: #9d9d9d;
+  --map-tier-2: #ffffff;
+  --map-tier-3: #1eff00;
+  --map-tier-4: #0070dd;
+  --map-tier-5: #CC79A7;
+  --map-tier-other: #AEB9C6;
+  /* Encounters (7.3): 9.9:1 on the canvas and 8.0:1 on the terrain surface (UI-UX 10:22:15) */
+  --map-encounter: #F59BFF;
+  --map-encounter-infected: #a335ee;
+  --map-encounter-bandits: #ff8000;
+  --map-selection: #C62828;
+}
+
+/* Legend rows name each tier beside its swatch and pattern. */
+#map-tiers-legend { display: grid; gap: var(--primitive-space-1); list-style: none; margin: var(--primitive-space-2) 0 0; padding: 0; }
+#map-tiers-legend li { display: flex; align-items: center; gap: var(--primitive-space-2); min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+.map-tier-name { flex: 1; min-width: 0; }
+#map-tiers-legend .map-tier-visibility { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; min-height: 32px; padding: 4px; flex: 0 0 32px; border-color: transparent; background: transparent; }
+.map-tier-visibility .map-command-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.map-tier-visibility[aria-pressed=false] { color: var(--color-text-muted); }
+.map-tier-swatch { flex: none; width: 18px; height: 18px; border: 1px solid var(--color-border); }
+/* Keep the opacity value visible without narrowing the slider at small window sizes. */
+.map-opacity-control { display: grid; grid-template-columns: minmax(0, 1fr) 4ch; align-items: center; gap: var(--primitive-space-2); }
+.map-opacity-control input { width: 100%; min-width: 0; }
+.map-opacity-control output { text-align: right; font-variant-numeric: tabular-nums; }
+#map-tiers-status, #map-background-status, #map-calibration-result, #map-calibration-warning { overflow-wrap: anywhere; }
+#map-background-choose, #map-calibrate { margin-top: var(--primitive-space-2); }
+
+/* Calibration points keep their fields usable at the minimum panel width. */
+#map-calibration { display: grid; gap: var(--primitive-space-2); min-width: 0; margin: var(--primitive-space-3) 0 0; }
+#map-calibration[hidden], #map-tiers-legend[hidden] { display: none; }
+.map-calibration-point { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--primitive-space-1); min-width: 0; }
+.map-calibration-point > p, .map-calibration-point > button { grid-column: 1 / -1; }
+.map-calibration-point > div { display: grid; min-width: 0; }
+.map-calibration-point input { width: 100%; min-width: 0; }
+.map-calibration-point p { font-variant-numeric: tabular-nums; }
+#map-calibration-warning:not(:empty) { color: var(--color-status-warning); }
+#map-calibration-actions { display: flex; flex-wrap: wrap; gap: var(--primitive-space-2); }
+
+/* Zones: a dark halo under a 2 px line; Inherit zones use a dashed text-colour line (Rendering). */
+.map-zone, .map-zone-halo, .map-outline-edge, .map-outline-halo { fill: none; stroke-linejoin: round; }
+.map-zone-halo, .map-outline-halo { stroke: var(--color-canvas); stroke-width: 4px; }
+.map-zone { stroke-width: 2px; }
+.map-zone-inherit { stroke: var(--color-text); stroke-dasharray: 6 4; }
+.map-zone-wash, .map-zone-hatch, .map-outline-wash { stroke: none; pointer-events: none; }
+.map-outline-wash { fill: var(--color-text-muted); }
+/* A light outer edge and action ring frame the unchanged tier or error boundary. */
+.map-zone-selection-outer { fill: none; stroke: white; stroke-width: 5px; stroke-linejoin: round; }
+.map-zone-selection { fill: none; stroke: var(--map-selection); stroke-width: 3px; stroke-linejoin: round; }
+.map-zone-error-marker { fill: var(--color-canvas); stroke: var(--color-status-error); stroke-width: 2px; }
+.map-zone-problem, .map-outline-crossing { stroke: var(--color-status-error); }
+
+/* The outline draft: action-colour edges, a dashed implied closing edge and marked points. */
+.map-outline-edge:not(.map-outline-crossing) { stroke: var(--color-action); }
+.map-outline-edge { stroke-width: 2px; }
+.map-outline-closing { stroke-dasharray: 4 4; }
+.map-outline-edge.map-outline-crossing { stroke-width: 4px; }
+.map-outline-halo-crossing { stroke-width: 6px; }
+.map-outline-vertex { fill: var(--color-action); stroke: var(--color-canvas); stroke-width: 1px; }
+#map-viewport.map-drawing { cursor: crosshair; }
+/* The footer tool slot stays one line high while drawing; its title holds the full text. */
+#map-tool-status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The plan state and Draft changes stay one line high; Reload plan sits on the same line (QA-4.4-F8). */
+#map-plan-status { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto 24px; column-gap: var(--primitive-space-3); align-items: center; }
+#map-plan-status dt { grid-column: 1 / -1; }
+#map-status, #map-draft-changes { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#map-draft-changes.map-draft-updating { color: var(--color-text-subtle); }
+/* The full plan state on the map for a delay, a failure or a read-only reason; it never moves the layout. The
+   operation notice (8.18) comes first in the same bottom-right column, so the two notices never overlap. */
+#map-notices { position: absolute; inset: auto var(--primitive-space-3) var(--primitive-space-3) auto; display: flex; flex-direction: column; align-items: flex-end; gap: var(--primitive-space-2); max-width: min(52ch, 60%); pointer-events: none; }
+#map-save-notice, #map-operation-notice { max-width: 100%; margin: 0; padding: var(--primitive-space-2) var(--primitive-space-3); border: 1px solid var(--color-status-warning); border-left-width: 4px; border-radius: var(--radius-control); background: var(--panel-background); color: var(--color-text); font-size: 13px; overflow-wrap: anywhere; }
+#map-save-notice.map-save-error, #map-operation-notice { border-color: var(--color-status-error); }
+#map-operation-notice.map-operation-recovery { border-color: var(--color-status-recovery); }
+/* An export or import success shows on the map; a refused export lists each object on its own line (9.1) */
+#map-operation-notice.map-operation-success { border-color: var(--color-status-success); }
+#map-operation-notice { white-space: pre-line; }
+#map-operation-notice:empty { display: none; }
+/* A success, such as a set-aside plan, and link labels that never wrap the plan state line (UI-UX 5.3). */
+#map-save-notice.map-save-success { border-color: var(--color-status-success); }
+#map-plan-status .link-button { white-space: nowrap; }
+#map-save-notice:empty { display: none; }
+
+/* The tool reason on the map stays visible with the panel collapsed and never moves the layout. */
+#map-tool-notice { position: absolute; inset: var(--primitive-space-3) auto auto var(--primitive-space-3); max-width: min(60ch, calc(100% - 2 * var(--primitive-space-3))); margin: 0; padding: var(--primitive-space-2) var(--primitive-space-3); border: 1px solid var(--color-status-warning); border-left-width: 4px; border-radius: var(--radius-control); background: var(--panel-background); color: var(--color-text); font-size: 13px; overflow-wrap: anywhere; pointer-events: none; }
+#map-tool-notice:empty { display: none; }
+
+/* Tool controls stay usable at the minimum panel width. */
+#map-tool-buttons, #map-outline-actions { display: flex; flex-wrap: wrap; gap: var(--primitive-space-2); }
+#map-circle-radius { width: 100%; min-width: 0; }
+#map-tool-message { overflow-wrap: anywhere; }
+#map-tool-message:not(:empty) { color: var(--color-status-warning); }
+
+/* Square handles of the selected zone differ from the round outline-draft points (4.5). */
+.map-handle { fill: var(--map-selection); stroke: white; stroke-width: 1.5px; }
+#map-viewport.map-dragging { cursor: grabbing; }
+/* The selected item's properties stay usable at the minimum panel width. */
+#map-properties-fields, #map-properties-radius-row { display: grid; gap: var(--primitive-space-1); min-width: 0; }
+#map-properties-fields[hidden], #map-properties-radius-row[hidden], #map-properties-empty[hidden] { display: none; }
+#map-properties-fields input { width: 100%; min-width: 0; }
+#map-properties-delete { justify-self: start; }
+#map-properties-fields p { margin: 0; overflow-wrap: anywhere; }
+#map-properties-message:not(:empty) { color: var(--color-status-warning); }
+
+/* The tier control of the selected zone and its read stay usable at the minimum panel width (4.6). */
+#map-tier-row, #map-tier-read { display: grid; gap: var(--primitive-space-1); min-width: 0; }
+#map-tier-row[hidden], #map-tier-read[hidden], #map-tier-original[hidden], #map-tier-actions[hidden], #map-tier-capacity[hidden] { display: none; }
+#map-tier-select { width: 100%; min-width: 0; }
+#map-tier-actions, #map-inspect-actions { display: flex; flex-wrap: wrap; gap: var(--primitive-space-3); }
+#map-tier-message:not(:empty) { color: var(--color-status-warning); }
+#map-tier-capacity h3 { margin: var(--primitive-space-2) 0 0; font-size: 13px; }
+#map-tier-capacity-list { margin: var(--primitive-space-1) 0 0; padding-left: var(--primitive-space-4); font-size: 13px; overflow-wrap: anywhere; }
+/* The Inspect answer: each term above its value, with tabular numerals for coordinates. */
+#map-inspect-result { display: grid; gap: var(--primitive-space-1); margin: var(--primitive-space-2) 0 0; font-size: 13px; }
+#map-inspect-result[hidden], #map-inspect-capacity[hidden] { display: none; }
+#map-inspect-result dt { font-weight: 600; }
+#map-inspect-result dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+/* The Inspect marker: a ring and a cross over a dark halo, above every zone. */
+.map-inspect-halo { fill: none; stroke: var(--color-canvas); stroke-width: 5px; }
+.map-inspect-ring { fill: none; stroke: var(--color-action-strong); stroke-width: 2px; }
+/* The global slider with its value, and the Zone capacity row of the selected zone (5.1). Updating and
+   Not evaluated take the place of the effective value, in the subtle text colour. */
+#map-global-capacity-row { display: grid; grid-template-columns: minmax(0, 1fr) 6ch; align-items: center; gap: var(--primitive-space-2); margin-top: var(--primitive-space-2); }
+#map-global-capacity { width: 100%; min-width: 0; }
+#map-global-capacity-value { font-variant-numeric: tabular-nums; text-align: right; }
+#map-zone-capacity-row { display: grid; gap: var(--primitive-space-1); min-width: 0; }
+#map-zone-capacity-row[hidden] { display: none; }
+#map-zone-capacity { width: 100%; min-width: 0; }
+#map-zone-capacity-effective.map-effective-pending { color: var(--color-text-subtle); }
+/* Every editor toggle (tools, list rows, calibration picks) shows its pressed state with an inset bar, a cue that is
+   not colour alone (UI-UX 10:54:32); the shared .button rule of the main window stays unchanged. */
+#map-editor .button[aria-pressed="true"] { border-color: var(--color-action); box-shadow: inset 0 -3px 0 var(--color-action); }
+/* The Encounter type select and its reason line (7.3). */
+#map-encounter-provider { width: 100%; min-width: 0; }
+#map-encounter-provider-reason { overflow-wrap: anywhere; }
+#map-encounter-provider-reason:not(:empty) { color: var(--color-status-warning); }
+/* Encounters: a ring for the spawn radius and a centre mark of fixed size; widths and dashes are SVG attributes. */
+.map-encounter-halo, .map-encounter-ring, .map-encounter-mark-halo, .map-encounter-mark-line { fill: none; stroke-linejoin: round; }
+.map-encounter-halo, .map-encounter-mark-halo { stroke: var(--color-canvas); }
+.map-encounter-mark-halo { stroke-width: 4px; }
+.map-encounter-ring, .map-encounter-mark-line { stroke: inherit; }
+.map-encounter-mark-line { stroke-width: 2px; }
+.map-encounter-unavailable polygon.map-encounter-mark-halo, .map-encounter-unavailable polygon.map-encounter-mark-line { fill: var(--color-canvas); }
+.map-encounter-problem .map-encounter-ring { stroke: var(--color-status-error); }
+.map-encounter-problem .map-encounter-mark-line { stroke: var(--color-status-error); }
+/* Encounter Properties: the R11 block, the event and two population columns at the minimum panel width. */
+#map-encounter-availability, #map-encounter-fields { display: grid; gap: var(--primitive-space-1); min-width: 0; }
+#map-encounter-availability[hidden], #map-encounter-fields[hidden], #map-encounter-provider-text[hidden] { display: none; }
+#map-encounter-reason:not(:empty) { color: var(--color-status-warning); }
+#map-properties-fields #map-encounter-exclude { width: auto; }
+#map-encounter-event { width: 100%; min-width: 0; }
+#map-encounter-population { min-width: 0; margin: 0; padding: var(--primitive-space-2); border: 1px solid var(--color-border); border-radius: var(--radius-control); }
+.map-encounter-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--primitive-space-2); min-width: 0; }
+.map-encounter-pair > div { display: grid; min-width: 0; }
+.map-encounter-pair label { overflow-wrap: anywhere; }
+#map-encounter-population-note { overflow-wrap: anywhere; }
+/* Linked loot (7.4): a top line starts the group; the checkbox is not stretched; Detach keeps its own width. */
+#map-linked-loot { display: grid; gap: var(--primitive-space-1); min-width: 0; border-top: 1px solid var(--color-border); padding-top: var(--primitive-space-2); }
+#map-linked-loot[hidden], #map-linked-loot-detach[hidden] { display: none; }
+#map-properties-fields #map-linked-loot-enable { width: auto; }
+#map-linked-loot-note { overflow-wrap: anywhere; }
+#map-linked-loot-detach { justify-self: start; }
+/* List row tags of an encounter: the word in a bordered box, then the reason (R11). */
+.map-layer-note { overflow-wrap: anywhere; }
+.map-layer-tag { display: inline-block; padding: 0 var(--primitive-space-1); border: 1px solid var(--color-border); border-radius: var(--radius-control); font-size: 12px; color: var(--color-text); }
+.map-layer-tag-unavailable { border-color: var(--color-status-warning); color: var(--color-status-warning); }
