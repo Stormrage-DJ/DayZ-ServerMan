@@ -6,12 +6,46 @@ function tweakNode(tag, className = "", text = "") { return window.ServerManUi.e
 // Turn a configuration key into readable label text.
 function tweakLabel(key) { return key.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " "); }
 
+// Describe what a supply percentage does with the group's item counts of the loaded mission.
+function supplyEffect(group, field, percent, api) {
+  const facts = api.state.snapshots.get(group.target)?.facts;
+  if (!facts) return "";
+  if (field.key === "ammo_fill") return `${facts.fill_types} ammunition and magazine types in this mission.`;
+  const counts = facts.groups?.[field.key];
+  if (!counts) return "";
+  if (!counts.types) return "No item type of this group spawns in this mission.";
+  const target = Math.round(counts.nominal * percent / 100);
+  return `${counts.types} item types · ${counts.nominal} on the map originally · about ${target} at ${percent}%`;
+}
+
+// Build a percentage slider with its shown value and, for supply groups, its effect.
+function percentControl(wrapper, group, field, value, api) {
+  const input = document.createElement("input");
+  input.type = "range"; input.min = String(field.range.min); input.max = String(field.range.max);
+  input.step = String(field.range.step); input.value = String(value ?? 100);
+  input.setAttribute("aria-label", field.label);
+  const shown = tweakNode("output", "tweak-percent-value");
+  const effect = tweakNode("small", "tweak-percent-effect");
+  // Show the slider position and its effect while it moves; the draft changes on release
+  const update = () => {
+    shown.textContent = `${input.value}%`; input.setAttribute("aria-valuetext", `${input.value}%`);
+    effect.textContent = supplyEffect(group, field, Number(input.value), api);
+  };
+  update(); input.addEventListener("input", update);
+  input.addEventListener("change", () => api.setValue(group.target, field.key, Number(input.value)));
+  const row = tweakNode("div", "tweak-percent-row"); row.append(input, shown);
+  wrapper.append(row);
+  if (effect.textContent) wrapper.append(effect);
+  return wrapper;
+}
+
 // Build the input control for one tweakable field.
 function controlForField(group, field, api) {
   const wrapper = tweakNode("label", "guided-setting-control");
   // Show the field label above its control.
   wrapper.append(tweakNode("span", "tweak-field-label", field.label));
   const value = api.value(group.target, field.key);
+  if (field.kind === "percent") return percentControl(wrapper, group, field, value, api);
   let input;
   // Boolean fields use an enabled or disabled choice.
   if (field.kind === "boolean") {

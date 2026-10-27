@@ -27,6 +27,7 @@ Do not copy only the starter or `src` directory.
   - [Restore an existing profile](#restore-an-existing-profile)
   - [Restore a deleted profile from a ZIP](#restore-a-deleted-profile-from-a-zip)
 - [When changes are blocked](#when-changes-are-blocked)
+- [Loot supply](#loot-supply)
 - [The mission map editor](#the-mission-map-editor)
   - [Open the editor](#open-the-editor)
   - [Terrain bounds and coordinates](#terrain-bounds-and-coordinates)
@@ -211,8 +212,8 @@ The workspaces are in three groups:
 - **Server setup**
   - **Profiles** defines the launch command, runtime profile, and ordered mods.
   - **Configuration** edits the selected server's core configuration.
-  - **Tweaks** edits gameplay, economy, weather, events, spawn, and population
-    data.
+  - **Tweaks** edits gameplay, economy, loot supply, weather, events, spawn,
+    and population data.
 - **Application**
   - **Settings** sets the application folders, the backup destination, the
     update checks, and the legacy import.
@@ -593,6 +594,67 @@ guide describes.
 Keep verified recovery copies until they are no longer needed. Restore
 journals remain in `data/operations/`.
 
+## Loot supply
+
+**Tweaks › Gameplay Tweaks › Loot Supply** sets how much loot of each kind the
+central economy keeps on the map. The rules are the same for every map. They
+read the item category and the class name, not a list of one map.
+
+- **Item supply** has one slider for each item group. The groups are weapons,
+  weapon attachments, magazines, loose ammunition, ammunition boxes,
+  explosives, food and drink, medical supplies, tools, clothing, and backpacks
+  and containers.
+  The slider goes from 0% to 300% in steps of 5%. It scales `nominal` and `min`
+  of every item type of the group in `db/types.xml`. 100% keeps the original.
+  Below each slider, the window shows how many item types the group has and
+  about how many items the map holds at that percentage.
+- **Ammunition fill** scales how full spawned ammunition piles and magazines
+  are (`quantmin` and `quantmax`), up to completely full.
+- **Weapons with a magazine** scales the chance that a spawned weapon comes
+  with a magazine attached. It changes the magazine blocks of
+  `cfgspawnabletypes.xml`, up to a chance of 1.
+- **Economy throughput** sets **Initial loot** (`InitialSpawn`, 0% to 100%)
+  and how many items the economy respawns at once. With high supply
+  percentages, raise **Item types per respawn** so that the map fills sooner.
+
+<!-- shot:readme-12 -->
+![Loot Supply tab of Chernarus PvE: Item supply sliders for weapons, attachments, and magazines at 150%, each with its item types and expected count](img/readme-12.png)
+
+Changes on one page can touch several files. The page has one **Review
+changes** action for all of them. After the review, the same button reads
+**Apply changes** and applies every reviewed file. If you change a value after
+the review, review again. The page reloads once, after the last file is
+written.
+
+<!-- shot:readme-13 -->
+![Economy throughput group with the Initial loot slider and the respawn values, and one Apply changes button for all changed files after the review](img/readme-13.png)
+
+Each change is computed from the original values, so percentages never add up.
+While a percentage is not 100%, the file keeps one comment with the
+percentages and the original values. When every percentage is 100% again, the
+file has its original values and no comment. A value that you change by hand
+counts as already scaled. An item type that you add by hand counts as
+original.
+
+Things to know:
+
+- Event loot (`lootdispatch`), item types without a category and item types
+  with a nominal of 0 do not change.
+- An item type name that occurs twice in `db/types.xml` does not change.
+- Types files of mods that `cfgeconomycore.xml` adds do not change. Only
+  `db/types.xml` changes.
+- More items also need free loot places. If the map has too few, raise the
+  container capacity in the map editor.
+- Lower supply takes effect as old loot leaves the map. Higher supply fills
+  the map as fast as the economy throughput allows.
+
+The command line uses `tweaks show --target loot-supply` and
+`tweaks set --target loot-supply --set supply_ammo=200`. The keys are
+`supply_weapons`, `supply_attachments`, `supply_magazines`, `supply_ammo`,
+`supply_ammo_boxes`, `supply_explosives`, `supply_food`, `supply_medical`,
+`supply_tools`, `supply_clothing`, `supply_containers` and `ammo_fill`. The magazine
+chance uses `--target weapon-magazines` with the key `magazine_chance`.
+
 ## The mission map editor
 
 The map editor sets loot tiers, container capacity, and infected encounters of
@@ -924,7 +986,7 @@ needs that no other DayZ-ServerMan is active (see
 | | `profile delete` | yes | yes |
 | Configuration | `config show --target server\|gameplay` | no | no |
 | | `config set --target server\|gameplay` with `--set` or `--from-file` | yes | yes, after the review |
-| Tweaks | `tweaks show --target economy\|weather\|spawnable-damage\|starter-loadout\|events` | no | no |
+| Tweaks | `tweaks show --target economy\|weather\|spawnable-damage\|starter-loadout\|events\|loot-supply\|weapon-magazines` | no | no |
 | | `tweaks set --target ...` with `--set` or `--from-file` | yes | yes, after the review |
 | | `tweaks convert-loadout` | yes | yes |
 | | `tweaks medical show` | no | no |
@@ -1323,6 +1385,7 @@ py DayZ-ServerMan.py --cli server players --names
 py DayZ-ServerMan.py --cli server stop --profile chernarus_pve --backup-after-stop
 py DayZ-ServerMan.py --cli backup list --json
 py DayZ-ServerMan.py --cli config set --profile chernarus_pve --target server --set maxPlayers=40
+py DayZ-ServerMan.py --cli tweaks set --profile chernarus_pve --target loot-supply --set supply_ammo=200 --set ammo_fill=150
 py DayZ-ServerMan.py --cli mods update --profile chernarus_pve --restart --yes
 ```
 
@@ -1385,12 +1448,6 @@ if ($LASTEXITCODE -eq 0) {
     profile applied its map plan to this mission, change this setting in that
     profile. Otherwise apply a map plan of this profile in the map editor,
     then change this setting."
-- **Medical loot settings, item spawns.** The `medical_item_spawns` setting
-  can end with exit code 3, and the window shows the same text. This happens
-  when its medical file matches neither its original form nor the form that
-  DayZ-ServerMan writes. The text is **The profile or the settings changed in
-  the meantime. Run the command again.** Running it again does not help, and
-  this version has no way out for this setting.
 - **A backup folder inside the DayZ server folder.** A mod apply, a profile
   restore, or a profile deletion can remove or replace the folder that holds
   it, and its backups with it. A backup of a mission can also include older

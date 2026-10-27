@@ -61,6 +61,9 @@ class MissionConfigurationService:
             "values": snapshot["values"],
             "adoption_required": bool(snapshot.get("adoption_required", False)),
         }
+        if target == "loot_supply":
+            # The supply target adds the item counts of each group, so the window can show the effect
+            result["facts"] = snapshot["facts"]
         if target == "starter_loadout":
             # Starter loadouts additionally expose their legacy-conversion state
             result["conversion_required"] = bool(snapshot.get("conversion_required", False))

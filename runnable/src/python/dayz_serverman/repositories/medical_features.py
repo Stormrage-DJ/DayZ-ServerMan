@@ -1,7 +1,7 @@
-"""Deterministic transformations of the two medical loot features.
+"""Deterministic transformations of the medical loot-zone feature.
 
-Item spawns re-write `db/types.xml` as a whole. Loot zones patch only the medical children of
-`mapgroupproto.xml`; the earlier whole-file form of the zone transform stays so its files are recognized.
+Loot zones patch only the medical children of `mapgroupproto.xml`; the earlier whole-file form of the
+zone transform stays so its files are recognized. The medical item supply is a loot supply group now.
 """
 
 from __future__ import annotations
@@ -12,25 +12,16 @@ from ..domain.medical_zone_rule import MEDICAL_CATEGORIES, MEDICAL_MARKERS
 from .configuration_common import ConfigurationFileError
 from .medical_zone_fragments import patch_zones
 
-# Target (nominal, minimum) loot counts for each boosted medical item
-MEDICAL_COUNTS = {
-    "BandageDressing": (120, 60), "TetracyclineAntibiotics": (60, 30),
-    "VitaminBottle": (100, 50), "CharcoalTablets": (60, 30),
-    "PainkillerTablets": (50, 25), "DisinfectantSpray": (70, 35),
-    "IodineTincture": (50, 25), "PurificationTablets": (100, 50),
-}
 # Start of every file that the earlier whole-file zone form wrote, so other files skip that comparison
 _WHOLE_FILE_START = ET.tostring(ET.Element("x"), encoding="utf-8", xml_declaration=True).split(b"<x")[0]
 
 
 def transform_medical_feature(feature: str, content: bytes) -> bytes:
-    """Apply one supported medical loot feature to an XML document that is in its original state."""
-    # Loot zones change only the medical children, with every other byte kept
-    if feature == "medical_loot_zones":
-        return patch_zones(content, content, True)
-    if feature != "medical_item_spawns":
+    """Apply the medical loot-zone feature to an XML document that is in its original state."""
+    if feature != "medical_loot_zones":
         raise ConfigurationFileError("medical feature is not supported")
-    return _whole_file(content, _boost_medical_items)
+    # Loot zones change only the medical children, with every other byte kept
+    return patch_zones(content, content, True)
 
 
 def project_zones(current: bytes, original: bytes, enabled: bool) -> bytes:
@@ -99,21 +90,3 @@ def _restrict_medical_groups(root: ET.Element) -> None:
             if not container.findall("category"):
                 ET.SubElement(container, "category", {"name": "tools"})
                 ET.SubElement(container, "category", {"name": "containers"})
-
-
-def _boost_medical_items(root: ET.Element) -> None:
-    """Raise medical spawn counts to the configured nominal and minimum values."""
-    by_name = {node.get("name"): node for node in root.findall("type")}
-    # Apply the configured count pair to each present medical item
-    for name, (nominal, minimum) in MEDICAL_COUNTS.items():
-        item = by_name.get(name)
-        if item is None:
-            continue
-        nominal_node, minimum_node = item.find("nominal"), item.find("min")
-        # Both count elements must exist before the item is rewritten
-        if nominal_node is None or minimum_node is None:
-            raise ConfigurationFileError(f"medical item {name} has no nominal or minimum value")
-        nominal_node.text, minimum_node.text = str(nominal), str(minimum)
-        # Tag the item as Medic loot when it carries no usage yet
-        if not any(node.get("name") == "Medic" for node in item.findall("usage")):
-            ET.SubElement(item, "usage", {"name": "Medic"})

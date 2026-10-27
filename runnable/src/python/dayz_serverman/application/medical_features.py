@@ -12,7 +12,7 @@ from ..domain.medical_editor_texts import FINGERPRINT_STALE_TEXT, ZoneReviewStal
 from ..domain.models import RevisionConflict
 from ..repositories.atomic_file import AtomicFilePublisher, ContentChangedError
 from ..repositories.configuration_common import digest_bytes
-from ..repositories.medical_features import project_zones, transform_medical_feature
+from ..repositories.medical_features import project_zones
 from ..repositories.medical_zone_classification import (
     LEGACY, MANAGER, ZoneBaselineClass, ZoneReading, read_zones, zone_class,
 )
@@ -260,21 +260,8 @@ class MedicalFeatureService(MedicalFeaturePaths):
         baseline = self._baseline_source(profile_id, feature, path)
         # Loot zones compare each medical group with its original and managed children; without a
         # baseline the current file is the original
-        if feature == "medical_loot_zones":
-            original = read_bytes_shared(baseline) if baseline.exists() else current
-            return zones_enabled(current, original), current_digest
-        # Without a baseline the file is assumed original
-        if not baseline.exists():
-            return False, current_digest
-        original = read_bytes_shared(baseline)
-        # Matching the original bytes means the feature is off
-        if current_digest == digest_bytes(original):
-            return False, current_digest
-        # Matching the transformed bytes means the feature is on
-        if current_digest == digest_bytes(transform_medical_feature(feature, original)):
-            return True, current_digest
-        # Anything else was edited outside the manager and must not be overwritten
-        raise ContentChangedError("medical feature target differs from both its original and managed state")
+        original = read_bytes_shared(baseline) if baseline.exists() else current
+        return zones_enabled(current, original), current_digest
 
     @staticmethod
     def _proposed(profile_id: str, feature: str, path: Path, digest: str,
@@ -286,9 +273,7 @@ class MedicalFeatureService(MedicalFeaturePaths):
             raise ContentChangedError("medical feature target changed after it was loaded")
         # Prefer the stored baseline; fall back to current bytes when none exists
         original = read_bytes_shared(baseline) if baseline.exists() else current
-        if feature == "medical_loot_zones":
-            return project_zones(current, original, enabled)
-        return transform_medical_feature(feature, original) if enabled else original
+        return project_zones(current, original, enabled)
 
     @staticmethod
     def _zones_unchanged(feature: str, path: Path, baseline: Path) -> bool:

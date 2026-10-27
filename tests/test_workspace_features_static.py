@@ -10,7 +10,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = PROJECT_ROOT / "runnable" / "src" / "frontend"
 SCRIPT_FILES = (
     "shell_ui.js", "workspace_context.js", "profile_context.js", "configuration_catalog.js",
-    "tweaks_catalog.js", "tweaks_render.js", "tweaks.js", "tweaks_dialog.js", "backup_display.js",
+    "tweaks_catalog.js", "tweaks_render.js", "tweaks.js", "tweaks_page.js", "tweaks_dialog.js", "backup_display.js",
     "backups.js", "backup_history.js", "profile_restore.js",
     "restore.js", "migration.js", "settings.js", "settings_render.js", "overview_backup.js",
     "overview_readiness.js",

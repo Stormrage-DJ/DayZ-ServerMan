@@ -97,6 +97,9 @@ select { padding-right: 34px; }
 .guided-setting-control { display: grid; gap: .3rem; min-width: 0; }
 .guided-setting-control input, .guided-setting-control select { width: 100%; min-width: 0; min-height: 36px; }
 .guided-setting-hint { margin: 0; color: var(--color-text-subtle); font-size: .82rem; line-height: 1.45; }
+.tweak-percent-row { display: grid; grid-template-columns: minmax(0, 1fr) 3.5rem; gap: var(--primitive-space-2); align-items: center; }
+.tweak-percent-value { font-variant-numeric: tabular-nums; text-align: right; font-weight: 700; }
+.tweak-percent-effect { color: var(--color-text-muted); font-size: .78rem; }
 .configuration-feedback:empty { display: none; }
 /* Settings workspace: resolved values, paths, and backup choices */
 .settings-fields { display: grid; gap: var(--primitive-space-4); }

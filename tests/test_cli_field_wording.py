@@ -31,11 +31,12 @@ class FieldLabelParityTests(unittest.TestCase):
         self.assertEqual(field_wording.FIELD_LABELS["server"], pairs)
 
     def test_tweak_labels_per_target(self) -> None:
-        """Gameplay, medical, weather and economy equal the groups of `tweaks_catalog.js` by their target."""
+        """Gameplay, medical, weather, economy and loot equal the groups of `tweaks_catalog.js` by their target."""
         found: dict[str, dict[str, str]] = {}
         for match in re.finditer(r'group\("[^"]+", "([a-z_]+)", \[(.*?)\]\s*(?:,\s*"[^"]*")?\)',
                                  source("tweaks_catalog.js"), re.DOTALL):
-            found.setdefault(match.group(1), {}).update(re.findall(r'field\("([^"]+)", "([^"]+)"', match.group(2)))
+            found.setdefault(match.group(1), {}).update(
+                re.findall(r'(?:field|percent)\("([^"]+)", "([^"]+)"', match.group(2)))
         found.pop("starter_loadout", None)
         self.assertEqual({target: labels for target, labels in field_wording.FIELD_LABELS.items() if target != "server"},
                          found)

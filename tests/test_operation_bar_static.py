@@ -153,7 +153,7 @@ class OperationBarStaticTests(unittest.TestCase):
                         and name != "busy_controls.js")
         self.assertEqual(marked, sorted((
             "overview_server.js", "overview_lifecycle_dialog.js", "profiles.js", "profile_create.js",
-            "profile_delete.js", "configuration.js", "tweaks.js", "tweaks_dialog.js", "tweaks_render.js",
+            "profile_delete.js", "configuration.js", "tweaks_page.js", "tweaks_dialog.js", "tweaks_render.js",
             "mods_signin.js", "mods_verify.js", "mods_update_actions.js", "mod-publication.js", "backups.js",
             "restore.js",
             "profile_restore.js", "settings.js", "migration.js",

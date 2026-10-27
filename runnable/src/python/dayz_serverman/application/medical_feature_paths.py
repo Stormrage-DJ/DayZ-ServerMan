@@ -20,7 +20,6 @@ from ..repositories.mission_map_layout import APPLIED_FILE, TargetClass, target_
 # Mission-relative file owned by each reversible feature
 FEATURE_PATHS = {
     "medical_loot_zones": Path("mapgroupproto.xml"),
-    "medical_item_spawns": Path("db/types.xml"),
 }
 
 

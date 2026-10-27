@@ -68,32 +68,16 @@ class MedicalFeatureTransformTests(unittest.TestCase):
         self.assertIn('category name="tools"', result)
         self.assertNotIn('category name="weapons"', result)
 
-    def test_service_enables_and_restores_from_manager_owned_baseline(self) -> None:
-        """Enabling stores a baseline and disabling restores the original bytes."""
+    def test_item_spawns_are_no_medical_feature_any_more(self) -> None:
+        """The medical item supply is a loot supply group: load lists only the zones, and item spawns refuse."""
         with tempfile.TemporaryDirectory(prefix="serverman_medical_") as temporary:
-            root = Path(temporary); mission = root / "mpmissions" / "dayzOffline.test"
-            (mission / "db").mkdir(parents=True)
-            source = b'''<?xml version="1.0"?><types><type name="BandageDressing">
-            <nominal>1</nominal><min>1</min></type></types>'''
-            target = mission / "db" / "types.xml"; target.write_bytes(source)
-            (mission / "mapgroupproto.xml").write_text("<groups/>", encoding="utf-8")
-            service = MedicalFeatureService(FakeProfiles(), FakeSettings(root), root / "baselines")  # type: ignore[arg-type]
+            root = Path(temporary); service, _target = _zone_service(root)
             loaded = service.load("main")
-            feature = loaded["features"]["medical_item_spawns"]
-            service.apply("main", "medical_item_spawns", True, 3, 4, feature["digest"], lambda *_: None)
-            enabled = service.load("main")["features"]["medical_item_spawns"]
-            self.assertTrue(enabled["enabled"])
-            service.apply("main", "medical_item_spawns", False, 3, 4, enabled["digest"], lambda *_: None)
-            self.assertEqual(target.read_bytes(), source)
-            self.assertTrue((root / "baselines" / "main" / "medical_item_spawns.original.xml").is_file())
-    def test_item_spawn_transform_matches_legacy_counts_and_adds_usage(self) -> None:
-        """The item spawn transform applies legacy counts and the Medic usage."""
-        source = b'''<?xml version="1.0"?><types><type name="BandageDressing">
-        <nominal>1</nominal><min>1</min><usage name="Town"/></type></types>'''
-        result = transform_medical_feature("medical_item_spawns", source).decode("utf-8")
-        self.assertIn("<nominal>120</nominal>", result)
-        self.assertIn("<min>60</min>", result)
-        self.assertIn('usage name="Medic"', result)
+            self.assertEqual(set(loaded["features"]), {"medical_loot_zones"})
+            with self.assertRaisesRegex(ValueError, "medical feature request is invalid"):
+                service.preview("main", "medical_item_spawns", True, 3, 4, "0" * 64)
+        with self.assertRaisesRegex(ConfigurationFileError, "not supported"):
+            transform_medical_feature("medical_item_spawns", b"<types/>")
 
 
 class MedicalLootZoneServiceTests(unittest.TestCase):
@@ -124,7 +108,7 @@ class MedicalLootZoneServiceTests(unittest.TestCase):
             self.assertEqual(target.read_bytes(), ZONES)
 
     def test_editor_managed_missions_refuse_the_zone_toggle_only(self) -> None:
-        """An editor group or an editor apply record refuses zones; load and item spawns keep working."""
+        """An editor group or an editor apply record refuses zones; load keeps working."""
         with tempfile.TemporaryDirectory(prefix="serverman_medical_") as temporary:
             root = Path(temporary)
             editor = ZONES.replace(b"</prototype>", b'<group name="ServerManMap_G_0123456789ab"/></prototype>')
@@ -140,7 +124,7 @@ class MedicalLootZoneServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, EDITOR_MANAGED):
                 service.apply("main", "medical_loot_zones", True, 3, 4, digest, lambda *_: None)
             self.assertEqual(target.read_bytes(), ZONES)
-            _toggle(service, "medical_item_spawns", True)
+            self.assertFalse(service.load("main")["features"]["medical_loot_zones"]["enabled"])
 
     def test_zone_toggle_without_a_changing_group_succeeds_and_writes_nothing(self) -> None:
         """Enable and Disable succeed with the no-change message; the state reads on and no file is written."""

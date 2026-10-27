@@ -158,17 +158,6 @@ class OrdinaryMissionTests(ToggleFixture):
         self.assertFalse(list(self.journals.root.glob("*.json")))
         self.assertIsNone(self.records()[2])
 
-    def test_item_spawns_on_an_editor_managed_mission(self) -> None:
-        """Item spawns keep their whole-file toggle and never get a fingerprint."""
-        self.applied_with_medical()
-        loaded = self.medical.load("main")
-        request = ("main", "medical_item_spawns", True, loaded["profile_revision"], loaded["settings_revision"],
-                   loaded["features"]["medical_item_spawns"]["digest"])
-        self.assertNotIn("preview_fingerprint", self.medical.preview(*request))
-        record = self.applied_record()
-        self.medical.apply(*request, lambda *_: None)
-        self.assertEqual(self.applied_record(), record)
-
     def test_an_unbound_service_keeps_the_editor_managed_refusal(self) -> None:
         """Without a bound D4 toggle the 6.3 refusal stays, so nothing writes outside the journal."""
         self.applied_with_medical()

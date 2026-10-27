@@ -18,7 +18,8 @@ ON_OFF = OptionSpec("state", Form.POSITIONAL, choices=("on", "off"))
 # Revisions that a write sends, and the profile that it needs
 REVISIONS = (PROFILE, EXPECT_PROFILE, EXPECT_SETTINGS)
 CONFIG_TARGETS = ("server", "gameplay")
-TWEAK_TARGETS = ("economy", "weather", "spawnable-damage", "starter-loadout", "events")
+TWEAK_TARGETS = ("economy", "weather", "spawnable-damage", "starter-loadout", "events", "loot-supply",
+                 "weapon-magazines")
 
 
 def read(path: str, phase: int, methods: tuple[str, ...], *options: OptionSpec,

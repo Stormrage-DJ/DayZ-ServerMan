@@ -23,8 +23,7 @@ window.pywebview.api.load_configuration = async (id) => ok({profile_id: id, fiel
 window.pywebview.api.load_mission_configuration = async (id, target) => mission(id, target);
 window.pywebview.api.load_medical_features = async (id) => ok({profile_id: id,
   profile_revision: 3, settings_revision: 2, features: {
-    medical_loot_zones: {enabled: true, digest: "d".repeat(64)},
-    medical_item_spawns: {enabled: false, digest: "e".repeat(64)}}});
+    medical_loot_zones: {enabled: true, digest: "d".repeat(64)}}});
 const sent = [];
 window.pywebview.api.preview_medical_feature = async (...args) => { sent.push(["preview", args]);
   return ok({profile_id: "alpha", feature: args[1], enabled: args[2], expected_digest: "d".repeat(64),
@@ -87,8 +86,7 @@ const REASON = "mapgroupproto.xml differs from its stored original: group Planne
   + "original. No file was changed.";
 const STORED = "mpmissions\\dayzOffline.Pripyat\\.dayz_manager_backups\\mapgroupproto.xml";
 const answer = (baseline) => async (id) => ok({profile_id: id, profile_revision: 3, settings_revision: 2,
-  features: {medical_loot_zones: {enabled: true, digest: "d".repeat(64), zone_baseline: baseline},
-    medical_item_spawns: {enabled: false, digest: "e".repeat(64)}}});
+  features: {medical_loot_zones: {enabled: true, digest: "d".repeat(64), zone_baseline: baseline}}});
 const medical = async () => { await start("tweaks"); chooseGameplayTab("map-loot");
   const group = [...document.querySelectorAll("fieldset.tweak-group")]
     .find((node) => node.querySelector("legend").textContent === "Medical loot");
@@ -111,9 +109,8 @@ class TweaksMedicalBaselineEdgeTests(unittest.TestCase):
 window.pywebview.api.load_medical_features = answer({mappable: false, reason: EDITOR, location: "legacy",
   stored_original: STORED});
 const page = await medical();
-check(page.selects.length === 2, "two toggles: " + page.selects.length);
+check(page.selects.length === 1, "one toggle: " + page.selects.length);
 check(page.selects[0].value === "true" && page.selects[0].disabled, "zones: read state, locked");
-check(!page.selects[1].disabled, "item spawns unchanged");
 check(page.notices.length === 1, "one notice: " + page.notices.join(" | "));
 check(page.notices[0] === "Medical loot zones cannot change because the map editor manages this mission.",
   "notice: " + page.notices[0]);
@@ -125,7 +122,7 @@ check(page.notices[0] === "Medical loot zones cannot change because the map edit
 window.pywebview.api.load_medical_features = answer({mappable: true, reason: null, location: "legacy",
   stored_original: STORED});
 const page = await medical();
-check(page.selects.every((select) => !select.disabled), "both toggles open");
+check(page.selects.length === 1 && !page.selects[0].disabled, "zone toggle open");
 check(page.notices.length === 0, "no notice: " + page.notices.join(" | "));
 """)
 

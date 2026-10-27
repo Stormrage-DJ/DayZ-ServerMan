@@ -7,11 +7,13 @@ from pathlib import Path
 from typing import Any
 
 from .configuration_common import ConfigurationFileError, digest_bytes, encode_utf8, read_utf8
+from .loot_supply import patch_supply, read_supply
 from .mission_xml import patch_attributes, patch_event_values, patch_named_vars, validate_xml
 from .mission_spawnable import lower_damage_cap, read_damage_cap
 from .mission_starter import (
     convert_legacy_starter, legacy_starter_region, patch_starter, read_starter,
 )
+from .weapon_magazines import patch_magazines, read_magazine_values
 from ..domain.mission_configuration import (
     EVENT_FIELDS, EVENT_NAMES, GLOBAL_BOOLEAN_KEYS, GLOBAL_INTEGER_KEYS,
     GLOBAL_KEYS, LOOT_DAMAGE_KEYS, POPULATION_FIELDS, POPULATION_NAMES,
@@ -24,6 +26,8 @@ TARGET_PATHS = {
     "spawnable_damage": Path("cfgspawnabletypes.xml"),
     "starter_loadout": Path("init.c"),
     "events": Path("db/events.xml"),
+    "loot_supply": Path("db/types.xml"),
+    "weapon_magazines": Path("cfgspawnabletypes.xml"),
 }
 
 
@@ -32,8 +36,13 @@ def load_mission_file(path: Path, target: str) -> dict[str, Any]:
     content, text, bom = read_utf8(path)
     _validate(target, text)
     # Capture the raw payload, decoded text, and managed values together
-    snapshot = {"content": content, "text": text, "bom": bom,
-                "digest": digest_bytes(content), "values": _read_values(target, text)}
+    snapshot = {"content": content, "text": text, "bom": bom, "digest": digest_bytes(content)}
+    if target == "loot_supply":
+        # One read gives the percentages and the item counts of each group
+        state = read_supply(text)
+        snapshot["values"], snapshot["facts"] = dict(state.percents), state.facts()
+    else:
+        snapshot["values"] = _read_values(target, text)
     # Starter loadouts additionally report legacy markers and adoption needs
     if target == "starter_loadout":
         legacy = legacy_starter_region(text)
@@ -62,6 +71,10 @@ def transform_mission_file(snapshot: dict[str, Any], target: str, updates: dict[
         text = patch_starter(text, updates["items"])
     elif target == "events":
         text = patch_event_values(text, updates["events"])
+    elif target == "loot_supply":
+        text = patch_supply(text, updates)
+    elif target == "weapon_magazines":
+        text = patch_magazines(text, updates["magazine_chance"])
     else:
         raise ConfigurationFileError("mission target is not supported")
     # Re-encode with the byte order mark the source file carried
@@ -76,7 +89,7 @@ def convert_starter_file(snapshot: dict[str, Any]) -> bytes:
 def _validate(target: str, text: str) -> None:
     """Reject malformed content for the selected target before it is read."""
     # XML targets share one strict validation gate
-    if target in {"economy", "weather", "spawnable_damage", "events"}:
+    if target in {"economy", "weather", "spawnable_damage", "events", "loot_supply", "weapon_magazines"}:
         validate_xml(text)
     elif target == "starter_loadout":
         # The starter reader validates its own script format
@@ -144,6 +157,9 @@ def _read_values(target: str, text: str) -> dict[str, Any]:
         # Starter snapshots report the parsed item list only
         items, _adoption = read_starter(text)
         return {"items": items}
+    if target == "weapon_magazines":
+        # The magazine target reports its percentage
+        return read_magazine_values(text)
     if target == "spawnable_damage":
         # Damage targets report their current maximum cap
         return {"maximum": read_damage_cap(text)}

@@ -18,7 +18,7 @@ window.pywebview.api.load_configuration = async (id) => ok({profile_id: id, fiel
 window.pywebview.api.load_mission_configuration = async (id, target) => mission(id, target);
 window.pywebview.api.load_medical_features = async (id) => ok({profile_id: id,
   profile_revision: 3, settings_revision: 2, features: {
-    medical_loot_zones: {enabled: false}, medical_item_spawns: {enabled: false}}});
+    medical_loot_zones: {enabled: false}}});
 const calls = [];
 window.pywebview.api.open_map_editor = async (id) => { calls.push(id); return ok({opened: true, focused: false}); };
 const action = () => document.getElementById("open-map-editor");

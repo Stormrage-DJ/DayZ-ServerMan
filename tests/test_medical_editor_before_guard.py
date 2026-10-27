@@ -171,15 +171,6 @@ class EditorManagedTests(BeforeGuardFixture):
         self.outside_edit()
         self.assert_kept(self.refused(request, None), ContentChangedError, CHANGED_TEXT, "REVISION_CONFLICT")
 
-    def test_item_spawns_keep_their_refusal(self) -> None:
-        """An item-spawn request with a fingerprint is no zone review and keeps its 6.3 refusal."""
-        loaded = self.medical.load("main")
-        request = ("main", "medical_item_spawns", True, loaded["profile_revision"], loaded["settings_revision"],
-                   loaded["features"]["medical_item_spawns"]["digest"])
-        self.settings_revision()
-        self.assert_kept(self.refused(request, OTHER_FINGERPRINT), RevisionConflict, SETTINGS_TEXT,
-                         "REVISION_CONFLICT")
-
     def test_unbound_service_keeps_its_refusal(self) -> None:
         """A service without a bound toggle keeps the 6.3 refusal, also with a fingerprint."""
         request, fingerprint = self.reviewed()

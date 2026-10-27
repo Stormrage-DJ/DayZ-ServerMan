@@ -181,11 +181,11 @@ class ZoneBaselineLoadTests(unittest.TestCase):
             self.assertEqual(_snapshot(root), before)
 
     def test_answer_names_the_classification_and_the_stored_original(self) -> None:
-        """A mappable stored original is named; without one the field is None; item spawns have no field."""
+        """A mappable stored original is named; without one the field is None; zones are the only feature."""
         features = self.load(ZONES, "legacy")["features"]
         self.assertEqual(features["medical_loot_zones"]["zone_baseline"],
                          {"mappable": True, "reason": None, "location": "legacy", "stored_original": LEGACY_SHOWN})
-        self.assertNotIn("zone_baseline", features["medical_item_spawns"])
+        self.assertEqual(set(features), {"medical_loot_zones"})
         manager = self.load(ZONES, "manager", "second")["features"]["medical_loot_zones"]["zone_baseline"]
         stored = self.root / "second" / "baselines" / "main" / "medical_loot_zones.original.xml"
         self.assertEqual((manager["location"], manager["stored_original"]), ("manager", str(stored)))
@@ -215,18 +215,15 @@ class ZoneBaselineLoadTests(unittest.TestCase):
         with self.assertRaisesRegex(ContentChangedError, "PlannerRich_00534"):
             service.load("main")
 
-    def test_an_item_spawn_error_gets_no_zone_details(self) -> None:
-        """The same "differs" sentence from the item-spawn file is not the zone refusal."""
+    def test_a_leftover_item_spawn_original_is_ignored(self) -> None:
+        """A stored item-spawn original of an earlier version neither fails the read nor adds a feature."""
         service, _target = _zone_service(self.root, ZONES)
         _place(self.root, "legacy", ZONES)
         stored = self.root / "baselines" / "main" / "medical_item_spawns.original.xml"
         stored.parent.mkdir(parents=True, exist_ok=True)
         stored.write_bytes(b"<types><type name='Other'/></types>")
-        with self.assertRaises(ApplicationCallError) as caught:
-            MedicalFeatureCoordinator(service, None).load({"profile_id": "main"})  # type: ignore[arg-type]
-        self.assertEqual((caught.exception.code, caught.exception.safe_message, caught.exception.details),
-                         (ErrorCode.REVISION_CONFLICT, DIFFERS, None))
-
+        loaded = MedicalFeatureCoordinator(service, None).load({"profile_id": "main"})  # type: ignore[arg-type]
+        self.assertEqual(set(loaded["features"]), {"medical_loot_zones"})
 
 if __name__ == "__main__":
     unittest.main()

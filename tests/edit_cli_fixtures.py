@@ -22,9 +22,11 @@ LEGACY_INIT = ('class CustomMission {\n\toverride void StartingEquipSetup(Player
                '\t{\n\t\tEntityAI itemEnt;\n'
                '\t\titemEnt = player.GetInventory().CreateInInventory( "WaterBottle" );\n'
                '\t\titemEnt = player.GetInventory().CreateAttachment( "HipPack_Medical" );\n\t}\n};\n')
-# The medical item spawns file of the fixture mission: one medical type
-TYPES_XML = ('<?xml version="1.0"?><types><type name="BandageDressing">'
-             '<nominal>1</nominal><min>1</min></type></types>')
+# The types file of the fixture mission: one medical type and one loose ammunition type
+TYPES_XML = ('<?xml version="1.0"?>\n<types>\n    <type name="BandageDressing">\n        <nominal>40</nominal>\n'
+             '        <min>30</min>\n        <category name="tools"/>\n    </type>\n    <type name="Ammo_9x19">\n'
+             '        <nominal>20</nominal>\n        <min>10</min>\n        <quantmin>10</quantmin>\n'
+             '        <quantmax>40</quantmax>\n        <category name="weapons"/>\n    </type>\n</types>\n')
 
 
 class EditRoot(LifecycleRoot):
@@ -41,7 +43,7 @@ class EditRoot(LifecycleRoot):
         return self.dayz / "mpmissions" / "dayzOffline.enoch"
 
     def add_medical_files(self) -> None:
-        """Write the two medical files that `tweaks medical` reads."""
+        """Write the medical loot-zone file and the types file of the loot supply."""
         (self.mission / "db" / "types.xml").write_text(TYPES_XML, encoding="utf-8")
         (self.mission / "mapgroupproto.xml").write_text("<groups/>", encoding="utf-8")
 
