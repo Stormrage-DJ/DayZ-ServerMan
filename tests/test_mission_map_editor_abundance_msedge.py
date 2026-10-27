@@ -32,6 +32,9 @@ const explanation="Percentages change native container capacity, not item supply
 class MissionMapEditorAbundanceEdgeTests(unittest.TestCase):
     """Use synthetic plans, fake load and save answers and isolated headless profiles."""
 
+    # Show the whole browser failure text, so a CI annotation holds every diagnostic value
+    maxDiff = None
+
     def test_controls_presets_steps_and_every_combination_from_the_backend(self) -> None:
         """Labels, explanation, four presets and seven steps; every combination shows the backend values."""
         self.assertEqual(run_editor_harness(ABUNDANCE + r'''
@@ -120,7 +123,7 @@ held=false;s.dispatchEvent(new Event("change"));check(model.snapshot().global_ab
 const line=document.getElementById("map-zone-capacity-effective"),subtle=document.createElement("span");
 subtle.style.color="var(--color-text-subtle)";document.body.append(subtle);
 const muted=()=>getComputedStyle(line).color===getComputedStyle(subtle).color;
-check(effective()==="Capacity change: Updating"&&muted()&&!line.closest("[aria-live]"),`Updating in the wait: muted and not a live region: ${effective()} | ${getComputedStyle(line).color} vs ${getComputedStyle(subtle).color} | ${line.closest("[aria-live]")?.id} | class:${line.className} | matches:${line.matches("#map-zone-capacity-effective.map-effective-pending")} | rules:${[...document.styleSheets].flatMap(sheet=>[...sheet.cssRules]).filter(rule=>rule.selectorText?.includes("map-zone-capacity-effective")).map(rule=>rule.cssText).join(" ")} | panel:${document.getElementById("map-panel").open} | visible:${line.checkVisibility()}`);
+check(effective()==="Capacity change: Updating"&&muted()&&!line.closest("[aria-live]"),`Updating in the wait: muted and not a live region: ${effective()} | ${getComputedStyle(line).color} vs ${getComputedStyle(subtle).color} | ${line.closest("[aria-live]")?.id} | class:${line.className} | matches:${line.matches("#map-zone-capacity-effective.map-effective-pending")} | rules:${[...document.styleSheets].flatMap(sheet=>[...sheet.cssRules]).filter(rule=>rule.selectorText?.includes("map-zone-capacity-effective")).map(rule=>rule.cssText).join(" ")} | panel:${document.getElementById("map-panel").open} | visible:${line.checkVisibility()} | after a forced restyle:${(line.style.display="none",line.offsetHeight,line.style.display="",getComputedStyle(line).color)}`);
 await sleep(900);check(waiting.length===1&&saved.at(-1).plan.global_abundance===75&&effective()==="Capacity change: Updating"&&muted(),"Updating while the save runs");
 waiting.shift()();await sleep(50);check(effective()==="Capacity change: Normal 0%; with global +75%: +75%"&&!muted(),"the answer shows in the normal colour");
 // A release while a dialog is open is refused, and the slider shows the draft value again
