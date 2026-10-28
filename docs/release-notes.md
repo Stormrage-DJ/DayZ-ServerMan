@@ -2,6 +2,84 @@
 
 Each release has one section. The newest release is first.
 
+## 1.2.0 (2026-10-28)
+
+This release makes large mod downloads finish, limits the number of backups,
+lets you set starter items on every mission, and repairs profiles whose files
+were deleted outside DayZ-ServerMan.
+
+### Mod downloads
+
+- SteamCMD ends a Workshop download after about 5 minutes. DayZ-ServerMan now
+  starts it again after a 10-second pause when it runs out of time or loses
+  the connection. The download continues where it stopped.
+- Each update gets the time that its download size needs at 10 MB/s, and at
+  least 5 minutes. An 11.7 GB map gets about 20 minutes.
+- Mods download smallest first. A mod larger than 2.7 GB gets its own SteamCMD
+  session, so it cannot hold back the small mods.
+- A failed Steam sign-in, a missing entitlement, or a Workshop content failure
+  ends the update at once, because another run cannot fix it.
+- When the time is used up, the page says that the download did not finish in
+  the time allowed for its size, instead of saying that Steam could not be
+  reached.
+
+### Backups and restores
+
+- Each profile keeps its newest backups: 3 by default, from 1 to 100 in
+  **Settings** or with `settings set --backups-to-keep N`. A new backup deletes
+  the older backups of its profile beyond that number, and the result names
+  them. Only verified backups count. Backups of other profiles, renamed ZIP
+  files and unreadable ZIP files are never deleted.
+- A successful restore deletes its recovery copy in `backups\recovery`. A
+  failed or interrupted restore still uses it to put the old files back. To
+  keep the state from before a restore, create a backup first.
+- A restore needs only the backup ZIP. It creates every folder that is missing,
+  such as a deleted `serverman\<profile>` folder or a deleted mission folder.
+
+### Profiles with missing files
+
+- A profile whose configuration was deleted no longer stops the creation of a
+  new profile on another mission. On the same mission, the refusal names the
+  profile.
+- A profile whose folder or mission folder was deleted can be deleted.
+
+### Tweaks
+
+- **Gameplay Tweaks** offers **Turn on gameplay file** when the server does not
+  use `cfgGameplay.json`. You no longer go to **Configuration** for it.
+- **Starter Items** works on every mission. It shows the starting items of the
+  mission's own code, its random choices and its other effects. Your own items
+  are given in addition. **Give the mission's own starting items** turns the
+  mission's code off and on. DayZ-ServerMan never edits the statements of the
+  mission's code.
+- A starter block of an earlier version moves into the new form the next time
+  you save the starter items. Its items stay the same.
+
+### Changes
+
+- **Settings**: the button is now **Save settings**.
+- The review of a world replacement says that the recovery copy is deleted
+  when the restore succeeds.
+- The map editor keeps the plan state and the operation status on one footer
+  line, so the map no longer changes size during a save.
+
+### Removed
+
+- The conversion of a legacy starter loadout, with the window's **Review
+  conversion** action and the command `tweaks convert-loadout`. Use
+  `tweaks set --target starter-loadout`. A script that calls
+  `tweaks convert-loadout` now ends with exit code 2.
+
+### Known limitations
+
+- SteamCMD's 5-minute limit cannot be changed. Each retry starts a new SteamCMD
+  run. When Steam does not report the size of a mod, the update allows 5
+  minutes.
+- A mission whose starting code ends early (`return`) cannot get your own
+  starter items. The page names the reason.
+- The description of a mission's starting items lists items that the code
+  chooses at random among its fixed items.
+
 ## 1.1.0 (2026-10-27)
 
 This release adds the mission map editor and the loot supply settings.
