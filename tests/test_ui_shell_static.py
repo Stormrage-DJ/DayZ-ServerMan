@@ -35,7 +35,7 @@ class UiShellStaticTests(unittest.TestCase):
                 "operation_announcer.js", "operation_bar_view.js", "operation_bar.js",
                 "busy_controls.js", "workspace_context.js", "transition_guard.js", "profile_context.js",
                 "configuration_catalog.js", "tweaks_catalog.js", "tweaks_render.js", "tweaks.js", "tweaks_page.js",
-                "tweaks_dialog.js", "configuration_edit.js", "configuration_context.js",
+                "configuration_edit.js", "configuration_context.js",
                 "configuration_fields.js", "configuration.js", "backup_display.js", "backups.js",
                 "sections.js", "app.js",
                 "restore.js", "profiles_mods.js", "profiles.js", "profile_delete.js", "migration.js",

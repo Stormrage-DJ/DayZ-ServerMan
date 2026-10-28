@@ -55,8 +55,8 @@ METHOD_TEXTS: dict[str, str] = {
     "load_configuration": "Loading the configuration", "apply_mission_configuration": "Applying tweaks",
     "preview_mission_configuration": "Reviewing tweaks", "load_mission_configuration": "Loading tweaks",
     "apply_medical_feature": "Applying the medical loot setting", "preview_medical_feature": "Reviewing the medical loot setting",
-    "load_medical_features": "Loading the medical loot settings", "convert_starter_loadout": "Converting the starter loadout",
-    "preview_starter_loadout_conversion": "Reviewing the starter loadout conversion",
+    "load_medical_features": "Loading the medical loot settings",
+
     "apply_legacy_import": "Importing legacy data", "preview_legacy_import": "Previewing the legacy import",
     "select_legacy_root": "Choosing the legacy folder", "list_legacy_backup_references": "Listing legacy backups",
     "revalidate_legacy_backup_references": "Checking legacy backups",

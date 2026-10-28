@@ -52,19 +52,21 @@ class MissionConfigurationErrorTests(unittest.TestCase):
             coordinator.load({"profile_id": "main", "target": "economy"})
         self.assertEqual(caught.exception.code, ErrorCode.RECOVERY_REQUIRED)
 
-    def test_starter_conversion_without_legacy_block_raises_configuration_file_error(self) -> None:
-        """Verify conversion of an init.c without a legacy loadout raises ConfigurationFileError."""
+    def test_a_starter_routine_that_ends_early_is_refused_by_name(self) -> None:
+        """A routine that returns early cannot get the layer; the bridge names it instead of a recovery."""
         init = self.mission / "init.c"
         init.write_text('class CustomMission {\n\toverride void StartingEquipSetup(PlayerBase player, '
-                        'bool clothesChosen)\n\t{\n\t\tEntityAI itemEnt;\n\t\tCustomCall();\n\t}\n};\n',
-                        encoding="utf-8")
+                        'bool clothesChosen)\n\t{\n\t\tif ( player ) return;\n\t}\n};\n', encoding="utf-8")
         loaded = self.service.load("main", "starter_loadout")
-        self.assertFalse(loaded.get("conversion_required"))
         before = init.read_bytes()
-        with self.assertRaises(ConfigurationFileError):
-            self.service.convert_starter("main", 3, 4, loaded["digest"], lambda _phase, _progress: None)
+        coordinator = MissionConfigurationCoordinator(self.service, None)  # type: ignore[arg-type]
+        with self.assertRaises(ApplicationCallError) as caught:
+            coordinator.preview({"profile_id": "main", "target": "starter_loadout", "expected_profile_revision": 3,
+                                 "expected_settings_revision": 4, "expected_digest": loaded["digest"],
+                                 "updates": {"items": ["Apple"]}})
+        self.assertEqual(caught.exception.code, ErrorCode.INVALID_REQUEST)
+        self.assertIn("ends early", caught.exception.safe_message)
         self.assertEqual(init.read_bytes(), before)
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -13,6 +13,7 @@ from ..domain.models import RecordUnavailable
 from ..domain.profiles import ProfileInput, ProfileValidationError
 from ..repositories.backup_verification import path_has_reparse
 from ..repositories.profiles import ProfileNotFound, ProfileStorageError
+from ..repositories.configuration_common import ConfigurationFileError
 from ..repositories.server_configuration import load_server_configuration
 from ..repositories.provisioning_journal import (
     ProvisioningJournal,
@@ -105,7 +106,7 @@ class ProfileProvisioningService:
             record = self._profiles.save(values, None)
             checkpoint("verify_launch", 90)
             return self._result(profile_id, record, reused_files=True)
-        instance_id = self._allocate_instance_id(root)
+        instance_id = self._allocate_instance_id(root, mission.relative_path)
         journal = ProvisioningJournal(
             operation_id, profile_id, str(root), stage_relative, target_relative, "PLANNED",
         )
@@ -153,17 +154,29 @@ class ProfileProvisioningService:
             "reused_files": reused_files,
         }
 
-    def _allocate_instance_id(self, root: Path) -> int:
-        """Return the lowest positive DayZ instance identifier not already in use."""
+    def _allocate_instance_id(self, root: Path, mission_root: str) -> int:
+        """Return the lowest positive DayZ instance identifier not already in use.
+
+        The identifier names the world folder `storage_<id>` inside the mission, so two profiles clash only on
+        the same mission. An unreadable configuration of a profile on another mission is skipped; one whose
+        profile uses this mission, or names no mission of its own, still refuses.
+        """
         used: set[int] = set()
+        mission_key = PureWindowsPath(mission_root).as_posix().casefold()
         for record in self._profiles.list():
             config = root.joinpath(*PureWindowsPath(record.values.server_config).parts)
             try:
                 config.relative_to(root)
                 value = load_server_configuration(config).values.get("instanceId", 1)
-            except (OSError, UnicodeError, ValueError) as error:
+            except (ConfigurationFileError, OSError, UnicodeError, ValueError) as error:
+                other = record.values.mission_root
+                if other is not None and PureWindowsPath(other).as_posix().casefold() != mission_key:
+                    continue
+                # Name the profile, so the operator can restore it; the window hides a sentence with a file name
                 raise ProfileProvisioningError(
-                    "Existing server configurations must be readable before assigning an instance ID."
+                    f"The server configuration of the profile {record.values.profile_id} cannot be read, and that "
+                    "profile may use the same mission, so the new world could share its storage. Restore a backup "
+                    f"of {record.values.profile_id}, or delete that profile."
                 ) from error
             if not isinstance(value, int) or isinstance(value, bool) or value < 1:
                 raise ProfileProvisioningError(

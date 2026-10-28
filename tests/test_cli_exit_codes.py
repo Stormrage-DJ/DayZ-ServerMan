@@ -79,10 +79,10 @@ class DispatchExitTests(unittest.TestCase):
         self.assertEqual(dispatch_exit({"code": "MUTATION_CONFLICT"}), 3)
 
     def test_cli_codes(self) -> None:
-        """The closed list of A11 (QF-62): USAGE 2; INSTANCE_ACTIVE, SETUP_REQUIRED, NOTHING_TO_CONVERT 3;
+        """The closed list of A11 (QF-62): USAGE 2; INSTANCE_ACTIVE, SETUP_REQUIRED 3;
         CONFIRMATION_REQUIRED, NOT_INTERACTIVE 4; CANCELLED 5; INSTANCE_LOCK_UNSUPPORTED, CHECK_NOT_FINISHED,
         NOT_READY 1."""
-        self.assertEqual(CLI_CODES, {"USAGE": 2, "INSTANCE_ACTIVE": 3, "SETUP_REQUIRED": 3, "NOTHING_TO_CONVERT": 3,
+        self.assertEqual(CLI_CODES, {"USAGE": 2, "INSTANCE_ACTIVE": 3, "SETUP_REQUIRED": 3,
                                      "CONFIRMATION_REQUIRED": 4, "NOT_INTERACTIVE": 4, "CANCELLED": 5,
                                      "INSTANCE_LOCK_UNSUPPORTED": 1, "CHECK_NOT_FINISHED": 1, "NOT_READY": 1})
         for code, expected in CLI_CODES.items():
@@ -173,7 +173,6 @@ class PreChangeEvidenceTests(unittest.TestCase):
             "RESTORE_PROFILE_FROM_BACKUP": ((None,), ("VERIFYING_BACKUP", "PREPARING", "PREPARED", "PUBLISHING")),
             "APPLY_CONFIGURATION": ((None, "loaded"), ("validated", "verified")),
             "APPLY_MISSION_CONFIGURATION": ((None, "loaded"), ("validated", "published")),
-            "CONVERT_STARTER_LOADOUT": ((None, "loaded"), ("validated",)),
             "APPLY_MEDICAL_FEATURE": ((None,), ("loaded", "validated")),
             "CREATE_BACKUP": ((None,), ("DISCOVER", "PUBLISH")),
             "VERIFY_WORKSHOP_FILES": ((None,), ("verify_source",)),

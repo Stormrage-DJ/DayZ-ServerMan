@@ -1,8 +1,9 @@
-"""`settings set [--dayz-root P] [--steamcmd-root P] [--backup-root P / --default-backup-root]` (10.4, 6.4.1).
+"""`settings set [--dayz-root P] [--steamcmd-root P] [--backup-root P / --default-backup-root] [--backups-to-keep N]`.
 
 The Settings page saves its three folders together; a field that the request leaves out would
 be saved as empty (`application/coordinator.py` `save_settings`). So the command sends all three:
-the stored values, with the ones the operator named replaced. The window's Save asks no question.
+the stored values, with the ones the operator named replaced. The number of backups kept per profile
+is sent only when named; the save keeps the stored number otherwise. The window's Save asks no question.
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ def location_values(call: Any, options: Any, _profile_id: str | None) -> dict[st
     """
     named = {field: getattr(options, option) for field, option in LOCATION_OPTIONS
              if getattr(options, option) is not None}
-    if not named and not options.default_backup_root:
+    if not named and not options.default_backup_root and options.backups_to_keep is None:
         raise CliFailure("USAGE", no_location_named(), USAGE)
     locations: dict[str, str | None] = {}
     for field, text in named.items():
@@ -59,6 +60,8 @@ def settings_set(context: Any) -> CommandResult:
     # Every folder that the operator did not name keeps its stored value
     values = {field: settings.get(field) for field, _option in LOCATION_OPTIONS}
     values.update(context.resolved["locations"])
+    if context.options.backups_to_keep is not None:
+        values["backups_to_keep"] = context.options.backups_to_keep
     record = run_operation(context, "save_settings", "SAVE_SETTINGS", expected_revision=settings.get("revision"),
                            **values)
     result = record.get("result") if isinstance(record.get("result"), Mapping) else {}

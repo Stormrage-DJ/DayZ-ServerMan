@@ -41,7 +41,7 @@ const record = (id, kind, state, extra = {}) => ({schema_version: 1, revision: 1
 const snapshot = (operations = []) => ({settings: {revision: 2, dayz_root: "D:\\Server",
   dayz_executable: "D:\\Server\\DayZServer_x64.exe", steamcmd_root: null, steamcmd_executable: null,
   workshop_content_root: null, custom_backup_root: null, steam_authentication_mode: "ACCOUNT",
-  steam_account_name: "operator"}, diagnostics: [], operations, operation_session_id: "harness",
+  steam_account_name: "operator", backups_to_keep: 3}, diagnostics: [], operations, operation_session_id: "harness",
   mutation_block: null, portable_backup_root: "D:\\Manager\\backups"});
 const profileFields = {server_executable: "DayZServer_x64.exe", server_config: "serverDZ.cfg",
   mission_root: "mpmissions\\dayzOffline.chernarusplus", game_port: 2302, mods: [], extra_arguments: []};

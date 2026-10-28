@@ -111,7 +111,7 @@ class WordingCatalogueTests(unittest.TestCase):
     def test_every_backend_kind_has_the_four_texts(self) -> None:
         """Each submitted or accepted journal kind has exactly four catalogue texts."""
         submitted = backend_kinds()
-        self.assertEqual(len(submitted), 22, sorted(submitted))
+        self.assertEqual(len(submitted), 21, sorted(submitted))
         self.assertEqual(APPLIED_KINDS, {"apply", "restore_original", "restore_previous", "medical"})
         self.assertEqual(set(JOURNAL_OPERATION_KINDS), JOURNAL_KINDS)
         journal_kinds = set(JOURNAL_OPERATION_KINDS.values())

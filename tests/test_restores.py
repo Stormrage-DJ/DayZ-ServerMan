@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import shutil
 import sys
 import tempfile
 import unittest
@@ -143,7 +144,24 @@ class RestoreTests(unittest.TestCase):
         # The retired journal records the committed restore
         journal = next((self.root / "operations" / "restore-journals" / "completed").glob("*.json"))
         self.assertIn('"committed": true', journal.read_text(encoding="utf-8"))
-        self.assertTrue(any(self.recovery.rglob("serverDZ.cfg")))
+        # The committed restore deletes the recovery copy of the replaced files
+        self.assertTrue(result["recovery_copy_removed"])
+        self.assertEqual(list(self.recovery.iterdir()), [])
+
+    def test_the_backup_alone_restores_deleted_folders(self) -> None:
+        """With the configuration folder, the runtime profile and the whole mission deleted, the ZIP restores all."""
+        shutil.rmtree(self.target.parent)
+        shutil.rmtree(self.dayz / "profiles")
+        shutil.rmtree(self.dayz / "mpmissions")
+        service = self.service()
+        preview = service.preview("main", self.backup_id)
+        self.assertEqual(preview["replacement_count"], 0)
+        result, _phases = self.apply(service, preview)
+        self.assertEqual(result["journal_state"], "COMMITTED")
+        self.assertEqual(digest(self.target), self.source_digest)
+        self.assertEqual(self.world.read_bytes(), b"backed-up-world")
+        self.assertTrue((self.dayz / "profiles" / "main").is_dir())
+        self.assertEqual(result["directories_not_created"], [])
 
     def test_completed_restore_allows_configuration_edit_and_clean_startup(self) -> None:
         """A completed restore leaves the profile usable for later edits."""

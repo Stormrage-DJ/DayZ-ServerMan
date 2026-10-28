@@ -17,7 +17,7 @@ from ..domain.models import RevisionConflict
 from ..repositories.atomic_file import AtomicFilePublisher, ContentChangedError
 from ..repositories.configuration_common import ConfigurationFileError, digest_bytes
 from ..repositories.mission_files import (
-    TARGET_PATHS, convert_starter_file, load_mission_file, transform_mission_file,
+    TARGET_PATHS, load_mission_file, transform_mission_file,
 )
 from .profiles import ProfileService
 from .settings import SettingsService, SettingsValidationError
@@ -65,9 +65,8 @@ class MissionConfigurationService:
             # The supply target adds the item counts of each group, so the window can show the effect
             result["facts"] = snapshot["facts"]
         if target == "starter_loadout":
-            # Starter loadouts additionally expose their legacy-conversion state
-            result["conversion_required"] = bool(snapshot.get("conversion_required", False))
-            result["conversion"] = snapshot.get("conversion")
+            # Starter loadouts describe what the mission's own starting setup gives
+            result["mission_starter"] = snapshot.get("mission_starter")
         return result
 
     def preview(self, profile_id: object, target: str, expected_profile_revision: object,
@@ -128,37 +127,6 @@ class MissionConfigurationService:
         return {"profile_id": profile.values.profile_id, "target": target,
                 "relative_path": relative, "digest": published,
                 "changed_fields": _summary(updates)}
-
-    def convert_starter(self, profile_id: object, expected_profile_revision: object,
-                        expected_settings_revision: object, expected_digest: object,
-                        checkpoint: Callable[[str, int], None]) -> dict[str, Any]:
-        """Convert a legacy starter loadout and publish the current form."""
-        # Resolve the starter file and re-prove revisions and digest
-        profile, settings_revision, relative, path = self._resolve(profile_id, "starter_loadout")
-        _revision("profile", expected_profile_revision, profile.revision)
-        _revision("settings", expected_settings_revision, settings_revision)
-        digest = _digest(expected_digest)
-        snapshot = load_mission_file(path, "starter_loadout")
-        checkpoint("loaded", 20)
-        if snapshot["digest"] != digest:
-            raise ContentChangedError("mission file changed after it was loaded")
-        # Require the conversion flag recorded when the file was loaded
-        if not snapshot.get("conversion_required"):
-            raise ConfigurationFileError("init.c has no recognizable legacy starter loadout to convert")
-        original_items = list(snapshot["values"]["items"])
-        proposed = convert_starter_file(snapshot)
-        checkpoint("validated", 60)
-        published = self._publisher.publish(path, proposed, digest)
-        checkpoint("published", 90)
-        verified = load_mission_file(path, "starter_loadout")
-        # The converted file must drop the legacy flag and keep the same items
-        if (verified["digest"] != published or verified.get("conversion_required")
-                or verified["values"]["items"] != original_items):
-            raise OSError("converted starter loadout failed verification")
-        checkpoint("verified", 100)
-        return {"profile_id": profile.values.profile_id, "target": "starter_loadout",
-                "relative_path": relative, "digest": published,
-                "items": original_items}
 
     def _resolve(self, profile_id: object, target: str) -> tuple[Any, int, str, Path]:
         """Resolve a supported mission target and prove it stays in the root."""

@@ -53,9 +53,12 @@ class SteamCmdRunResult:
 
 def build_update_argv(
     executable: Path, mode: AuthenticationMode, account_name: str | None,
-    items: tuple[RequiredWorkshopItem, ...],
+    items: tuple[RequiredWorkshopItem, ...], *, repeats: int = 1,
 ) -> tuple[str, ...]:
-    """Build the SteamCMD argument vector for one workshop update run."""
+    """Build the SteamCMD argument vector for one workshop update run.
+
+    `repeats` lists each download command that often; a repeat continues the same download job.
+    """
     # Anonymous mode ignores any account name; account mode requires one
     login = account_name if mode == AuthenticationMode.ACCOUNT else "anonymous"
     if mode == AuthenticationMode.ACCOUNT and not account_name:
@@ -63,7 +66,8 @@ def build_update_argv(
     arguments = [str(executable), "+login", login]
     # Request every required item in one invocation
     for item in items:
-        arguments.extend(("+workshop_download_item", APP_ID, item.workshop_id))
+        for _repeat in range(repeats):
+            arguments.extend(("+workshop_download_item", APP_ID, item.workshop_id))
     # +quit guarantees SteamCMD exits instead of an interactive prompt
     arguments.append("+quit")
     return tuple(arguments)

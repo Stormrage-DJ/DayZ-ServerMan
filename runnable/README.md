@@ -96,8 +96,10 @@ commands from a terminal, see [Command line](#command-line).
 2. Select the folder that contains the DayZ server installation.
 3. Select the folder that contains `steamcmd.exe` and its Steam library.
 4. Keep the portable backup destination or select a custom folder.
-5. Select **Save locations** and review the status of each folder.
-6. Create, import, or restore a server profile.
+5. Keep **Backups to keep per profile** at 3, or enter another number from 1
+   to 100.
+6. Select **Save settings** and review the status of each folder.
+7. Create, import, or restore a server profile.
 
 <!-- shot:readme-02 -->
 ![Settings showing the saved DayZ server and SteamCMD folders, each with a Ready status, and the first path resolved from them](img/readme-02.png)
@@ -406,6 +408,30 @@ apply, a row shows **Applying to the server folder…**.
 <!-- shot:readme-10 -->
 ![Mods page during Update all: the operation bar shows Updating mods, and rows show Downloading, Waiting for download, and Checking…](img/readme-10.png)
 
+#### Large downloads
+
+SteamCMD ends a Workshop download after about 5 minutes, even when the
+download is still running. It keeps the downloaded files. At 10 MB/s, 80% of a
+100 Mbit/s line, about 3 GB fit in these 5 minutes. DayZ-ServerMan therefore
+splits an update into SteamCMD sessions:
+
+1. One session for every mod of 2.7 GB or less, and every mod whose size Steam
+   did not report. The mods go smallest first.
+2. Then one session for each mod larger than 2.7 GB, smallest first. In it the
+   download command repeats until the time allowed for the mod is covered, for
+   example 4 times for an 11.7 GB map. Each repeat continues the same download.
+
+Each session gets the time that its download size needs at 10 MB/s, and at
+least 5 minutes. When SteamCMD runs out of time or loses the connection within
+that time, DayZ-ServerMan starts a new session after a 10-second pause, and the
+download continues where it stopped. A large mod that still fails does not
+affect the other sessions.
+
+A failed Steam sign-in, a missing entitlement, or a Workshop content failure
+ends a session at once, because another run cannot fix it. When the time is
+used up, the page says **The download did not finish in the time allowed for
+its size. Run the update again; it continues where it stopped.**
+
 DayZ-ServerMan copies mods into the server folder only while the server is
 stopped. If the server is not stopped, the review says that the mods cannot be
 applied now. It names the server state and what to do, for example **Use
@@ -513,6 +539,27 @@ Every new backup includes the server configuration, complete mission directory
 complete profile definition and empty directories. Mod binaries are not included.
 The manager verifies the archive before reporting success.
 
+### Backup retention
+
+Each profile keeps its 3 newest backups. Change the number in **Settings**
+under **Backups to keep per profile**, from 1 to 100, or with
+`settings set --backups-to-keep N`.
+
+After each new backup of a profile, the manager deletes the older backups of
+that profile beyond this number. The result of the backup names the deleted
+backups. A stop or restart with a backup does the same. Retention follows these
+rules:
+
+- Only a backup that passes verification counts toward the number. A damaged
+  backup does not count, so one more older backup stays.
+- Retention deletes only backups of the same profile, under their own name.
+  It never deletes backups of other profiles, renamed ZIP files, ZIP files it
+  cannot read, or other files.
+- A backup that cannot be deleted, for example because another program has it
+  open, stays. The result names it, and the new backup still succeeds.
+- A lower number takes effect with the next backup of each profile. Copy a
+  backup that you want to keep to another folder first.
+
 <!-- shot:readme-08 -->
 ![Backups page for Chernarus PvE with Create backup and three verified backups under Latest backups, each with a restore icon](img/readme-08.png)
 
@@ -525,8 +572,8 @@ The manager verifies the archive before reporting success.
 5. Confirm with **Restore now**, then wait for completion.
 
 The list shows only the three newest backups, newest first. A disabled restore
-icon means that archive is incompatible; the card explains why. This limit does
-not delete older ZIPs. Restoration uses the existing profile and does not create
+icon means that archive is incompatible; the card explains why. The list limit
+deletes nothing; [backup retention](#backup-retention) deletes older ZIPs. Restoration uses the existing profile and does not create
 another profile or start the server.
 
 ### Restore a deleted profile from a ZIP
@@ -548,7 +595,8 @@ If the file changes after selection, browse again and prepare a new review.
 Existing IDs are preserved. An occupied mission defaults to an isolated
 mission and storage ID. Direct restoration copies only the selected world,
 although the full mission archive can contain other worlds. Explicit world
-replacement names every affected profile and retains a verified recovery copy.
+replacement names every affected profile. The replaced world is kept as a
+recovery copy until the restore succeeds; then the copy is deleted.
 The restored profile is selected and remembered after success.
 
 Older archives without a complete profile definition cannot recreate a deleted
@@ -576,7 +624,7 @@ block is set, **Settings** accepts one kind of save:
 1. Open **Settings**.
 2. Select the DayZ server folder that the interrupted work used. Do not change
    the SteamCMD folder or the backup destination.
-3. Select **Save locations**. The page then says **Restart DayZ-ServerMan. It
+3. Select **Save settings**. The page then says **Restart DayZ-ServerMan. It
    then checks the interrupted work in this DayZ server folder.**
 4. Restart DayZ-ServerMan. For a backup restore, opening **Backups** also
    works.
@@ -591,8 +639,41 @@ can block with **could not be undone safely**. Then close DayZ-ServerMan and
 set the correct folder by hand in `config/manager.json`, as the operations
 guide describes.
 
-Keep verified recovery copies until they are no longer needed. Restore
-journals remain in `data/operations/`.
+A restore keeps a recovery copy of the replaced files in `backups\recovery\`
+only while it runs. When the restore succeeds, the copy is deleted. A failed or
+interrupted restore uses the copy to put the old files back. To keep the state
+from before a restore, create a backup first. Restore journals remain in
+`data/operations/`.
+
+## Starter items
+
+**Tweaks › Gameplay Tweaks › Starter Items** sets the items of a new character.
+DayZ-ServerMan never changes the mission's own starting code in `init.c`. It
+reads it and shows what it gives: its items, the items it chooses at random,
+and what else it does, such as setting item quantities or the quickbar.
+
+- **Your starting items** are given in addition. DayZ-ServerMan writes them in
+  its own marked method and calls it at the end of the mission's starting code.
+- **Give the mission's own starting items** turns the mission's code off or on.
+  Off keeps the code in the file, in a marked block that does not run, so on
+  again restores the file exactly. Off also turns off everything else that code
+  does.
+
+With no own items and the mission's items on, `init.c` stays as the mission
+has it. A mission whose starting code ends early (`return`) cannot get own
+items; the page names the reason. On the command line, use
+`tweaks set --target starter-loadout --set mission_items=off`, or
+`--set 'items=["Apple","BandageDressing"]'` for your own items.
+
+## Gameplay file
+
+The values of **Tweaks › Gameplay Tweaks** live in the mission's
+`cfgGameplay.json`. The server reads that file only when **Use gameplay
+configuration** is on in its server configuration. While it is off, the top of
+Gameplay Tweaks says so and offers **Turn on gameplay file**. That button turns
+the setting on for the selected server, the same as **Configuration**. The page
+then reloads and shows the gameplay settings. From then on the server uses the
+gameplay settings of its mission.
 
 ## Loot supply
 
@@ -988,12 +1069,11 @@ needs that no other DayZ-ServerMan is active (see
 | | `config set --target server\|gameplay` with `--set` or `--from-file` | yes | yes, after the review |
 | Tweaks | `tweaks show --target economy\|weather\|spawnable-damage\|starter-loadout\|events\|loot-supply\|weapon-magazines` | no | no |
 | | `tweaks set --target ...` with `--set` or `--from-file` | yes | yes, after the review |
-| | `tweaks convert-loadout` | yes | yes |
 | | `tweaks medical show` | no | no |
 | | `tweaks medical set FEATURE on\|off` | yes | yes, after the review |
 | Settings | `settings show` | no | no |
 | | `settings check-path PATH --role dayz-root\|steamcmd-root\|backup-root` | no | no |
-| | `settings set [--dayz-root PATH] [--steamcmd-root PATH] [--backup-root PATH \| --default-backup-root]` | yes | no |
+| | `settings set [--dayz-root PATH] [--steamcmd-root PATH] [--backup-root PATH \| --default-backup-root] [--backups-to-keep N]` | yes | no |
 | | `updates auto on\|off` | yes | no |
 | | `migrate preview ROOT` | no | no |
 | | `migrate apply ROOT [--item ID ... \| --all-items]` | yes | yes, after the review |
@@ -1275,7 +1355,6 @@ codes of the command line:
 | `USAGE` | 2 | The command line is not valid. |
 | `INSTANCE_ACTIVE` | 3 | Another DayZ-ServerMan is active for this manager folder. |
 | `SETUP_REQUIRED` | 3 | `server start` needs the folders; run `settings set` first. |
-| `NOTHING_TO_CONVERT` | 3 | `tweaks convert-loadout` found no older starter loadout. |
 | `CONFIRMATION_REQUIRED` | 4 | A question needs `--yes` (no terminal, `--json`, or a missing `--overwrite`). |
 | `NOT_INTERACTIVE` | 4 | `steam login` needs a terminal and text output. |
 | `CANCELLED` | 5 | Ctrl+C cancelled the command at a safe point. |

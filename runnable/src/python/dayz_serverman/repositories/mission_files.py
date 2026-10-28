@@ -10,9 +10,7 @@ from .configuration_common import ConfigurationFileError, digest_bytes, encode_u
 from .loot_supply import patch_supply, read_supply
 from .mission_xml import patch_attributes, patch_event_values, patch_named_vars, validate_xml
 from .mission_spawnable import lower_damage_cap, read_damage_cap
-from .mission_starter import (
-    convert_legacy_starter, legacy_starter_region, patch_starter, read_starter,
-)
+from .mission_starter_layer import read_layer, write_layer
 from .weapon_magazines import patch_magazines, read_magazine_values
 from ..domain.mission_configuration import (
     EVENT_FIELDS, EVENT_NAMES, GLOBAL_BOOLEAN_KEYS, GLOBAL_INTEGER_KEYS,
@@ -37,23 +35,19 @@ def load_mission_file(path: Path, target: str) -> dict[str, Any]:
     _validate(target, text)
     # Capture the raw payload, decoded text, and managed values together
     snapshot = {"content": content, "text": text, "bom": bom, "digest": digest_bytes(content)}
+    if target == "starter_loadout":
+        # The layer's items over the mission's own starting setup, which is only described
+        layer = read_layer(text)
+        snapshot["values"] = {"items": list(layer.items), "mission_items": layer.mission_items}
+        snapshot["mission_starter"] = layer.mission.to_dict()
+        snapshot["adoption_required"] = False
+        return snapshot
     if target == "loot_supply":
         # One read gives the percentages and the item counts of each group
         state = read_supply(text)
         snapshot["values"], snapshot["facts"] = dict(state.percents), state.facts()
     else:
         snapshot["values"] = _read_values(target, text)
-    # Starter loadouts additionally report legacy markers and adoption needs
-    if target == "starter_loadout":
-        legacy = legacy_starter_region(text)
-        _, snapshot["adoption_required"] = read_starter(text)
-        snapshot["conversion_required"] = legacy is not None
-        # Record the legacy region so callers can offer conversion
-        if legacy is not None:
-            snapshot["conversion"] = {
-                "items": list(legacy.items), "start_line": legacy.start_line,
-                "end_line": legacy.end_line,
-            }
     return snapshot
 
 
@@ -68,7 +62,9 @@ def transform_mission_file(snapshot: dict[str, Any], target: str, updates: dict[
     elif target == "spawnable_damage":
         text = lower_damage_cap(text, updates["maximum"])
     elif target == "starter_loadout":
-        text = patch_starter(text, updates["items"])
+        current = snapshot["values"]
+        text = write_layer(text, updates.get("items", current["items"]),
+                           updates.get("mission_items", current["mission_items"]))
     elif target == "events":
         text = patch_event_values(text, updates["events"])
     elif target == "loot_supply":
@@ -81,19 +77,14 @@ def transform_mission_file(snapshot: dict[str, Any], target: str, updates: dict[
     return encode_utf8(text, snapshot["bom"])
 
 
-def convert_starter_file(snapshot: dict[str, Any]) -> bytes:
-    """Convert a legacy starter loadout snapshot into marked managed form."""
-    return encode_utf8(convert_legacy_starter(snapshot["text"]), snapshot["bom"])
-
-
 def _validate(target: str, text: str) -> None:
     """Reject malformed content for the selected target before it is read."""
     # XML targets share one strict validation gate
     if target in {"economy", "weather", "spawnable_damage", "events", "loot_supply", "weapon_magazines"}:
         validate_xml(text)
     elif target == "starter_loadout":
-        # The starter reader validates its own script format
-        read_starter(text)
+        # The layer reader validates its own script format
+        read_layer(text)
 
 
 def _read_values(target: str, text: str) -> dict[str, Any]:
@@ -154,9 +145,9 @@ def _read_values(target: str, text: str) -> dict[str, Any]:
                 result["events"][name] = values
         return result
     if target == "starter_loadout":
-        # Starter snapshots report the parsed item list only
-        items, _adoption = read_starter(text)
-        return {"items": items}
+        # Starter snapshots report the layer items and whether the mission's own items stay on
+        layer = read_layer(text)
+        return {"items": list(layer.items), "mission_items": layer.mission_items}
     if target == "weapon_magazines":
         # The magazine target reports its percentage
         return read_magazine_values(text)

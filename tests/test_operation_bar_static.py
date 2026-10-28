@@ -19,7 +19,7 @@ BAR_MODULES = (
 )
 # Every helper that makes the page inert behind a dialog
 MODAL_HELPERS = (
-    "transition_guard.js", "overview_lifecycle_dialog.js", "tweaks_dialog.js", "mod-publication.js",
+    "transition_guard.js", "overview_lifecycle_dialog.js", "mod-publication.js",
     "profile_delete.js", "backups.js", "restore.js", "migration.js",
 )
 POLICY = (
@@ -153,7 +153,7 @@ class OperationBarStaticTests(unittest.TestCase):
                         and name != "busy_controls.js")
         self.assertEqual(marked, sorted((
             "overview_server.js", "overview_lifecycle_dialog.js", "profiles.js", "profile_create.js",
-            "profile_delete.js", "configuration.js", "tweaks_page.js", "tweaks_dialog.js", "tweaks_render.js",
+            "profile_delete.js", "configuration.js", "tweaks_page.js", "tweaks_render.js",
             "mods_signin.js", "mods_verify.js", "mods_update_actions.js", "mod-publication.js", "backups.js",
             "restore.js",
             "profile_restore.js", "settings.js", "migration.js",

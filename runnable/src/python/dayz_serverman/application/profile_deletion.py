@@ -11,6 +11,7 @@ from ..domain.lifecycle import ServerState
 from ..domain.models import RevisionConflict
 from ..repositories.applied_mod_state import AppliedModStateRepository
 from ..repositories.backup_verification import path_has_reparse
+from ..repositories.configuration_common import ConfigurationFileError
 from ..repositories.server_configuration import load_server_configuration
 from .folder_writer_scope import WriterScope
 from .lifecycle_ports import ServerFolderWriterPort
@@ -81,9 +82,13 @@ class ProfileDeletionService:
         self._require_generated_ownership(root, generated, profile)
         # Preserve mission storage shared with another profile
         mission_root, mission = self._mission(root, profile)
-        instance_id = self._instance_id(root, profile)
+        try:
+            instance_id: int | None = self._instance_id(root, profile)
+        except ProfileDeletionError:
+            # A profile whose configuration is gone has no known world, so no world storage is removed for it
+            instance_id = None
         storage = mission / f"storage_{instance_id}"
-        storage_is_exclusive = self._storage_is_exclusive(
+        storage_is_exclusive = instance_id is not None and self._storage_is_exclusive(
             root, mission_root, instance_id, profile_id,
         )
         mission_is_exclusive = owns_complete_mission(root, mission_root, mission, profile_id, self._profiles.list())
@@ -141,9 +146,16 @@ class ProfileDeletionService:
 
     @staticmethod
     def _mission(root: Path, profile: Any) -> tuple[str, Path]:
+        """Return the mission of the profile; a mission folder that is already gone leaves nothing to remove."""
         try:
             return resolve_profile_mission(root, profile)
         except MissionPathError as error:
+            relative = profile.values.mission_root
+            # The stored mission path is a validated relative path; only an absent folder is accepted
+            if relative is not None:
+                missing = root.joinpath(*PureWindowsPath(relative).parts)
+                if not missing.exists() and missing.resolve(strict=False).is_relative_to(root):
+                    return relative, missing
             raise ProfileDeletionError("The profile mission cannot be resolved safely.") from error
 
     @staticmethod
@@ -151,7 +163,7 @@ class ProfileDeletionService:
         config = root.joinpath(*PureWindowsPath(profile.values.server_config).parts)
         try:
             value = load_server_configuration(config).values.get("instanceId", 1)
-        except (OSError, UnicodeError, ValueError) as error:
+        except (ConfigurationFileError, OSError, UnicodeError, ValueError) as error:
             raise ProfileDeletionError("The profile instance ID cannot be read safely.") from error
         if not isinstance(value, int) or isinstance(value, bool) or value < 1:
             raise ProfileDeletionError("The profile instance ID is invalid.")

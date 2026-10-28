@@ -38,6 +38,24 @@ def editor_records_notice(result: object) -> str | None:
     return EDITOR_RECORDS_OMITTED if omitted else None
 
 
+def retention_notice(result: object) -> str | None:
+    """Return the text that names the older backups deleted by retention, or whose deletion failed, else None.
+
+    A `create` result holds the lists itself. A stop or restart with backup holds them in its `backup` result.
+    frontend/operation_results.js words the same notice.
+    """
+    result = result if isinstance(result, Mapping) else {}
+    backup = result.get("backup") if isinstance(result.get("backup"), Mapping) else result
+    pruned, failed = backup.get("pruned_backups"), backup.get("prune_failures")
+    parts = []
+    if isinstance(pruned, list) and pruned:
+        parts.append(f"Deleted the older backups beyond the newest {backup.get('backups_to_keep')} of this "
+                     f"profile: {', '.join(map(str, pruned))}.")
+    if isinstance(failed, list) and failed:
+        parts.append(f"These older backups could not be deleted: {', '.join(map(str, failed))}.")
+    return " ".join(parts) or None
+
+
 class BackupService:
     """Create verified ZIP backups and report per-profile backup history."""
 
@@ -158,6 +176,9 @@ class BackupService:
             validate_context=lambda: self._validate_capture(profile, settings, directories, mission_root),
             editor=editor,
         )
+        # Keep only the newest verified backups of this profile, as the settings name
+        retention = self._storage.prune(self._settings.backup_root(settings), profile.values.profile_id,
+                                        settings.backups_to_keep, manifest.backup_id)
         # Judge restore compatibility before reporting the new backup
         compatibility, reason = restore_compatibility(manifest)
         return {
@@ -177,6 +198,8 @@ class BackupService:
             "status": "USABLE",
             # True when corrupt editor records were left out; the result then shows EDITOR_RECORDS_OMITTED
             "editor_records_omitted": omitted,
+            # Older backups of the profile deleted by retention, and those whose deletion failed
+            **retention,
         }
 
     def _inventory(self, dayz_root: Path, profile: ProfileRecord) -> tuple[BackupSource, ...]:

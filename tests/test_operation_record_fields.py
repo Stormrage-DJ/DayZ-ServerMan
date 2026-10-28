@@ -28,7 +28,7 @@ APPLICATION = ROOT / "runnable" / "src" / "python" / "dayz_serverman" / "applica
 # Submit sites that know the profile, and how many submit calls each holds
 PROFILE_SUBMITTERS = {
     "lifecycle_coordinator.py": 1, "backup_coordinator.py": 1, "restore_coordinator.py": 1,
-    "configuration_coordinator.py": 1, "mission_configuration_coordinator.py": 2,
+    "configuration_coordinator.py": 1, "mission_configuration_coordinator.py": 1,
     "medical_feature_coordinator.py": 1, "mod_publication_coordinator.py": 1,
     "workshop_verification_coordinator.py": 1, "profile_coordinator.py": 1,
 }

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import shutil
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ..domain.backup_editor_manifest import is_editor_entry
@@ -15,10 +15,12 @@ from .backup_verification import sha256_file
 from .journaled_publication import JournaledPublication, PublicationPolicy
 from .paths import PortablePaths
 from .publication_contracts import in_new_state
+from .recovery_copies import remove_recovery_copy
 from .restore_editor_targets import EditorWrite, editor_paths_safe, finish_editor_groups, prepare_editor_groups
 from .restore_journal import RestoreJournalError, RestoreJournalRepository
 from .restore_preparation import prepare_groups
 from .restore_paths import (
+    RestorePathError,
     copy_verified,
     journal_paths_safe,
     old_state_matches,
@@ -27,6 +29,28 @@ from .restore_paths import (
     safe_target,
     target_relative,
 )
+
+
+def restore_directories(dayz_root: Path, manifest: BackupManifest, runtime_profile: str | None) -> list[str]:
+    """Create the folders that the backup records and that are missing, such as an empty runtime profile.
+
+    The files are already committed, so a folder that cannot be created is returned, not raised.
+    """
+    root = safe_root(dayz_root)
+    failed: list[str] = []
+    for name in manifest.directories:
+        try:
+            # The runtime profile folder itself is recorded under the bare prefix
+            relative = (PurePosixPath(*runtime_profile.replace("\\", "/").split("/"))
+                        if name == "runtime-profile" and runtime_profile else target_relative(name, runtime_profile))
+            folder = root.joinpath(*relative.parts)
+            if folder.is_dir():
+                continue
+            safe_target(root, relative, allow_missing_parents=True)
+            folder.mkdir(parents=True, exist_ok=True)
+        except (OSError, RestorePathError):
+            failed.append(name)
+    return failed
 
 
 class RestoreStorageError(RuntimeError):
@@ -79,9 +103,8 @@ class RestoreStorage:
             if is_editor_entry(entry.path):
                 continue
             relative = target_relative(entry.path, runtime_profile)
-            target = safe_target(
-                root, relative, allow_missing_parents=entry.path.startswith("runtime-profile/"),
-            )
+            # A restore recreates the folders of a deleted profile: its configuration folder, runtime and mission
+            target = safe_target(root, relative, allow_missing_parents=True)
             current = sha256_file(target) if target.exists() else None
             result.append(RestoreTarget(
                 entry.path,
@@ -187,6 +210,10 @@ class RestoreStorage:
         }
         if editor_groups:
             summary["editor_record_count"] = len(editor_groups)
+        # The backup alone restores the profile: the empty folders it records come back as well
+        summary["directories_not_created"] = restore_directories(dayz_root, manifest, runtime_profile)
+        # The restore is committed and its journal retired, so the copy of the replaced files goes
+        summary["recovery_copy_removed"] = remove_recovery_copy(recovery_root, operation_id)
         return summary
 
     def _publish(self, journal: RestoreJournal, journal_repository: RestoreJournalRepository) -> None:

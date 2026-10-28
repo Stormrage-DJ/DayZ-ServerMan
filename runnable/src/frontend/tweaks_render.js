@@ -142,25 +142,37 @@ function renderGroup(group, api) {
   section.append(renderFieldRows(group, api)); return section;
 }
 
-// Render the starter loadout picker or its conversion prompt.
+// Describe the mission's own starting setup and offer to keep it or turn it off.
+function renderMissionStarter(mission, api) {
+  const panel = tweakNode("div", "starter-mission");
+  panel.append(tweakNode("strong", "", "The mission's own starting items"));
+  const items = mission.items.map((item) => item.count > 1 ? `${item.name} \u00d7${item.count}` : item.name);
+  if (!items.length && !mission.choices.length) {
+    panel.append(tweakNode("p", "", "The mission gives no items of its own."));
+  }
+  if (items.length) panel.append(tweakNode("p", "", `Gives: ${items.join(", ")}.`));
+  mission.choices.forEach((choice) => panel.append(tweakNode("p", "", `One of: ${choice.join(", ")}.`)));
+  if (mission.random) panel.append(tweakNode("p", "", "Some items are chosen at random."));
+  if (mission.effects.length) panel.append(tweakNode("p", "", `It also ${mission.effects.join(", ")}.`));
+  const keep = tweakNode("label", "check-row"); const input = document.createElement("input");
+  input.type = "checkbox"; input.id = "starter-mission-items";
+  input.checked = api.state.drafts.get("starter_loadout").mission_items;
+  input.addEventListener("change", () => api.setStarterMissionItems(input.checked));
+  keep.append(input, tweakNode("span", "", "Give the mission's own starting items"));
+  panel.append(keep);
+  if (!input.checked) {
+    panel.append(tweakNode("p", "status-label status-warning",
+      "Off: a new character gets only the items chosen below. Everything listed above is off as well."));
+  }
+  return panel;
+}
+
+// Render the mission's own starting setup and the starter item picker.
 function renderStarter(section, api) {
   const snapshot = api.state.snapshots.get("starter_loadout");
-  // Offer conversion first when the block predates ownership comments.
-  if (snapshot?.conversion_required) {
-    const preview = snapshot.conversion;
-    const notice = tweakNode("div", "notice notice-warning starter-conversion");
-    notice.append(
-      tweakNode("strong", "", "Legacy starter loadout detected"),
-      tweakNode("p", "", `Found ${preview.items.length} supported item(s) on lines ${preview.start_line}-${preview.end_line}.`),
-      tweakNode("p", "", "Convert this block before editing it here. Conversion adds ownership comments without changing the current statements or item order."),
-    );
-    const items = tweakNode("p", "starter-conversion-items", preview.items.join(", "));
-    const action = tweakNode("button", "button button-primary", "Review conversion");
-    action.type = "button";
-    action.disabled = [...api.state.pending.values()].includes("starter_loadout");
-    action.addEventListener("click", api.reviewStarterConversion);
-    window.ServerManBusy?.mark(action);
-    notice.append(items, action); section.append(notice); return section;
+  if (snapshot?.mission_starter) {
+    section.append(renderMissionStarter(snapshot.mission_starter, api),
+      tweakNode("strong", "starter-own-title", "Your starting items, given in addition"));
   }
   const selected = new Set(api.state.drafts.get("starter_loadout").items);
   // List starter items by category as checkboxes.
@@ -229,6 +241,20 @@ function renderMapEditorEntry(root) {
   root.prepend(slot); window.ServerManMapEditorEntry.render(slot);
 }
 
+// Offer the gameplay file switch on this page: Gameplay Tweaks only take effect with cfgGameplay.json in use.
+function renderGameplaySwitch(api) {
+  const panel = tweakNode("div", "notice notice-warning tweak-gameplay-switch"); panel.setAttribute("role", "status");
+  panel.append(tweakNode("p", "", "The server does not use its gameplay file (cfgGameplay.json) yet, so these "
+    + "settings cannot be changed. Turning it on makes the server read the gameplay settings of its mission."));
+  const button = tweakNode("button", "button button-primary", api.state.enablingGameplay
+    ? "Turning on the gameplay file\u2026" : "Turn on gameplay file");
+  button.type = "button"; button.id = "tweaks-enable-gameplay"; button.disabled = api.state.enablingGameplay;
+  window.ServerManBusy?.mark(button);
+  button.addEventListener("click", () => api.enableGameplay());
+  panel.append(button);
+  return panel;
+}
+
 // Render the full tweaks workspace for the current selection.
 function renderWorkspace(api) {
   const root = tweakNode("section", "panel tweaks-panel"); root.id = "tweaks-workspace";
@@ -244,6 +270,7 @@ function renderWorkspace(api) {
     window.ServerManTweaksCatalog.gameplayTabs.forEach((tab) => tabs.append(
       tabButton(tab.label, api.state.subtab === tab.id, () => api.chooseTab(tab.id)),
     )); root.append(tabs);
+    if (api.state.gameplayOff) root.append(renderGameplaySwitch(api));
     const selected = window.ServerManTweaksCatalog.gameplayTabs.find((tab) => tab.id === api.state.subtab);
     const groups = tweakNode("div", "tweak-groups"); selected.groups.forEach((group) => groups.append(renderGroup(group, api))); root.append(groups);
   } else {

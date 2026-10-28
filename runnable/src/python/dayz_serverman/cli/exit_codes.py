@@ -12,7 +12,7 @@ SUCCESS, FAILED, USAGE, REFUSED, NOT_CONFIRMED, CANCELLED, RECOVERY = 0, 1, 2, 3
 
 # CLI codes that are not bridge error codes: the closed list of A11 (QF-62), design 6.4
 CLI_CODES: dict[str, int] = {
-    "USAGE": USAGE, "INSTANCE_ACTIVE": REFUSED, "SETUP_REQUIRED": REFUSED, "NOTHING_TO_CONVERT": REFUSED,
+    "USAGE": USAGE, "INSTANCE_ACTIVE": REFUSED, "SETUP_REQUIRED": REFUSED,
     "CONFIRMATION_REQUIRED": NOT_CONFIRMED, "NOT_INTERACTIVE": NOT_CONFIRMED, "CANCELLED": CANCELLED,
     "INSTANCE_LOCK_UNSUPPORTED": FAILED, "CHECK_NOT_FINISHED": FAILED, "NOT_READY": FAILED,
 }
@@ -68,7 +68,6 @@ PRE_CHANGE_PHASES: dict[str, frozenset[str | None]] = {
     "RESTORE_PROFILE_FROM_BACKUP": frozenset((None,)),
     "APPLY_CONFIGURATION": frozenset((None, "loaded")),
     "APPLY_MISSION_CONFIGURATION": frozenset((None, "loaded")),
-    "CONVERT_STARTER_LOADOUT": frozenset((None, "loaded")),
     "APPLY_MEDICAL_FEATURE": frozenset((None,)),
     # The map lane kinds report no checkpoint (AR-4); each CLI leaf adds its own kinds
     "APPLY_MISSION_MAP": frozenset((None,)),

@@ -128,12 +128,29 @@ class SettingsSetTests(SettingsRoot):
         self.assertIn(settings_wording.BACKUP_PORTABLE, stdout)
         self.assertEqual((self.settings()["custom_backup_root"], self.settings()["steamcmd_root"]), (None, str(steam)))
 
+    def test_backups_to_keep_alone_keeps_the_folders(self) -> None:
+        """--backups-to-keep saves only the number; show words it; a later folder save keeps it."""
+        stored = self.settings()
+        code, stdout, stderr = self.cli(*SET, "--backups-to-keep", "5")
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("Each profile keeps its newest 5 backups", stdout)
+        saved = self.settings()
+        self.assertEqual(saved["backups_to_keep"], 5)
+        self.assertEqual({key: saved[key] for key in ("dayz_root", "steamcmd_root", "custom_backup_root")},
+                         {key: stored[key] for key in ("dayz_root", "steamcmd_root", "custom_backup_root")})
+        self.assertEqual(self.cli(*SET, "--steamcmd-root", str(self.folder("Steam CMD")))[0], 0)
+        self.assertEqual(self.settings()["backups_to_keep"], 5)
+        for value in ("0", "101", "three"):
+            with self.subTest(value=value):
+                self.assertEqual(self.cli(*SET, "--backups-to-keep", value)[0], 2)
+        self.assertEqual(self.settings()["backups_to_keep"], 5)
+
     def test_refusals_change_nothing(self) -> None:
         """No folder named, no folder at the path, a file, both backup options, a pin: exit 2 or 3, nothing changed."""
         before = saved_state(self.manager, self.dayz)
         program = self.dayz / "Bin" / "DayZ Server_x64.exe"
-        cases = (([], 2, "Name at least one folder to change with --dayz-root, --steamcmd-root, --backup-root "
-                  "or --default-backup-root."),
+        cases = (([], 2, "Name at least one setting to change with --dayz-root, --steamcmd-root, --backup-root, "
+                  "--default-backup-root or --backups-to-keep."),
                  (["--dayz-root", "No Such Folder"], 2, "The folder No Such Folder cannot be used. The DayZ server "
                   "folder does not exist."),
                  (["--steamcmd-root", str(program)], 2, "This location is not a folder."),

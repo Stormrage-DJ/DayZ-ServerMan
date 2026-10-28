@@ -37,7 +37,7 @@ OWNER_ONLY_METHODS = frozenset((
     "save_editor_layout", "save_backup_after_stop", "save_automatic_update_checks", "create_backup", "preview_restore",
     "apply_restore", "inspect_restore_recovery", "preview_profile_restore", "restore_profile_from_backup",
     "preview_configuration", "apply_configuration", "preview_mission_configuration",
-    "apply_mission_configuration", "convert_starter_loadout", "preview_medical_feature",
+    "apply_mission_configuration", "preview_medical_feature",
     "apply_medical_feature", "apply_legacy_import", "list_legacy_backup_references",
     "revalidate_legacy_backup_references", "start_server", "stop_server", "restart_server",
     "save_lifecycle_schedule", "save_steam_settings", "authenticate_steamcmd", "update_workshop_items",

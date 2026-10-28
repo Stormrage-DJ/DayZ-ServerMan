@@ -25,6 +25,10 @@ from dayz_serverman.application.mod_publication_gate import (  # noqa: E402
     PublicationGateError, parse_publication_gate,
 )
 from dayz_serverman.application.operations.models import OperationState  # noqa: E402
+from dayz_serverman.application.download_budget import (  # noqa: E402
+    download_budget, download_groups, session_repeats, smallest_first,
+)
+from dayz_serverman.application.steamcmd_results import DOWNLOAD_TIMEOUT_TEXT  # noqa: E402
 from dayz_serverman.application.workshop_updates import (  # noqa: E402
     UpdateRequest, WorkshopUpdateService,
 )
@@ -292,6 +296,172 @@ class DecideBeforeSteamCmdTests(unittest.TestCase):
         self.assertEqual((self.steamcmd.runs, result["process_id"]), (1, 77))
         self.gate(result)
 
+
+
+# The pause before a new run, patched to nothing so the tests cost no time
+SLEEP = "dayz_serverman.application.workshop_updates.RETRY_PAUSE_SECONDS"
+BUDGET = "dayz_serverman.application.workshop_updates.download_budget"
+
+
+class DownloadRetryTests(unittest.TestCase):
+    """SteamCMD runs again for an item it timed out on or lost the connection for, while the budget lasts."""
+
+    def setUp(self) -> None:
+        """Reuse the decide fixture; each test sets the scripted SteamCMD answers."""
+        self.fixture = DecideBeforeSteamCmdTests("test_check_failure_sends_all_items")
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.temporary.cleanup)
+        self.answers: list[tuple[str, ...]] = []
+        self.sent: list[list[str]] = []
+
+        def scripted(_paths, argv, _cancel, _launched, before_launch):
+            """Return the next scripted lines, or success for every requested item when none are left."""
+            before_launch()
+            ids = [argv[index + 2] for index, value in enumerate(argv) if value == "+workshop_download_item"]
+            self.sent.append(ids)
+            lines = self.answers.pop(0) if self.answers else tuple(f"Success. Downloaded item {i}" for i in ids)
+            return SteamCmdRunResult(10 if "ERROR" in " ".join(lines) else 0, lines, False, True, 77)
+
+        self.fixture.steamcmd.run_update = scripted
+
+    def outcomes(self, result) -> list[str]:
+        """Return the item outcomes in profile order."""
+        return [item["outcome"] for item in result["items"]]
+
+    def test_a_timed_out_item_is_downloaded_by_the_next_run(self) -> None:
+        """The first item finishes, the second times out; the next run continues from the second item."""
+        self.answers = [("Success. Downloaded item 333", "ERROR! Timeout downloading item 111")]
+        with patch(SLEEP, 0.0):
+            result = self.fixture.update()
+        self.assertEqual(self.sent, [["333", "111", "222"], ["111", "222"]])
+        self.assertNotIn("FAILED", " ".join(self.outcomes(result)))
+        self.assertIsNone(result["steamcmd_summary"])
+
+    def test_a_timeout_on_the_line_of_the_previous_success_is_retried(self) -> None:
+        """SteamCMD writes a success without a line break, so the next item's timeout shares its line."""
+        self.answers = [(
+            "Downloading item 333 ...",
+            'Success. Downloaded item 333 to "C:/cache/333" (7 bytes) Downloading item 111 ...'
+            "ERROR! Timeout downloading item 111",
+            "Unloading Steam API...",
+        )]
+        with patch(SLEEP, 0.0):
+            result = self.fixture.update()
+        self.assertEqual(self.sent, [["333", "111", "222"], ["111", "222"]])
+        self.assertNotIn("FAILED", " ".join(self.outcomes(result)))
+
+    def test_a_large_item_gets_its_own_session_with_repeated_commands(self) -> None:
+        """Small items go first in one session; an 11 GB item follows alone, its command repeated 4 times."""
+        sizes = {"333": 11_000_000_000, "111": 400, "222": 90}
+        self.fixture.check.check_now = lambda ids: {
+            key: RemoteFact(RemoteItemResult.OK, 999, sizes[key], "2026-10-03T12:00:00.000+00:00") for key in ids}
+        self.answers = [
+            ('Success. Downloaded item 222 to "C:/cache/222" (90 bytes) Downloading item 111 ...',
+             'Success. Downloaded item 111 to "C:/cache/111" (400 bytes) '),
+            ("Downloading item 333 ...ERROR! Timeout downloading item 333",
+             "Downloading item 333 ...ERROR! Timeout downloading item 333",
+             'Downloading item 333 ...Success. Downloaded item 333 to "C:/cache/333" (7 bytes) '),
+        ]
+        with patch(SLEEP, 0.0):
+            result = self.fixture.update()
+        self.assertEqual(self.sent, [["222", "111"], ["333", "333", "333", "333"]])
+        self.assertNotIn("FAILED", " ".join(self.outcomes(result)))
+
+    def test_a_failed_large_item_leaves_the_small_ones_downloaded(self) -> None:
+        """When the large item still times out, only it fails; the small session stands."""
+        sizes = {"333": 3_000_000_000, "111": 400, "222": 90}
+        self.fixture.check.check_now = lambda ids: {
+            key: RemoteFact(RemoteItemResult.OK, 999, sizes[key], "2026-10-03T12:00:00.000+00:00") for key in ids}
+        self.answers = [
+            ('Success. Downloaded item 222 to "C:/cache/222" (90 bytes) Downloading item 111 ...',
+             'Success. Downloaded item 111 to "C:/cache/111" (400 bytes) '),
+            ("ERROR! Timeout downloading item 333",),
+        ]
+        with patch(SLEEP, 0.0), patch(BUDGET, return_value=0.0):
+            result = self.fixture.update()
+        # 3 GB at 10 MB/s is one SteamCMD attempt, so the command is not repeated
+        self.assertEqual(self.sent, [["222", "111"], ["333"]])
+        by_id = {item["item"]["workshop_id"]: item["outcome"] for item in result["items"]}
+        self.assertEqual(by_id["333"], "CONNECTION_FAILED")
+        self.assertNotIn("FAILED", by_id["111"] + by_id["222"])
+        self.assertEqual(result["steamcmd_summary"], DOWNLOAD_TIMEOUT_TEXT)
+
+    def test_a_retry_takes_a_fresh_path_fingerprint(self) -> None:
+        """A SteamCMD run changes the Workshop folder, so the retry must not compare against the old fingerprint."""
+        fixture, state = self.fixture, {"inspected": 0, "runs": 0}
+        base, cache = fixture.base, fixture.cache
+
+        def inspect(_settings):
+            """Fingerprint the current state: the number of SteamCMD runs so far."""
+            state["inspected"] += 1
+            return SteamCmdPaths(base, base / "steamcmd.exe", cache, identities=(state["runs"],))
+
+        def revalidate(paths) -> None:
+            """Refuse a fingerprint that a SteamCMD run has made stale."""
+            if paths.identities != (state["runs"],):
+                raise RuntimeError("SteamCMD configured path identity changed")
+
+        scripted = fixture.steamcmd.run_update
+
+        def counting(*arguments):
+            """Count the run, as SteamCMD changes the fingerprinted files."""
+            result = scripted(*arguments)
+            state["runs"] += 1
+            return result
+
+        fixture.service._preflight = SimpleNamespace(inspect=inspect, revalidate=revalidate)
+        fixture.steamcmd.run_update = counting
+        self.answers = [("ERROR! Timeout downloading item 333",)]
+        with patch(SLEEP, 0.0):
+            result = self.fixture.update()
+        self.assertEqual(len(self.sent), 2)
+        self.assertEqual(state["inspected"], 2)
+        self.assertNotIn("FAILED", " ".join(self.outcomes(result)))
+
+    def test_a_lost_connection_is_retried_too(self) -> None:
+        """A dropped connection is as temporary as a timeout."""
+        self.answers = [("ERROR! Download item 333 failed (No Connection).",)]
+        with patch(SLEEP, 0.0):
+            result = self.fixture.update()
+        self.assertEqual(len(self.sent), 2)
+        self.assertNotIn("FAILED", " ".join(self.outcomes(result)))
+
+    def test_a_failed_sign_in_is_not_retried(self) -> None:
+        """A rejected sign-in needs the operator, so the update ends after one run."""
+        self.answers = [("FAILED login with result code Invalid Password (Login Failure)",)]
+        with patch(SLEEP, 0.0):
+            result = self.fixture.update()
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(self.outcomes(result)[0], "AUTHENTICATION_FAILED")
+
+    def test_a_spent_budget_reports_the_timeout(self) -> None:
+        """Without budget left the timeout ends the update with a sentence that says to run it again."""
+        self.answers = [("ERROR! Timeout downloading item 333",)]
+        with patch(SLEEP, 0.0), patch(BUDGET, return_value=0.0):
+            result = self.fixture.update()
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(result["steamcmd_summary"], DOWNLOAD_TIMEOUT_TEXT)
+
+    def test_budget_is_the_size_at_ten_megabytes_per_second_and_at_least_five_minutes(self) -> None:
+        """An 11 GB item gets 1100 s; small or unknown sizes get the 300 s floor."""
+        self.assertEqual(download_budget([11_000_000_000]), 1100.0)
+        self.assertEqual(download_budget([5_000_000, None]), 300.0)
+        self.assertEqual(download_budget([]), 300.0)
+
+    def test_groups_and_repeats(self) -> None:
+        """Items above 2.7 GB get a session each, smallest first; the repeats cover the budget."""
+        items = tuple(SimpleNamespace(workshop_id=key) for key in ("s1", "big", "s2", "bigger", "unknown"))
+        sizes = {"s1": 10, "big": 2_800_000_000, "s2": 2_700_000_000, "bigger": 11_657_993_531}
+        groups = download_groups(items, sizes)
+        self.assertEqual([[item.workshop_id for item in group] for group in groups],
+                         [["s1", "s2", "unknown"], ["big"], ["bigger"]])
+        self.assertEqual([session_repeats(group, sizes) for group in groups], [1, 1, 4])
+
+    def test_unknown_sizes_keep_their_order_after_the_known_ones(self) -> None:
+        """Items without a size follow the sized ones, in their profile order."""
+        items = tuple(SimpleNamespace(workshop_id=key) for key in ("a", "b", "c", "d"))
+        ordered = smallest_first(items, {"b": 50, "d": 10, "a": None})
+        self.assertEqual([item.workshop_id for item in ordered], ["d", "b", "a", "c"])
 
 if __name__ == "__main__":
     unittest.main()

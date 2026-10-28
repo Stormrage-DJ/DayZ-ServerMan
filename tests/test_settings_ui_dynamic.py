@@ -30,7 +30,7 @@ HARNESS = r"""
   const snapshot = () => ({settings: {revision: 4, dayz_root: null,
     dayz_executable: null, steamcmd_root: null, steamcmd_executable: null,
     workshop_content_root: null, custom_backup_root: customBackup,
-    steam_account_name: "Operator_1", steam_authentication_mode: "ACCOUNT"},
+    steam_account_name: "Operator_1", steam_authentication_mode: "ACCOUNT", backups_to_keep: 3},
     portable_backup_root: "C:\\Manager Root\\backups",
     diagnostics: [diagnostic("dayz_root", null), diagnostic("dayz_executable", null),
       diagnostic("steamcmd_root", null), diagnostic("steamcmd_executable", null),
@@ -101,13 +101,30 @@ HARNESS = r"""
 
     save = async () => ok({operation_id: "save-settings", state: "QUEUED"});
     document.getElementById("save-path-settings").click(); await wait();
-    check(Object.keys(savedPayload).length === 3, "exact root settings payload");
+    check(Object.keys(savedPayload).length === 4, "exact root settings payload");
+    check(savedPayload.backups_to_keep === 3, "the stored backup count is sent unchanged");
     check(!Object.hasOwn(savedPayload, "dayz_executable"), "derived paths stay internal");
     check(savedPayload.custom_backup_root === null, "portable backup stores null");
     check(savedRevision === 4, "optimistic revision");
     window.ServerManSettings.operationFinished({operation_id: "save-settings", state: "FAILED",
       terminal_error: {message: "Revision changed safely."}});
     check(document.activeElement.getAttribute("role") === "alert", "terminal error focus");
+
+    // The backup count: an invalid entry blocks the save, a valid one is sent and marked until saved
+    const keep = document.getElementById("settings-backups-to-keep");
+    check(keep.value === "3" && keep.min === "1" && keep.max === "100", "backup count field");
+    keep.value = "0"; keep.dispatchEvent(new Event("change"));
+    check(document.getElementById("save-path-settings").disabled, "invalid count blocks the save");
+    check(document.getElementById("settings-backups-to-keep").getAttribute("aria-invalid") === "true",
+      "invalid count is marked");
+    check(document.activeElement.id === "settings-backups-to-keep", "focus stays on the count");
+    document.getElementById("settings-backups-to-keep").value = "5";
+    document.getElementById("settings-backups-to-keep").dispatchEvent(new Event("change"));
+    check(document.body.textContent.includes("In use until saved: 3"), "saved count stays in use");
+    document.getElementById("save-path-settings").click(); await wait();
+    check(savedPayload.backups_to_keep === 5, "changed backup count payload");
+    window.ServerManSettings.operationFinished({operation_id: "save-settings", state: "FAILED",
+      terminal_error: {message: "Revision changed safely."}});
 
     document.getElementById("backup-mode-custom").click();
     selector = async (role) => ok({role, path: "E:\\Custom Backups", status: "READY",

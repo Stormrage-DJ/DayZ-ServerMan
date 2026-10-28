@@ -15,7 +15,7 @@ from typing import Any
 
 from ..adapters.windows.console import is_terminal
 from ..application.activity_wording import KIND_FALLBACK, KIND_TEXTS, error_text, restart_apply_text
-from ..application.backups import editor_records_notice
+from ..application.backups import editor_records_notice, retention_notice
 from ..application.medical_features import NO_ZONE_CHANGE
 from ..application.phase_wording import cancelling_text, phase_text
 from .bridge_client import CliBridgeError
@@ -82,8 +82,9 @@ class Waiter:
                 # An update that downloaded nothing has no true end line: the command words it (QF-52)
                 if record.get("state") == "SUCCEEDED" and not ran_no_download(record, kind):
                     # A backup that left out corrupt editor records says so after the success line (10.9)
-                    notice = editor_records_notice(record.get("result"))
-                    self._output.note((end_line(record, kind), *((sentence(notice),) if notice else ())))
+                    # Older backups that retention deleted are named after it
+                    notices = (editor_records_notice(record.get("result")), retention_notice(record.get("result")))
+                    self._output.note((end_line(record, kind), *(sentence(notice) for notice in notices if notice)))
                 return record
             if kind != SIGN_IN_KIND:
                 shown = self._render(record, kind, shown)

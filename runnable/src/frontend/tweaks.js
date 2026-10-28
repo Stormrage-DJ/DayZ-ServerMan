@@ -6,7 +6,11 @@ const tweaksState = {
   profileId: null, snapshots: new Map(), baselines: new Map(), drafts: new Map(),
   reviewed: new Map(), pending: new Map(), errors: new Map(), generation: 0,
   area: "gameplay", subtab: "player",
+  // True while the server configuration does not use cfgGameplay.json; the page offers to turn it on
+  gameplayOff: false, enablingGameplay: false,
 };
+// The group notice while the gameplay file is off; the switch itself sits at the top of Gameplay Tweaks
+const GAMEPLAY_OFF_GROUP_TEXT = "Turn on the gameplay file above to change these settings.";
 // Targets backed by mission configuration files.
 const missionTargets = new Set(["economy", "weather", "starter_loadout", "events", "loot_supply", "weapon_magazines"]);
 // Every managed target loaded for the tweaks workspace.
@@ -67,6 +71,11 @@ async function loadTweaks() {
     tweaksState.errors = new Map(results.filter(([, result]) => !result.success)
       .map(([target, result]) => [target, window.ServerManOperationMessages.bridgeError(
         result, "This part of the tweaks could not be loaded.")]));
+    // A gameplay file that is off is no failure: the page offers the switch and the groups point to it
+    tweaksState.gameplayOff = results.some(([target, result]) => target === "gameplay"
+      && result.error?.code === "GAMEPLAY_NOT_ENABLED");
+    tweaksState.enablingGameplay = false;
+    if (tweaksState.gameplayOff) tweaksState.errors.set("gameplay", GAMEPLAY_OFF_GROUP_TEXT);
     // Fold loaded medical features into the same result set.
     if (medical.success) {
       Object.entries(medical.value.features).forEach(([feature, value]) => results.push([feature, {
@@ -121,6 +130,12 @@ function setStarterItem(item, enabled) {
   tweaksState.reviewed.delete("starter_loadout"); setTweakDirty(); renderTweaksActions();
 }
 
+// Keep or turn off the mission's own starting items.
+function setStarterMissionItems(enabled) {
+  tweaksState.drafts.get("starter_loadout").mission_items = enabled;
+  tweaksState.reviewed.delete("starter_loadout"); setTweakDirty(); renderTweaks();
+}
+
 // Reduce a target's draft to the values that changed.
 function changedUpdates(target) {
   const before = tweaksState.baselines.get(target); const after = tweaksState.drafts.get(target);
@@ -133,8 +148,8 @@ function changedUpdates(target) {
     });
     return { events };
   }
-  // Starter loadouts publish their full ordered item list.
-  if (target === "starter_loadout") return { items: [...after.items] };
+  // Starter loadouts publish their full ordered item list and whether the mission's own items stay on.
+  if (target === "starter_loadout") return { items: [...after.items], mission_items: after.mission_items };
   return Object.fromEntries(Object.entries(after).filter(([key, value]) => value !== before[key]));
 }
 
@@ -236,31 +251,42 @@ function activeTargets() {
       item.target === "medical" ? item.fields.map((field) => field.key) : [item.target]))];
 }
 
+// Turn on "Use gameplay configuration" of the server configuration from this page; the reload follows the apply.
+async function enableGameplayFile() {
+  if (tweaksState.enablingGameplay) return;
+  const step = tweakStep();
+  tweaksState.enablingGameplay = true; renderTweaks();
+  const failed = (result, fallback) => {
+    if (!tweakStepCurrent(step)) return;
+    tweaksState.enablingGameplay = false; renderTweaks(); showTweakError(result, fallback);
+  };
+  const loaded = await window.pywebview.api.load_configuration(tweaksState.profileId, "server");
+  if (!loaded.success) return failed(loaded, "The server configuration could not be read.");
+  const server = loaded.value;
+  const args = [server.profile_id, "server", server.profile_revision, server.settings_revision, server.digest,
+    server.server_config_digest, { enableCfgGameplayFile: true }];
+  const preview = await window.pywebview.api.preview_configuration(...args);
+  if (!preview.success) return failed(preview, "The gameplay file could not be turned on.");
+  const applied = await window.pywebview.api.apply_configuration(...args);
+  if (!applied.success) return failed(applied, "The gameplay file could not be turned on.");
+  if (!tweakStepCurrent(step)) return;
+  // The page reloads when the apply succeeds, and then shows the gameplay settings
+  tweaksState.pending.set(applied.value.operation_id, "server");
+  window.ServerManOperationBar?.adopt(applied.value.operation_id);
+  showTweakFeedback("Turning on the gameplay file.");
+}
+
 // Switch the tweaks area and rerender.
 function chooseTweakArea(area) { tweaksState.area = area; renderTweaks(); }
 // Switch the gameplay subtab and rerender.
 function chooseGameplayTab(tab) { tweaksState.subtab = tab; renderTweaks(); }
 
-// Convert the legacy starter block after the operator confirms.
-async function reviewStarterConversion() {
-  const snapshot = tweaksState.snapshots.get("starter_loadout");
-  if (!snapshot?.conversion_required || !await starterConversionDialog(snapshot)) return;
-  const generation = tweaksState.generation; const workspace = window.ServerManWorkspace.capture("tweaks");
-  const result = await window.pywebview.api.convert_starter_loadout(
-    snapshot.profile_id, snapshot.profile_revision, snapshot.settings_revision, snapshot.digest,
-  );
-  if (generation !== tweaksState.generation || !window.ServerManWorkspace.isActive(workspace)) return;
-  if (!result.success) return showTweakError(result, "Legacy starter loadout could not be converted.");
-  // Track the queued conversion and refresh the workspace; the operation bar shows it.
-  tweaksState.pending.set(result.value.operation_id, "starter_loadout");
-  window.ServerManOperationBar?.adopt(result.value.operation_id); renderTweaks();
-}
-
 // Render the tweaks workspace through the render module.
 function renderTweaks() {
   window.ServerManTweaksRender.workspace({
     state: tweaksState, value: tweakValue, setValue: setTweakValue, setEventValue,
-    setStarterItem, reviewStarterConversion, chooseArea: chooseTweakArea, chooseTab: chooseGameplayTab,
+    setStarterItem, chooseArea: chooseTweakArea, chooseTab: chooseGameplayTab,
+    enableGameplay: enableGameplayFile, setStarterMissionItems,
   });
   // Clear the busy state once the workspace is rendered.
   renderTweaksActions(); document.getElementById("content-region").setAttribute("aria-busy", "false");

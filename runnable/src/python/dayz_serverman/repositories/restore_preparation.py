@@ -32,10 +32,8 @@ def prepare_groups(
         for index, item in enumerate(targets):
             # Resolve and validate the target below the DayZ root
             root = safe_root(dayz_root)
-            target = safe_target(
-                root, PurePosixPath(item.target_relative),
-                allow_missing_parents=item.entry_path.startswith("runtime-profile/"),
-            )
+            # Missing folders are created; a rollback removes the ones that this restore created
+            target = safe_target(root, PurePosixPath(item.target_relative), allow_missing_parents=True)
             ancestors = missing_ancestors(root, target)
             # Keep the stage on the target's volume so the swap stays a rename
             if ancestors:

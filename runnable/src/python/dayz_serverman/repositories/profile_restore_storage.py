@@ -13,6 +13,7 @@ from .profile_restore_editor_shapes import EDITOR_ROLE, EditorFile, publication_
 from .profile_restore_inventory import inventory, safe_exists
 from .profile_restore_preparation import group_paths, stage_groups, remove_owned
 from .profile_restore_journal import ProfileRestoreJournal
+from .recovery_copies import remove_recovery_copy
 
 
 class ProfileRestoreStorage:
@@ -121,6 +122,7 @@ class ProfileRestoreStorage:
             raise
         try:
             self.cleanup(record, root)
+            self.remove_recovery_copy(record)
             record["cleanup_complete"] = True
             self.journals.write(record)
         except Exception:
@@ -211,8 +213,13 @@ class ProfileRestoreStorage:
                 remove_owned(stage)
         self.phase(record, "ROLLED_BACK")
 
+    def remove_recovery_copy(self, record: dict) -> None:
+        """Delete the recovery copy of a committed restore; a copy that stays is still named in the result."""
+        if remove_recovery_copy(self.recovery_root, record["operation_id"]):
+            record["result"]["recovery_copy"] = None
+
     def cleanup(self, record: dict, root: Path) -> None:
-        """Discard verified operation-private staging/holding content, retaining recovery copies."""
+        """Discard verified operation-private staging/holding content; the recovery copy goes separately."""
         for group in record["groups"]:
             if group["role"] == EDITOR_ROLE:
                 self.editor().cleanup(record, group)
@@ -251,6 +258,7 @@ class ProfileRestoreStorage:
                     if not record["cleanup_complete"]:
                         self.verify_committed(record, root)
                         self.cleanup(record, root)
+                        self.remove_recovery_copy(record)
                         record["cleanup_complete"] = True
                         self.journals.write(record)
                 else:

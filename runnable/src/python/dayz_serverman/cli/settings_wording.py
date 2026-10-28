@@ -14,6 +14,12 @@ from .output import CliFailure, Echo, Line, SentencePart, TypeText, sentence
 # Which backup folder is in use, as `settings show` words it
 BACKUP_CUSTOM = "Backups go to the custom backup folder."
 BACKUP_PORTABLE = "Backups go to the portable default folder, which moves with the DayZ-ServerMan folder."
+
+
+def backups_kept(count: object) -> Line:
+    """Word the number of backups kept per profile, as `settings show` and `settings set` report it."""
+    noun = "backup" if count == 1 else "backups"
+    return sentence(f"Each profile keeps its newest {count} {noun}; a new backup deletes the older ones.")
 # `frontend/settings.js` SETTINGS_RESTART_TEXT: the notice after a save that set the DayZ server folder while
 # changes were blocked for interrupted work (QF-069)
 SETTINGS_RESTART = "Restart DayZ-ServerMan. It then checks the interrupted work in this DayZ server folder."
@@ -21,7 +27,7 @@ SETTINGS_RESTART = "Restart DayZ-ServerMan. It then checks the interrupted work 
 RESTART_FOR_COMMANDS = ("Each command that changes something starts DayZ-ServerMan anew and does this check "
                         "first; opening the window does it as well.")
 # The options of `settings set`, in the order of its help
-SET_OPTIONS = ("--dayz-root", "--steamcmd-root", "--backup-root", "--default-backup-root")
+SET_OPTIONS = ("--dayz-root", "--steamcmd-root", "--backup-root", "--default-backup-root", "--backups-to-keep")
 
 
 def folder_path(text: str) -> str:
@@ -32,11 +38,11 @@ def folder_path(text: str) -> str:
 
 
 def no_location_named() -> Line:
-    """Word `settings set` without any folder to change."""
+    """Word `settings set` without any setting to change."""
     pieces: list[SentencePart] = []
     for index, option in enumerate(SET_OPTIONS):
         pieces.extend(("" if not index else " or " if index == len(SET_OPTIONS) - 1 else ", ", TypeText(option)))
-    return sentence("Name at least one folder to change with ", *pieces, ".")
+    return sentence("Name at least one setting to change with ", *pieces, ".")
 
 
 def folder_unusable(text: str, explanation: str) -> Line:

@@ -70,7 +70,6 @@ def compose_shell_html(frontend_root: Path) -> str:
     tweaks_render_script += "\n" + read_text_shared(root / "map_editor_entry.js", encoding="utf-8")
     tweaks_script = (root / "tweaks.js").read_text(encoding="utf-8")
     tweaks_script += "\n" + (root / "tweaks_page.js").read_text(encoding="utf-8")
-    tweaks_script += "\n" + (root / "tweaks_dialog.js").read_text(encoding="utf-8")
     configuration_edit_script = (root / "configuration_edit.js").read_text(encoding="utf-8")
     configuration_context_script = (root / "configuration_context.js").read_text(encoding="utf-8")
     configuration_network_script = (root / "configuration_network.js").read_text(encoding="utf-8")

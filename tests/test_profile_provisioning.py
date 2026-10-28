@@ -13,6 +13,7 @@ from unittest.mock import patch
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "runnable" / "src" / "python"))
 
+from dayz_serverman.application.host_sentence_wording import plain_sentence  # noqa: E402
 from dayz_serverman.application.mission_catalog import MissionCatalog  # noqa: E402
 from dayz_serverman.application.profile_provisioning import (  # noqa: E402
     ProfileProvisioningError,
@@ -157,6 +158,52 @@ class ProfileProvisioningTests(unittest.TestCase):
 
         config = self.dayz / "serverman" / "isolated" / "serverDZ.cfg"
         self.assertIn("instanceId = 3;", config.read_text(encoding="utf-8"))
+
+    def test_a_profile_with_a_missing_config_is_named(self) -> None:
+        """A profile whose server configuration was deleted refuses with its ID and path; nothing is created."""
+        (self.dayz / "gone-profile").mkdir()
+        self.profiles.save(ProfileInput.parse({
+            "profile_id": "gone", "display_name": "Gone",
+            "server_executable": "DayZServer_x64.exe",
+            "server_config": r"serverman\gone\serverDZ.cfg", "game_port": 2402,
+            "runtime_profile": "gone-profile", "mission_root": None,
+            "mods": [], "extra_arguments": [],
+        }), None)
+
+        with self.assertRaises(ProfileProvisioningError) as raised:
+            self.provision()
+        # The window shows the sentence only when it holds no identifier, such as a file name
+        self.assertIn("profile gone cannot be read", str(raised.exception))
+        self.assertEqual(plain_sentence(str(raised.exception)), str(raised.exception))
+        self.assertFalse((self.dayz / "serverman" / "pripyat").exists())
+        self.assertEqual(self.journals.list(), ())
+
+    def test_a_missing_config_on_another_mission_does_not_block(self) -> None:
+        """A profile whose configuration is gone but whose mission differs does not stop a new profile."""
+        (self.dayz / "mpmissions" / "Other.enoch").mkdir()
+        (self.dayz / "gone-profile").mkdir()
+        self.profiles.save(ProfileInput.parse({
+            "profile_id": "gone", "display_name": "Gone",
+            "server_executable": "DayZServer_x64.exe",
+            "server_config": r"serverman\gone\serverDZ.cfg", "game_port": 2402,
+            "runtime_profile": "gone-profile", "mission_root": r"mpmissions\Other.enoch",
+            "mods": [], "extra_arguments": [],
+        }), None)
+
+        self.provision()
+
+        config = self.dayz / "serverman" / "pripyat" / "serverDZ.cfg"
+        self.assertIn("instanceId = 1;", config.read_text(encoding="utf-8"))
+        # A profile with a missing configuration on the new profile's mission still refuses
+        self.profiles.save(ProfileInput.parse({
+            "profile_id": "samegone", "display_name": "Same Gone",
+            "server_executable": "DayZServer_x64.exe",
+            "server_config": r"serverman\samegone\serverDZ.cfg", "game_port": 2702,
+            "runtime_profile": "gone-profile", "mission_root": r"mpmissions\Pripyat.Custom",
+            "mods": [], "extra_arguments": [],
+        }), None)
+        with self.assertRaisesRegex(ProfileProvisioningError, "profile samegone cannot be read"):
+            self.provision(request(profile_id="second", display_name="Second", game_port=2602))
 
     def test_refuses_existing_target_without_overwriting(self) -> None:
         """Fail before mutation when an existing directory is not a generated profile."""

@@ -17,6 +17,13 @@ TERMINAL_ID = re.compile(r"(?:item|workshop_download_item)\s+(?P<id>[0-9]+)", re
 AUTHENTICATION = re.compile(r"(?:not logged on|invalid password|steam guard|login failure)", re.I)
 ENTITLEMENT = re.compile(r"(?:access denied|no subscription|license|not owned)", re.I)
 CONNECTION = re.compile(r"(?:no connection|timeout|connection failed|network is unreachable)", re.I)
+# SteamCMD ends a download after its own fixed time and keeps the files; a new run continues the item
+DOWNLOAD_TIMEOUT = re.compile(r"timeout downloading item\s+(?P<id>[0-9]+)", re.I)
+DOWNLOAD_TIMEOUT_TEXT = ("The download did not finish in the time allowed for its size. "
+                         "Run the update again; it continues where it stopped.")
+# SteamCMD writes a result without a line break, so the next item's messages follow on the same line;
+# each message starts with one of these
+MESSAGE_START = re.compile(r"(?=Success\. Downloaded item|ERROR! |Downloading item )")
 CONTENT = re.compile(r"(?:item unavailable|file not found|download item.*failed|workshop.*failed)", re.I)
 
 
@@ -38,9 +45,8 @@ def classify_output(
     invalid = False
     stopped = False
     summary: str | None = None
-    # Keep only recognizable signatures, sanitized and in output order
-    for raw in lines:
-        line = redact_text(raw[:8192]).strip()
+    # Keep only recognizable signatures, sanitized and in output order, one SteamCMD message at a time
+    for line in _messages(lines):
         success = SUCCESS.search(line)
         failure = _failure_class(line)
         if success is None and failure is None:
@@ -65,9 +71,34 @@ def classify_output(
             # Record the first failure and stop accepting later outcomes
             assert failure is not None
             ordered.append((current, failure))
-            summary = _safe_summary(failure)
+            summary = DOWNLOAD_TIMEOUT_TEXT if DOWNLOAD_TIMEOUT.search(line) else _safe_summary(failure)
             stopped = True
     return SessionEvidence(tuple(ordered), invalid, summary)
+
+
+def classify_repeated(lines: tuple[str, ...], item: RequiredWorkshopItem) -> SessionEvidence:
+    """Classify a session that repeated the download command of one item.
+
+    A success of the item in any attempt wins; otherwise the last failure of the item decides. A line about
+    another item makes the session invalid.
+    """
+    last: tuple[ItemOutcome, str] | None = None
+    for line in _messages(lines):
+        success = SUCCESS.search(line)
+        failure = _failure_class(line)
+        if success is None and failure is None:
+            continue
+        observed = success.group("id") if success else _terminal_id(line)
+        if observed is not None and observed != item.workshop_id:
+            return SessionEvidence((), True, None)
+        if success is not None and failure is None:
+            return SessionEvidence(((item.workshop_id, ItemOutcome.VERIFIED_CURRENT),), False, None)
+        if failure is not None and success is None:
+            last = (failure, line)
+    if last is None:
+        return SessionEvidence((), False, None)
+    summary = DOWNLOAD_TIMEOUT_TEXT if DOWNLOAD_TIMEOUT.search(last[1]) else _safe_summary(last[0])
+    return SessionEvidence(((item.workshop_id, last[0]),), False, summary)
 
 
 def terminal_outcomes(
@@ -98,6 +129,12 @@ def terminal_outcomes(
         else:
             result[item.workshop_id] = ItemOutcome.UNKNOWN_FAILED
     return result
+
+
+def _messages(lines: tuple[str, ...]) -> list[str]:
+    """Split the sanitized lines into SteamCMD messages; a result and the next item can share one line."""
+    return [message.strip() for raw in lines
+            for message in MESSAGE_START.split(redact_text(raw[:8192])) if message.strip()]
 
 
 def _terminal_id(line: str) -> str | None:

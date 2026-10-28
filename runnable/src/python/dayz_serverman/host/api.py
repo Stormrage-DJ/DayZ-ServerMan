@@ -184,15 +184,6 @@ class HostApi(MedicalFeatureHostMethods, SettingsHostMethods, LegacyImportHostMe
         return self._mission_edit("apply_mission_configuration", profile_id, target,
             expected_profile_revision, expected_settings_revision, expected_digest, updates)
 
-    def convert_starter_loadout(
-        self, profile_id: object, expected_profile_revision: object,
-        expected_settings_revision: object, expected_digest: object,
-    ) -> dict[str, Any]:
-        """Convert the starter loadout with digest guards."""
-        return self._invoke("convert_starter_loadout", {"profile_id": profile_id,
-            "expected_profile_revision": expected_profile_revision,
-            "expected_settings_revision": expected_settings_revision, "expected_digest": expected_digest})
-
     def _mission_edit(
         self, method: str, profile_id: object, target: object,
         expected_profile_revision: object, expected_settings_revision: object,

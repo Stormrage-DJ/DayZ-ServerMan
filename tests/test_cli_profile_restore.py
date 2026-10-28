@@ -96,7 +96,7 @@ class ProfileRestoreTests(BackupRoot):
         self.assertEqual((code, stdin.reads), (4, 0))
         self.assertIn("Replace the selected world used by:", stdout)
         self.assertIn("Chernarus PvE", stdout)
-        self.assertIn("A verified recovery copy will be retained.", stdout)
+        self.assertIn("The current world is replaced, and its recovery copy is deleted when the restore succeeds.", stdout)
         self.assertIn("This restore replaces an existing world. Run the command again with --overwrite.", stderr)
         code, stdout, _stderr = self.restore("--storage", "replace", "--json", "--yes")
         error = json.loads(stdout)["error"]
@@ -107,7 +107,8 @@ class ProfileRestoreTests(BackupRoot):
         players.write_bytes(b"newer world")
         code, stdout, stderr = self.restore("--storage", "replace", "--overwrite", "--yes")
         self.assertEqual(code, 0, stderr)
-        self.assertIn("World recovery copy: ", stdout)
+        # The recovery copy is deleted once the restore committed, so the result names none
+        self.assertNotIn("World recovery copy: ", stdout)
         self.assertEqual(players.read_bytes(), b"world")
 
     def test_decline_and_missing_yes_change_nothing(self) -> None:

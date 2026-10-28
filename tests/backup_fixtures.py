@@ -16,11 +16,12 @@ class FakeProfiles:
 
 class FakeSettings:
     """Settings stub exposing a fixed root and backup destination."""
-    def __init__(self, dayz: Path, default: Path, custom: Path | None = None) -> None:
-        """Build the settings value from the dayz root and destination paths."""
+    def __init__(self, dayz: Path, default: Path, custom: Path | None = None, keep: int = 3) -> None:
+        """Build the settings value from the dayz root, destination paths and number of backups kept."""
         self.value = SimpleNamespace(
             dayz_root=str(dayz), revision=4,
             custom_backup_root=str(custom) if custom else None,
+            backups_to_keep=keep,
         )
         self.default = default
 

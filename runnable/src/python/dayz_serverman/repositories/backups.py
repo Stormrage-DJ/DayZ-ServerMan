@@ -179,6 +179,46 @@ class BackupStorage:
         usable.sort(key=lambda item: (str(item["created_at"]), str(item["backup_id"])), reverse=True)
         return {"backups": usable, "legacy_backups": [], "diagnostics": diagnostics}
 
+    def prune(self, root: Path, profile_id: str, keep: int, published: str) -> dict[str, list[str]]:
+        """Delete the oldest backups of a profile beyond the newest `keep`; the just published one always stays.
+
+        Only a backup that passes content verification counts toward `keep`, so the kept backups can be
+        restored. An archive whose manifest cannot be read, or whose schema is newer, is never deleted.
+        A deletion that fails leaves the archive and is reported; it does not fail the new backup.
+        """
+        destination = self._root(root)
+        owned: list[tuple[Path, BackupManifest]] = []
+        for archive in destination.glob("*.zip"):
+            if not archive.is_file() or is_reparse(archive):
+                continue
+            try:
+                manifest = read_archive_manifest(archive)
+            except (FutureBackupSchema, FutureBackupArchive, BackupManifestError, BackupArchiveError,
+                    OSError, ValueError, json.JSONDecodeError):
+                continue
+            # Only archives under their own identifier belong to the profile's history
+            if manifest.profile_id == profile_id and archive.stem == manifest.backup_id:
+                owned.append((archive, manifest))
+        # The new backup first, then the others from newest to oldest
+        owned.sort(key=lambda item: (item[1].backup_id == published, item[1].created_at, item[1].backup_id),
+                   reverse=True)
+        kept, pruned, failed = 0, [], []
+        for archive, manifest in owned:
+            if kept < keep:
+                try:
+                    if manifest.backup_id != published:
+                        verify_archive(archive, manifest)
+                    kept += 1
+                except (BackupManifestError, BackupArchiveError, OSError, ValueError):
+                    pass
+                continue
+            try:
+                archive.unlink()
+                pruned.append(manifest.backup_id)
+            except OSError:
+                failed.append(manifest.backup_id)
+        return {"backups_to_keep": keep, "pruned_backups": pruned, "prune_failures": failed}
+
     def delete_profile(self, root: Path, profile_id: str) -> int:
         """Delete every manager-created archive whose identifier belongs to a profile."""
         destination = self._root(root)

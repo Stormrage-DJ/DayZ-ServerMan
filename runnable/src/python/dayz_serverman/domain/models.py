@@ -11,6 +11,10 @@ from typing import Any, Mapping
 
 # JSON-compatible value tree accepted by persisted records
 JsonValue = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
+# Verified backups kept per profile when the settings name no other number
+DEFAULT_BACKUPS_TO_KEEP = 3
+# Allowed numbers of verified backups kept per profile
+BACKUPS_TO_KEEP_RANGE = (1, 100)
 
 
 class RecordState(str, Enum):
@@ -72,6 +76,7 @@ class SettingsInput:
     custom_backup_root: str | None = None
     steam_account_name: str | None = None
     steam_authentication_mode: str | None = None
+    backups_to_keep: int = DEFAULT_BACKUPS_TO_KEEP
 
 
 @dataclass(frozen=True)
@@ -88,6 +93,7 @@ class ManagerSettings:
     last_validated_paths: Mapping[str, str]
     steam_account_name: str | None = None
     steam_authentication_mode: str | None = None
+    backups_to_keep: int = DEFAULT_BACKUPS_TO_KEEP
 
     @classmethod
     def unconfigured(cls) -> ManagerSettings:

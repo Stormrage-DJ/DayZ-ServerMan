@@ -10,7 +10,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = PROJECT_ROOT / "runnable" / "src" / "frontend"
 SCRIPT_FILES = (
     "shell_ui.js", "workspace_context.js", "profile_context.js", "configuration_catalog.js",
-    "tweaks_catalog.js", "tweaks_render.js", "tweaks.js", "tweaks_page.js", "tweaks_dialog.js", "backup_display.js",
+    "tweaks_catalog.js", "tweaks_render.js", "tweaks.js", "tweaks_page.js", "backup_display.js",
     "backups.js", "backup_history.js", "profile_restore.js",
     "restore.js", "migration.js", "settings.js", "settings_render.js", "overview_backup.js",
     "overview_readiness.js",
@@ -141,15 +141,15 @@ class WorkspaceFeaturesStaticTests(unittest.TestCase):
         self.assertNotIn('label: "Server Config"', self.script)
         self.assertNotIn('subtab: "server"', self.script)
 
-    def test_legacy_starter_conversion_is_explicit_and_digest_bound(self) -> None:
-        """Legacy starter conversion is explicit and digest bound."""
+    def test_starter_items_describe_the_mission_and_offer_its_items_off(self) -> None:
+        """Starter Items names the mission's own items and offers to keep them or turn them off; no conversion."""
         for value in (
-            "conversion_required", "Review conversion", "Convert legacy loadout",
-            "convert_starter_loadout", "snapshot.profile_revision",
-            "snapshot.settings_revision", "snapshot.digest", 'role", "alertdialog"',
-            "does not replace its statements or reorder its items",
+            "The mission's own starting items", "Give the mission's own starting items", "mission_items",
+            "Your starting items, given in addition",
         ):
             self.assertIn(value, self.script)
+        for value in ("conversion_required", "convert_starter_loadout", "Review conversion"):
+            self.assertNotIn(value, self.script)
 
     def test_logs_use_fixed_named_query_and_plain_text_rendering(self) -> None:
         """Logs use the fixed named query and plain text rendering."""

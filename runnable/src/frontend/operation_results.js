@@ -73,6 +73,20 @@ function successPresentation(operation, labels) {
 const OPERATION_EDITOR_RECORDS_OMITTED = "The backup was created without the map editor records of this profile, "
   + "because they are not valid. A restore of this backup does not bring them back.";
 
+// Name the older backups that retention deleted, or failed to delete (application/backups.py retention_notice)
+function retentionNotice(result) {
+  const backup = result.backup || result;
+  const parts = [];
+  if (Array.isArray(backup.pruned_backups) && backup.pruned_backups.length) {
+    parts.push(`Deleted the older backups beyond the newest ${backup.backups_to_keep} of this profile: `
+      + `${backup.pruned_backups.join(", ")}.`);
+  }
+  if (Array.isArray(backup.prune_failures) && backup.prune_failures.length) {
+    parts.push(`These older backups could not be deleted: ${backup.prune_failures.join(", ")}.`);
+  }
+  return parts.join(" ");
+}
+
 // Describe a finished operation: look, result sentence, message, and both joined as one text.
 // ServerManOperationMessages.result in operation_messages.js is this function.
 function operationResult(operation, seenPhase = null) {
@@ -85,6 +99,8 @@ function operationResult(operation, seenPhase = null) {
     // A backup create, or a stop or restart with backup, that left out the editor records says so
     const result = operation.result || {};
     if (result.editor_records_omitted === true || result.backup?.editor_records_omitted === true) message = OPERATION_EDITOR_RECORDS_OMITTED;
+    // Older backups that retention deleted are named after it
+    message = [message, retentionNotice(result)].filter(Boolean).join(" ");
   } else if (operation?.state === "CANCELLED") {
     ({ sentence, look } = cancelPresentation(operation, phase, labels));
   } else {

@@ -675,9 +675,16 @@ be selected in Settings. Existing backup files remain external user data and
 must not be committed to Git. Deleting a profile does not delete its backup
 archives.
 
+Retention keeps the newest backups of each profile: 3 by default, 1 to 100 in
+**Settings** or with `settings set --backups-to-keep N`. After a new backup is
+published, the manager deletes the older backups of the same profile beyond the
+number. Only verified backups count toward it. Archives of other profiles,
+renamed archives and unreadable archives are never deleted. A failed deletion
+leaves the archive, is named in the result, and does not fail the backup.
+
 The selected profile's **Latest backups** section shows its three newest backups.
 Use a card's restore icon to review that exact backup. Unavailable restores have
-a disabled icon. Older archives remain stored; this display limit does not delete them.
+a disabled icon. This display limit deletes nothing; retention deletes older archives.
 
 ## Restore behavior
 
@@ -739,18 +746,18 @@ Explicit world replacement requires matching common mission files and known
 registered consumers. The review names every affected profile and requires
 confirmation. Replacement swaps the whole selected storage tree, preserving
 common mission files, other worlds and existing profile definitions. A verified
-recovery copy is retained beneath the backup recovery directory after success.
+recovery copy is kept beneath the backup recovery directory until the restore
+commits; then the copy is deleted.
 If the selected world was absent in the archive, an explicit replacement
 restores that absence. The review warns that the existing selected world will
-be removed, and its recovery copy is retained.
+be removed. Its recovery copy is deleted when the restore commits.
 
 Direct restoration publishes files and a revision-zero profile record through
 one durable journal. Startup rolls back an interrupted uncommitted operation,
 but only while the server is proven stopped (see
 [recovery blocks](#recovery-blocks)). If files have changed independently,
 recovery blocks mutations and preserves those changes. A committed operation
-can report pending cleanup. Keep its recovery copies until they are no longer
-needed.
+can report pending cleanup. The recovery copy is deleted with the cleanup.
 
 Deleting a restored profile removes its isolated mission only when the
 ownership marker matches and no other profile references that mission. Shared
@@ -864,7 +871,7 @@ without a folder and sets the block again. Use a repair save instead:
 1. Open **Settings**.
 2. Select the DayZ server folder that the interrupted work used. Do not change
    the SteamCMD folder or the backup destination.
-3. Select **Save locations**. The Settings page then says **Restart
+3. Select **Save settings**. The Settings page then says **Restart
    DayZ-ServerMan. It then checks the interrupted work in this DayZ server
    folder.**
 4. Restart DayZ-ServerMan. For a backup restore, opening **Backups** also
@@ -992,25 +999,17 @@ An interrupted adoption on a running server keeps the editor block until the
 server stops. Stop the server, then start the manager. Recovery finishes by
 itself.
 
-### Undo a restore from a recovery copy
+### Undo a restore
 
-Use this if you want the old state of an editor file back after a restore into
-an existing profile.
-
-1. Stop the manager.
-2. Keep a copy of the current file.
-3. Copy the file from `<backup recovery>\<operation_id>\manager\<relative path>`
-   to the same relative path below the manager root. A copy of a removed file
-   keeps its bytes, so you can undo a removal in the same way.
-4. Start the manager.
-
-Do one file at a time.
+A successful restore deletes its recovery copy, so a restore cannot be undone
+from that copy. To keep the state from before a restore, create a backup of
+the profile first, then restore that backup to undo.
 
 ### Known limits of the map editor and restore recovery
 
-- The manager does not prune `<backup recovery>`. It grows by one folder for
-  each restore. This holds for DayZ files and for editor files. A future limit
-  must cover both.
+- A recovery copy that cannot be deleted after a successful restore, for
+  example because another program has a file open, stays in
+  `<backup recovery>`. The restore still succeeds. Delete the folder by hand.
 - The recovery block message of a profile restore or a backup restore names no
   operation, group, file or cause.
 - Recovery of an interrupted adoption needs a stopped server.

@@ -109,6 +109,32 @@ function backupEditor() {
   return fieldset;
 }
 
+// Build the number of verified backups kept per profile.
+function retentionEditor() {
+  const field = settingsNode("article", "settings-path settings-retention");
+  const label = settingsNode("label", "", "Backups to keep per profile");
+  label.htmlFor = "settings-backups-to-keep";
+  const description = settingsNode("p", "configuration-path",
+    "After each new backup, the older backups of the same profile beyond this number are deleted.");
+  description.id = "settings-backups-to-keep-description";
+  const input = document.createElement("input");
+  input.type = "number"; input.id = "settings-backups-to-keep";
+  input.min = String(BACKUPS_TO_KEEP_RANGE[0]); input.max = String(BACKUPS_TO_KEEP_RANGE[1]); input.step = "1";
+  const value = settingsState.paths.backups_to_keep;
+  input.value = Number.isFinite(value) ? String(value) : "";
+  input.disabled = settingsState.busy;
+  input.setAttribute("aria-describedby", description.id);
+  field.append(label, description, input);
+  if (!retentionValid()) {
+    input.setAttribute("aria-invalid", "true");
+    field.append(settingsNode("p", "status-label status-warning",
+      `Enter a whole number from ${BACKUPS_TO_KEEP_RANGE[0]} to ${BACKUPS_TO_KEEP_RANGE[1]}.`));
+  }
+  const saved = settingsState.original?.backups_to_keep;
+  if (saved !== undefined && saved !== value) field.append(settingsNode("p", "settings-in-use", `In use until saved: ${saved}`));
+  return field;
+}
+
 // List the automatically resolved paths.
 function resolvedLocations() {
   const section = settingsNode("section", "settings-resolved");

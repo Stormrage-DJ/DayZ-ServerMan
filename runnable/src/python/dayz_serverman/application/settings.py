@@ -8,6 +8,8 @@ from types import MappingProxyType
 from typing import Protocol
 
 from ..domain.models import (
+    BACKUPS_TO_KEEP_RANGE,
+    DEFAULT_BACKUPS_TO_KEEP,
     ManagerSettings,
     PathDiagnostic,
     PathRole,
@@ -31,7 +33,10 @@ SETTINGS_FIELDS = (
     "custom_backup_root",
     "steam_account_name",
     "steam_authentication_mode",
+    "backups_to_keep",
 )
+# Every settings field except the backup count holds text or null
+TEXT_SETTINGS_FIELDS = SETTINGS_FIELDS[:-1]
 # The first six settings fields are filesystem paths checked by diagnostics
 PATH_SETTINGS_FIELDS = SETTINGS_FIELDS[:6]
 # Roots from which dependent executable and content paths are derived
@@ -142,6 +147,7 @@ def normalize_settings(values: SettingsInput) -> SettingsInput:
         steam_authentication_mode=_normalize_authentication_mode(
             values.steam_authentication_mode,
         ),
+        backups_to_keep=validate_backups_to_keep(values.backups_to_keep),
     )
     # Require derived executables to stay inside their selected roots
     if not _is_within(normalized.dayz_root, normalized.dayz_executable):
@@ -170,6 +176,14 @@ def validate_steam_account_name(value: str | None) -> str | None:
             "steam_account_name must contain only letters, digits, or underscore",
         )
     return checked
+
+
+def validate_backups_to_keep(value: object) -> int:
+    """Validate the number of verified backups kept per profile."""
+    low, high = BACKUPS_TO_KEEP_RANGE
+    if not isinstance(value, int) or isinstance(value, bool) or not low <= value <= high:
+        raise SettingsValidationError(f"backups_to_keep must be a whole number from {low} to {high}")
+    return value
 
 
 def _normalize_authentication_mode(value: str | None) -> str | None:
@@ -303,8 +317,8 @@ class SettingsService:
         unknown = set(fields).difference((*SETTINGS_FIELDS, "last_validated_paths"))
         if unknown:
             raise SettingsValidationError(f"unknown settings fields: {sorted(unknown)}")
-        values: dict[str, str | None] = {}
-        for field in SETTINGS_FIELDS:
+        values: dict[str, object] = {}
+        for field in TEXT_SETTINGS_FIELDS:
             value = fields.get(field)
             if value is not None and not isinstance(value, str):
                 raise SettingsValidationError(f"{field} must be a string or null")
@@ -317,6 +331,10 @@ class SettingsService:
         _validate_auth_pair(
             values["steam_account_name"],
             values["steam_authentication_mode"],
+        )
+        # Settings stored before backup retention existed keep the default number
+        values["backups_to_keep"] = validate_backups_to_keep(
+            fields.get("backups_to_keep", DEFAULT_BACKUPS_TO_KEEP),
         )
         raw_evidence = fields.get("last_validated_paths", {})
         if not isinstance(raw_evidence, dict) or any(

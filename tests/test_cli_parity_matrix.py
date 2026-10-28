@@ -26,7 +26,7 @@ MATRIX: dict[str, int] = {
                      "profile backup-after-stop"), 3),
     **dict.fromkeys(("backup create", "backup restore", "backup recover", "profile restore"), 4),
     **dict.fromkeys(("updates check", "updates auto", "mods verify", "mods update", "steam set", "steam login"), 5),
-    **dict.fromkeys(("config set", "tweaks set", "tweaks convert-loadout", "tweaks medical set", "profile create",
+    **dict.fromkeys(("config set", "tweaks set", "tweaks medical set", "profile create",
                      "profile edit", "profile delete"), 6),
     **dict.fromkeys(("settings check-path", "settings set", "migrate preview", "migrate apply"), 7),
     # Task 10 of the mission map plan (D20): each map leaf adds the commands that it builds
@@ -48,7 +48,7 @@ BUILT = {
     # Task 5.2: mods verify; task 5.3: mods update
     "mods verify", "mods update",
     # Task 6.1: configuration and tweaks edits
-    "config set", "tweaks set", "tweaks convert-loadout", "tweaks medical set",
+    "config set", "tweaks set", "tweaks medical set",
     # Task 6.2: profile create, edit and delete
     "profile create", "profile edit", "profile delete",
     # Task 7.1: the folder check and the folder save
@@ -68,7 +68,7 @@ PENDING = set(MATRIX) - BUILT
 # Product Owner's sweep of 2026-10-07 22:02:06 (criterion 30), with the lifecycle commands of phase 3
 CONFIRMING = {
     "server start", "server stop", "server restart", "backup create", "backup restore", "profile restore",
-    "mods update", "profile delete", "config set", "tweaks set", "tweaks medical set", "tweaks convert-loadout",
+    "mods update", "profile delete", "config set", "tweaks set", "tweaks medical set",
     "migrate apply",
     # Task 10 of the mission map plan (D14): the commands whose window action confirms
     "map set-aside", "map apply", "map restore", "map import", "map copy", "map adopt",
@@ -101,12 +101,12 @@ class ParityMatrixTests(unittest.TestCase):
                 composition.shutdown.wait_for_close(5)
 
     def test_every_owner_method_is_used_internal_excluded_or_pending(self) -> None:
-        """Each of the 82 methods is in a command, internal or excluded (71 + 4 + 7); none is pending (10.36)."""
-        self.assertEqual(len(self.allowlist), 82)
+        """Each of the 81 methods is in a command, internal or excluded (70 + 4 + 7); none is pending (10.36)."""
+        self.assertEqual(len(self.allowlist), 81)
         used = set().union(*(command.bridge_methods for command in COMMANDS))
         pending = set(PENDING_TASK_10)
         self.assertEqual(self.allowlist - used - INTERNAL_METHODS - EXCLUDED_METHODS - pending, set())
-        self.assertEqual(len(self.allowlist - INTERNAL_METHODS - EXCLUDED_METHODS - pending), 71)
+        self.assertEqual(len(self.allowlist - INTERNAL_METHODS - EXCLUDED_METHODS - pending), 70)
         # A pending method never counts as an exclusion
         self.assertEqual((len(INTERNAL_METHODS), len(EXCLUDED_METHODS)), (4, 7))
         # Internal, excluded and pending methods are never named by a command, and every named method exists

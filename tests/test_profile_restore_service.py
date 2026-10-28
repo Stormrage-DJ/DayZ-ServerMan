@@ -135,12 +135,11 @@ class DirectRestoreTests(unittest.TestCase):
         self.assertEqual(config.read_bytes(), b"external edit")
 
     def test_replacement_whole_tree_and_bound_consumer_confirmation(self):
-        """Confirmed replacement deletes obsolete world files and retains a verified recovery copy."""
+        """Confirmed replacement deletes obsolete world files; its recovery copy is deleted after the commit."""
         owner = self.profiles.save(record().values, None)
         world = self.mission / "storage_7"
         (world / "players.db").write_bytes(b"newer world")
         (world / "obsolete.bin").write_bytes(b"must not survive replacement")
-        before = inventory(world)
         unrelated = inventory(self.mission / "storage_8")
         self.request["storage_policy"] = "replace_existing"
         parameters = self.parameters()
@@ -150,7 +149,8 @@ class DirectRestoreTests(unittest.TestCase):
         result = self.service.apply(parameters, "replace1", lambda *_: None)
         self.assertEqual((world / "players.db").read_bytes(), b"players\x00\xff")
         self.assertFalse((world / "obsolete.bin").exists())
-        self.assertEqual(inventory(Path(result["recovery_copy"])), before)
+        self.assertIsNone(result["recovery_copy"])
+        self.assertFalse((self.root / "recovery" / "replace1").exists())
         self.assertEqual(inventory(self.mission / "storage_8"), unrelated)
         self.assertEqual(self.profiles.read("main"), owner)
 
@@ -238,11 +238,11 @@ class DirectRestoreTests(unittest.TestCase):
         self.request["backup_id"] = backup["backup_id"]
         (self.mission / "storage_7").mkdir()
         (self.mission / "storage_7" / "current.bin").write_bytes(b"current")
-        before = inventory(self.mission / "storage_7")
         self.request["storage_policy"] = "replace_existing"
         parameters = self.parameters()
         parameters["overwrite_confirmation"] = {"preview_fingerprint": parameters["preview_fingerprint"], "affected_profile_ids": ["main"]}
         result = self.service.apply(parameters, "absentreplace", lambda *_: None)
         self.assertFalse((self.mission / "storage_7").exists())
-        self.assertEqual(inventory(Path(result["recovery_copy"])), before)
+        self.assertIsNone(result["recovery_copy"])
+        self.assertFalse((self.root / "recovery" / "absentreplace").exists())
         self.assertTrue((self.mission / "storage_8" / "unrelated.bin").exists())

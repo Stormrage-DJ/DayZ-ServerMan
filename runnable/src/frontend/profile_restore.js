@@ -153,7 +153,7 @@ async function reviewDirectRestore(backupId) {
   if (preview.storage_policy === "replace_existing") {
     const row = directNode("label", "", "notice notice-warning");
     const confirm = document.createElement("input"); confirm.type = "checkbox"; confirm.id = "direct-overwrite";
-    row.append(confirm, document.createTextNode(` Replace the selected world used by: ${preview.affected_profile_ids.join(", ")}. A verified recovery copy will be retained.`));
+    row.append(confirm, document.createTextNode(` Replace the selected world used by: ${preview.affected_profile_ids.join(", ")}. The current world is replaced, and its recovery copy is deleted when the restore succeeds.`));
     review.append(row);
     confirm.addEventListener("change", () => { document.getElementById("direct-apply").disabled = !confirm.checked; });
   } else document.getElementById("direct-apply").disabled = false;

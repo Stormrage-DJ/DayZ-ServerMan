@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ..domain.models import BACKUPS_TO_KEEP_RANGE, DEFAULT_BACKUPS_TO_KEEP
 from ..domain.profiles import ProfileInput, ProfileValidationError
 from .legacy_backup_index import LegacyBackupIndexError, parse_legacy_backup_fields
 from .paths import normalize_external_path
@@ -20,6 +21,8 @@ SETTINGS_FIELDS = frozenset((
 LEGACY_SETTINGS_FIELDS = SETTINGS_FIELDS.difference({
     "steam_account_name", "steam_authentication_mode",
 })
+# Current settings payloads add the number of backups kept per profile
+RETENTION_SETTINGS_FIELDS = SETTINGS_FIELDS | {"backups_to_keep"}
 # Settings fields that must hold normalized filesystem paths
 PATH_FIELDS = SETTINGS_FIELDS.difference({
     "last_validated_paths", "steam_account_name", "steam_authentication_mode",
@@ -105,8 +108,12 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 def _validate_settings(version: int, fields: dict[str, Any]) -> None:
     """Validate a settings payload and its normalized path evidence."""
     # Only schema version 1 with a known field set is accepted
-    if version != 1 or set(fields) not in (SETTINGS_FIELDS, LEGACY_SETTINGS_FIELDS):
+    if version != 1 or set(fields) not in (RETENTION_SETTINGS_FIELDS, SETTINGS_FIELDS, LEGACY_SETTINGS_FIELDS):
         raise MigrationPayloadIdentityError("settings payload fields are invalid")
+    kept = fields.get("backups_to_keep", DEFAULT_BACKUPS_TO_KEEP)
+    low, high = BACKUPS_TO_KEEP_RANGE
+    if not isinstance(kept, int) or isinstance(kept, bool) or not low <= kept <= high:
+        raise MigrationPayloadIdentityError("settings payload backup count is invalid")
     # Backfill missing Steam fields from legacy payloads
     fields.setdefault("steam_account_name", None)
     fields.setdefault("steam_authentication_mode", None)

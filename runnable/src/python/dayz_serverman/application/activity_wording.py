@@ -67,7 +67,6 @@ KIND_TEXTS: dict[str, tuple[str, str, str, str]] = {
     "APPLY_CONFIGURATION": ("Applying configuration changes", "Configuration changes applied.", "The configuration changes could not be applied.", "Configuration changes cancelled. Nothing was changed."),
     "APPLY_MISSION_CONFIGURATION": ("Applying tweaks", "Tweaks applied.", "The tweaks could not be applied.", "Tweaks cancelled. Nothing was changed."),
     "APPLY_MEDICAL_FEATURE": ("Applying medical loot setting", "Medical loot setting applied.", "The medical loot setting could not be applied.", "Medical loot change cancelled. Nothing was changed."),
-    "CONVERT_STARTER_LOADOUT": ("Converting starter loadout", "Starter loadout converted.", "The starter loadout could not be converted.", "Starter loadout conversion cancelled. Nothing was changed."),
     "SAVE_SETTINGS": ("Saving application locations", "Application locations saved.", "The application locations could not be saved.", "Saving application locations cancelled."),
     "SAVE_STEAM_SETTINGS": ("Saving Steam sign-in settings", "Steam sign-in settings saved.", "The Steam sign-in settings could not be saved.", "Saving Steam sign-in settings cancelled."),
     "AUTHENTICATE_STEAMCMD": ("Signing in to Steam", "Steam sign-in completed.", "Steam sign-in did not complete.", "Steam sign-in cancelled."),

@@ -24,6 +24,7 @@ from .settings import (
     SettingsValidationError,
     expand_location_roots,
     resolved_paths_for_selection,
+    validate_backups_to_keep,
 )
 from .settings_repair import SettingsRepair
 from .shutdown import ShutdownCoordinator
@@ -164,8 +165,8 @@ class ApplicationCoordinator:
 
     def save_settings(self, parameters: Mapping[str, Any]) -> dict[str, Any]:
         """Queue a settings save with a revision guard and path expansion."""
-        # Accept only the location roots and the expected revision
-        allowed = {*LOCATION_ROOT_FIELDS, "expected_revision"}
+        # Accept only the location roots, the optional backup count, and the expected revision
+        allowed = {*LOCATION_ROOT_FIELDS, "backups_to_keep", "expected_revision"}
         _exact_fields(parameters, allowed)
         # The revision guard must be a non-negative integer or null
         expected = parameters.get("expected_revision")
@@ -186,6 +187,13 @@ class ApplicationCoordinator:
                     f"{field} must be a string or null",
                 )
             values[field] = value
+        # A request without a backup count keeps the stored one
+        backups_to_keep = parameters.get("backups_to_keep")
+        if backups_to_keep is not None:
+            try:
+                validate_backups_to_keep(backups_to_keep)
+            except SettingsValidationError as error:
+                raise ApplicationCallError(ErrorCode.INVALID_REQUEST, str(error)) from error
         # Expand the selected roots into the concrete paths to persist
         expanded = expand_location_roots(values)
 
@@ -195,11 +203,12 @@ class ApplicationCoordinator:
             if self._repair is not None and getattr(context, "admitted_through_recovery_block", False):
                 return {**self._settings_value(self._repair.save(values, expected)), "restart_required": True}
             try:
-                # Carry the stored steam fields forward unchanged
+                # Carry the stored steam fields, and the backup count unless the request names one, forward
                 current = self._settings.load()
                 expanded.update(
                     steam_account_name=current.steam_account_name,
                     steam_authentication_mode=current.steam_authentication_mode,
+                    backups_to_keep=current.backups_to_keep if backups_to_keep is None else backups_to_keep,
                 )
                 saved = self._settings.save(SettingsInput(**expanded), expected)
             except RevisionConflict as error:

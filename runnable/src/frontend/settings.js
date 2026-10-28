@@ -16,6 +16,8 @@ const resolvedSettingsFields = Object.freeze([
 const pathFieldNames = Object.freeze([
   ...settingsFields.map(([role]) => role), "custom_backup_root",
 ]);
+// The number of verified backups kept per profile, saved with the folders (domain/models.py BACKUPS_TO_KEEP_RANGE).
+const BACKUPS_TO_KEEP_RANGE = Object.freeze([1, 100]);
 // Notice after a save that set the DayZ server folder while changes were blocked (QF-069).
 const SETTINGS_RESTART_TEXT = "Restart DayZ-ServerMan. It then checks the interrupted work in this DayZ server folder.";
 // Settings state: revisions, path values, diagnostics, and pending work.
@@ -71,7 +73,7 @@ function renderSettings() {
   // Compose the chosen folders, resolved paths, and backup choice.
   settingsFields.forEach((field) => fields.append(pathEditor(...field)));
   fields.append(resolvedLocations());
-  fields.append(backupEditor());
+  fields.append(backupEditor(), retentionEditor());
   const actions = settingsNode("div", "action-row");
   const dirty = window.ServerManTransitions.hasUnsavedChanges();
   const indicator = settingsNode(
@@ -79,9 +81,9 @@ function renderSettings() {
     dirty ? "Unsaved settings changes" : "Settings are unchanged",
   );
   // Offer saving only while something changed.
-  const save = settingsNode("button", "button button-primary", "Save locations");
+  const save = settingsNode("button", "button button-primary", "Save settings");
   save.type = "button"; save.id = "save-path-settings";
-  save.disabled = settingsState.busy || !dirty;
+  save.disabled = settingsState.busy || !dirty || !retentionValid();
   actions.append(indicator, window.ServerManBusy.mark(save));
   const feedback = settingsNode("div", "configuration-feedback");
   feedback.id = "settings-feedback";
@@ -104,6 +106,7 @@ function renderSettings() {
     button.addEventListener("click", () => chooseSettingsPath(button.dataset.settingsBrowse));
   });
   portableBackupListeners(panel);
+  retentionListener(panel);
   save.addEventListener("click", savePathSettings);
   openLegacy.addEventListener("click", openLegacyImport);
 }
@@ -120,6 +123,25 @@ function portableBackupListeners(panel) {
       window.ServerManTransitions.setDirty("settings-paths", true);
       renderSettings();
     });
+  });
+}
+
+// Report whether the number of backups to keep is a whole number in its range.
+function retentionValid() {
+  const value = settingsState.paths.backups_to_keep;
+  return Number.isInteger(value) && value >= BACKUPS_TO_KEEP_RANGE[0] && value <= BACKUPS_TO_KEEP_RANGE[1];
+}
+
+// Adopt a changed number of backups to keep and keep the focus on the field.
+function retentionListener(panel) {
+  const input = panel.querySelector("#settings-backups-to-keep");
+  input.addEventListener("change", () => {
+    settingsState.generation += 1;
+    // An empty or non-numeric entry stays invalid until corrected.
+    settingsState.paths.backups_to_keep = input.value.trim() === "" ? null : Number(input.value);
+    window.ServerManTransitions.setDirty("settings-paths", true);
+    renderSettings();
+    document.getElementById("settings-backups-to-keep").focus();
   });
 }
 
@@ -153,10 +175,11 @@ async function savePathSettings() {
   const generation = ++settingsState.generation;
   const context = settingsContext();
   // Omit the custom backup folder while the portable default is active.
-  const payload = Object.freeze(Object.fromEntries(
-    pathFieldNames.map((field) => [field, field === "custom_backup_root"
+  const payload = Object.freeze(Object.fromEntries([
+    ...pathFieldNames.map((field) => [field, field === "custom_backup_root"
       && settingsState.backupMode === "portable" ? null : settingsState.paths[field]]),
-  ));
+    ["backups_to_keep", settingsState.paths.backups_to_keep],
+  ]));
   settingsState.busy = true; renderSettings();
   const result = await window.pywebview.api.save_settings(payload, settingsState.revision);
   if (!settingsActive(context) || generation !== settingsState.generation) return;
@@ -166,7 +189,7 @@ async function savePathSettings() {
   }
   // Record the queued save; the operation bar shows its progress.
   settingsState.pending = Object.freeze({ operationId: result.value.operation_id, context });
-  settingsFeedback("Saving application locations.");
+  settingsFeedback("Saving settings.");
   window.ServerManOperationBar.adopt(result.value.operation_id);
 }
 
@@ -194,7 +217,7 @@ async function openSettings(snapshot = null) {
   // Adopt the revision and every managed path value.
   settingsState.revision = current.settings.revision;
   settingsState.paths = Object.fromEntries(
-    [...pathFieldNames, ...resolvedSettingsFields.map(([role]) => role)]
+    [...pathFieldNames, ...resolvedSettingsFields.map(([role]) => role), "backups_to_keep"]
       .map((field) => [field, current.settings[field]]),
   );
   // Remember the loaded values and derive the backup mode.

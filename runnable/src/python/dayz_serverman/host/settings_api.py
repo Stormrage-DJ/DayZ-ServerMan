@@ -12,8 +12,9 @@ SETTINGS_PATH_KINDS = {
     "steamcmd_root": "folder",
     "custom_backup_root": "folder",
 }
-# Fields accepted by the settings save contract
+# Fields accepted by the settings save contract: the folders and the number of backups kept per profile
 PATH_FIELDS = frozenset(SETTINGS_PATH_KINDS)
+SAVE_FIELDS = PATH_FIELDS | {"backups_to_keep"}
 
 
 class SettingsHostMethods:
@@ -59,7 +60,7 @@ class SettingsHostMethods:
     ) -> dict[str, Any]:
         """Persist the accepted settings fields with an expected revision."""
         # Accept only the exact settings payload shape
-        if not isinstance(settings, dict) or set(settings) != PATH_FIELDS:
+        if not isinstance(settings, dict) or set(settings) not in (PATH_FIELDS, SAVE_FIELDS):
             return self._settings_request_failure("Settings payload is invalid.")
         return self._invoke(
             "save_settings", {**settings, "expected_revision": expected_revision},

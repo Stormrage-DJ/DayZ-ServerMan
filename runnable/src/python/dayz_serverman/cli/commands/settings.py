@@ -8,7 +8,7 @@ from typing import Any
 from ...application.activity_wording import ROLE_LABELS
 from ..output import Block, CommandResult, Table, sentence
 from ..read_wording import path_status
-from ..settings_wording import BACKUP_CUSTOM, BACKUP_PORTABLE, folder_path
+from ..settings_wording import BACKUP_CUSTOM, BACKUP_PORTABLE, backups_kept, folder_path
 from .common import labelled
 
 # The locations of the Settings page, in its order
@@ -39,7 +39,8 @@ def location_blocks(snapshot: Mapping[str, Any]) -> list[Block]:
         stored = _location(role, settings, snapshot)
         rows.append((_capital(label), stored or NOT_SET, f"{status}. {explanation}"))
     table = Table(("Setting", "Location", "Check"), tuple(rows), value_columns=frozenset({1}))
-    return [table, sentence(BACKUP_CUSTOM if settings.get("custom_backup_root") else BACKUP_PORTABLE)]
+    return [table, sentence(BACKUP_CUSTOM if settings.get("custom_backup_root") else BACKUP_PORTABLE),
+            backups_kept(settings.get("backups_to_keep"))]
 
 
 def check_path(context: Any) -> CommandResult:

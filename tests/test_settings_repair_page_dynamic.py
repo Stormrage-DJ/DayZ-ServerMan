@@ -1,6 +1,6 @@
 """QF-069 (D19): the real Settings page in the blocked state sends a request that the repair save accepts.
 
-The operator only chooses the DayZ server folder and presses Save locations. The
+The operator only chooses the DayZ server folder and presses Save settings. The
 page runs in headless Edge on the real snapshot and the real folder selection of
 the host; the request that it sends goes through the real host method, the lane
 and the repair save. Every combination of the three "no DayZ server folder"

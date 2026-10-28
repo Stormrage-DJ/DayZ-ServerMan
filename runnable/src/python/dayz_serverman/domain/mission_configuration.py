@@ -143,8 +143,21 @@ def _spawnable(value: dict[str, Any], *, require_complete: bool = False) -> dict
 
 
 def _starter(value: dict[str, Any], *, require_complete: bool = False) -> dict[str, Any]:
-    """Return validated starter loadout item identifiers."""
-    if set(value) != {"items"} or not isinstance(value["items"], list):
+    """Return validated starter items and whether the mission's own starting items stay on.
+
+    An update names either or both; a complete state names both.
+    """
+    keys = set(value)
+    if not keys or not keys <= {"items", "mission_items"} or (require_complete and keys != {"items", "mission_items"}):
+        raise MissionValidationError("starter loadout requires items and the mission's own starting items")
+    result: dict[str, Any] = {}
+    if "mission_items" in value:
+        if not isinstance(value["mission_items"], bool):
+            raise MissionValidationError("the mission's own starting items must be on or off")
+        result["mission_items"] = value["mission_items"]
+    if "items" not in value:
+        return result
+    if not isinstance(value["items"], list):
         raise MissionValidationError("starter loadout requires an items array")
     items: list[str] = []
     # Identifiers must be unique ASCII item names
@@ -154,7 +167,7 @@ def _starter(value: dict[str, Any], *, require_complete: bool = False) -> dict[s
         if raw in items:
             raise MissionValidationError("starter items must not repeat")
         items.append(raw)
-    return {"items": items}
+    return {**result, "items": items}
 
 
 def _events(value: dict[str, Any], *, require_complete: bool = False) -> dict[str, Any]:

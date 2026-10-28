@@ -10,6 +10,7 @@ from ..bridge.facade import ApplicationCallError
 from ..domain.mission_configuration import MissionValidationError
 from ..domain.models import RecordUnavailable, RevisionConflict
 from ..repositories.atomic_file import ContentChangedError
+from ..repositories.mission_starter_layer import StarterLayoutError
 from ..repositories.configuration_common import ConfigurationFileError
 from ..repositories.profiles import ProfileNotFound, ProfileStorageError
 from .mission_configuration import MissionConfigurationService, MissionPathError
@@ -19,8 +20,6 @@ from .settings import SettingsValidationError
 
 # Bridge fields accepted by preview and apply calls
 FIELDS = {"profile_id", "target", "expected_profile_revision", "expected_settings_revision", "expected_digest", "updates"}
-# Bridge fields accepted by the starter-loadout conversion call
-CONVERSION_FIELDS = {"profile_id", "expected_profile_revision", "expected_settings_revision", "expected_digest"}
 
 
 class MissionConfigurationCoordinator:
@@ -35,8 +34,7 @@ class MissionConfigurationCoordinator:
         """Return the bridge handler table for mission configuration calls."""
         return {"load_mission_configuration": self.load,
                 "preview_mission_configuration": self.preview,
-                "apply_mission_configuration": self.apply,
-                "convert_starter_loadout": self.convert_starter}
+                "apply_mission_configuration": self.apply}
 
     def load(self, parameters: Mapping[str, Any]) -> dict[str, Any]:
         """Return one mission file with its persisted values."""
@@ -82,33 +80,6 @@ class MissionConfigurationCoordinator:
             ) from error
         return {"operation_id": record.operation_id, "state": record.state.value}
 
-    def convert_starter(self, parameters: Mapping[str, Any]) -> dict[str, str]:
-        """Queue a legacy starter-loadout conversion."""
-        _exact(parameters, CONVERSION_FIELDS)
-        # Bind only the four conversion proofs for the queued work
-        arguments = {name: parameters[name] for name in CONVERSION_FIELDS}
-
-        def work(context: Any) -> dict[str, Any]:
-            """Convert the starter loadout and map failures for the queue."""
-            # Convert every failure into a typed operation failure
-            try:
-                return self._service.convert_starter(**arguments, checkpoint=context.checkpoint)
-            except Exception as error:
-                call = _error(error)
-                raise OperationFailure(call.code.value, call.safe_message,
-                                       recovery_required=call.code == ErrorCode.RECOVERY_REQUIRED) from error
-        # Queue the conversion and surface a busy lane immediately
-        try:
-            record = self._operations.submit("CONVERT_STARTER_LOADOUT", work,
-                safe_points=frozenset(("loaded", "validated")),
-                log_fields={"profile_id": str(parameters["profile_id"])},
-                target_profile_id=str(parameters["profile_id"]))
-        except QueueUnavailable as error:
-            raise ApplicationCallError(
-                ErrorCode.MUTATION_CONFLICT, str(error), retryable=True,
-                details=error.details,
-            ) from error
-        return {"operation_id": record.operation_id, "state": record.state.value}
 
 
 def _exact(parameters: Mapping[str, Any], expected: set[str]) -> None:
@@ -143,6 +114,9 @@ def _error(error: Exception) -> ApplicationCallError:
         return ApplicationCallError(ErrorCode.NOT_FOUND, str(error))
     if isinstance(error, (RevisionConflict, ContentChangedError)):
         return ApplicationCallError(ErrorCode.REVISION_CONFLICT, str(error), retryable=True)
+    # A mission whose starting setup the layer cannot extend is no interrupted work: name the reason
+    if isinstance(error, StarterLayoutError):
+        return ApplicationCallError(ErrorCode.INVALID_REQUEST, str(error))
     if isinstance(error, ConfigurationFileError):
         return ApplicationCallError(ErrorCode.RECOVERY_REQUIRED, str(error))
     if isinstance(error, (RecordUnavailable, ProfileStorageError, SettingsValidationError)):

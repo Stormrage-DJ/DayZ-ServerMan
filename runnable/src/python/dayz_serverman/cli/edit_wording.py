@@ -24,10 +24,6 @@ MARKER_TAKEN_OVER = "The marked block of the file is taken over."
 SECRET_NOW, SECRET_NEW = "(hidden)", "(changed)"
 # `application/profile_deletion.py`: the reason of a profile deletion while the server is not stopped
 DELETE_NEEDS_STOP = "Stop the DayZ server before deleting a profile."
-# `application/mission_configuration.py`: the reason of a conversion when the starter loadout has no legacy block
-NOTHING_TO_CONVERT = " has no recognizable legacy starter loadout to convert."
-# The starter loadout file that the reason names, as stored data
-STARTER_FILE = "init.c"
 
 
 def invalid_value(key: str, text: str, expected: str) -> Line:
@@ -57,11 +53,6 @@ def create_values_missing(keys: Iterable[str]) -> Line:
 def changes_validated(count: int) -> Line:
     """Word the number of changes that the preview validated (the window's review notice)."""
     return sentence(f"{count} validated change(s).")
-
-
-def nothing_to_convert() -> Line:
-    """Word `tweaks convert-loadout` when the starter loadout has no legacy block (criterion 30)."""
-    return sentence(Value(STARTER_FILE), NOTHING_TO_CONVERT)
 
 
 def delete_needs_stop() -> Line:

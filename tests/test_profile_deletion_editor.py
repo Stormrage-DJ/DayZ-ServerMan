@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -147,6 +148,25 @@ class DeletionEditorTests(DeletionFixture):
         self.assertEqual(snapshot(self.area / "ledger"), ledger)
         self.assertFalse((self.area / "deleted").exists())
         self.assertNotIn("main", self.profiles.records)
+
+    def test_a_profile_whose_folder_is_gone_can_be_deleted(self) -> None:
+        """Without its configuration the instance ID is unknown: the record goes, every world storage stays."""
+        shutil.rmtree(self.root / "serverman" / "second")
+        write(self.root / SHARED / "storage_1" / "data" / "players.db", "world")
+        result = self.delete("second")
+        self.assertNotIn("second", self.profiles.records)
+        self.assertEqual((result["removed_generated_files"], result["removed_mission_storage_files"]), (0, 0))
+        self.assertTrue(result["preserved_shared_mission_storage"])
+        self.assertTrue((self.root / SHARED / "storage_1" / "data" / "players.db").is_file())
+
+    def test_a_profile_whose_folder_and_mission_are_gone_can_be_deleted(self) -> None:
+        """With the generated folder and the owned mission both deleted, only the record and its leftovers go."""
+        shutil.rmtree(self.root / "serverman" / "main")
+        shutil.rmtree(self.root / OWN)
+        result = self.delete("main")
+        self.assertNotIn("main", self.profiles.records)
+        self.assertEqual((result["removed_generated_files"], result["removed_owned_mission"]), (0, False))
+        self.assertTrue((self.root / SHARED).is_dir())
 
     def test_shared_mission_keeps_its_original_and_the_other_profiles_records(self) -> None:
         """A mission that another profile uses stays, and so do its original and the other association."""

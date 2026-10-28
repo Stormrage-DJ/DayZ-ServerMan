@@ -170,7 +170,6 @@ class ConfigSetTests(EditRoot):
             before = saved_state(self.manager, self.dayz)
             for arguments in (SET + ["--set", "maxPlayers=8"],
                               ["tweaks", "set", *PROFILE, "--target", "economy", "--set", "ZombieMaxCount=400"],
-                              ["tweaks", "convert-loadout", *PROFILE],
                               ["tweaks", "medical", "set", *PROFILE, "medical_loot_zones", "on"]):
                 with self.subTest(command=arguments[:2]):
                     code, stdout, _stderr = self.cli(*arguments, "--yes", "--json")

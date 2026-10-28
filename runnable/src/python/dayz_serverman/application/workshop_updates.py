@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Callable
@@ -21,7 +22,10 @@ from .operations.models import OperationFailure
 from .profiles import ProfileService
 from .settings import SettingsService
 from .steamcmd_guard import SteamCmdRunGuard, hold_steamcmd
-from .steamcmd_results import classify_output, terminal_outcomes
+from .download_budget import (
+    RETRY_PAUSE_SECONDS, download_budget, download_groups, session_repeats, smallest_first,
+)
+from .steamcmd_results import SessionEvidence, classify_output, classify_repeated, terminal_outcomes
 from .workshop_decision import FreshCheckSource, decide_sent_items
 from .workshop_authentication import (
     authenticate_interactive,
@@ -104,6 +108,8 @@ class WorkshopUpdateService:
             context.checkpoint("check_remote", 12)
             check = None if self._check_source is None else SizeRecordingCheck(self._check_source)
             sent = decide_sent_items(check, items, before, verifier)
+            # Smallest first, so one large item that runs out of time cannot hold back the small ones
+            sent = smallest_first(sent, {} if check is None else check.sizes)
             # Nothing to send: no SteamCMD run follows, so the guard is free again at once
             if not sent:
                 hold.release()
@@ -114,26 +120,15 @@ class WorkshopUpdateService:
             # Re-check revisions immediately before the launch or the local proofs
             self._resolve_context(request)
             run = None
+            sent_outcomes: dict[str, ItemOutcome] = {}
+            summary = None
             if sent:
                 context.checkpoint("download", 15)
-                # Build the SteamCMD update command for the sent items only
-                argv = build_update_argv(
-                    paths.executable,
-                    request.authentication_mode,
-                    request.account_name,
-                    sent,
-                )
-                revalidate_paths(self._preflight, paths)
-                # The observer samples the download folders until the run has ended
+                sizes = {} if check is None else check.sizes
+                # The observer samples the download folders until the last run has ended
                 with (self._download_observer(paths.workshop_root, progress, sent_ids)
                       if self._download_observer is not None else nullcontext()):
-                    run = self._steamcmd.run_update(
-                        paths,
-                        argv,
-                        lambda: context.cancellation_requested,
-                        lambda evidence: record_child(context, evidence),
-                        lambda: self._resolve_context(request),
-                    )
+                    run, sent_outcomes, summary = self._download(paths, request, context, sent, sizes)
             # An unproven exit poisons the guard before the update reports it
             hold.release(unproven=run is not None and not run.termination_confirmed)
         # With an empty sent set no process starts and no process evidence exists
@@ -149,16 +144,9 @@ class WorkshopUpdateService:
         self._resolve_context(request)
         if not cancelled:
             context.checkpoint("verify_items", 75)
-        # Classify sanitized output into ordered per-item evidence of the sent set
-        evidence = classify_output(run.lines if run is not None else (), sent)
-        # Items that were not sent start as verified current
+        # Items that were not sent start as verified current; the groups decided the sent ones
         outcomes = {item.workshop_id: ItemOutcome.VERIFIED_CURRENT for item in items}
-        # A failed process without classified evidence leaves every sent item unknown
-        if run is not None and (
-                run.exit_code != 0 and not cancelled and evidence.safe_summary is None):
-            outcomes.update({item.workshop_id: ItemOutcome.UNKNOWN_FAILED for item in sent})
-        elif run is not None:
-            outcomes.update(terminal_outcomes(sent, evidence, cancelled=cancelled))
+        outcomes.update(sent_outcomes)
         # Reuse stored content proofs; an item without a valid one is hashed in full
         proofs = self._content_proofs
         stored = {} if proofs is None else proofs.resolve(
@@ -200,8 +188,103 @@ class WorkshopUpdateService:
             download_gate(tuple(results)),
             process_id=run.process_id if run is not None else None,
             steamcmd_exit_code=run.exit_code if run is not None else None,
-            steamcmd_summary=evidence.safe_summary,
+            steamcmd_summary=summary,
         )
+
+    def _download(self, paths, request: UpdateRequest, context: OperationContext, sent: tuple,
+                  sizes: dict) -> tuple:
+        """Download the sent items in groups: one session for the small items, then one for each large item.
+
+        A large item could not finish in one SteamCMD attempt, so it gets its own session and does not hold
+        back the items that would finish. Each group is judged on its own. Returns the last run, the outcome
+        of every sent item, and the summary of the first failed group.
+        """
+        outcomes: dict[str, ItemOutcome] = {}
+        summary = None
+        run = None
+        first = paths
+        for group in download_groups(sent, sizes):
+            if run is not None:
+                # Every later session pauses first and takes a fresh fingerprint of the folders
+                if not self._pause(context):
+                    break
+                paths = self._fresh_paths(first)
+            run, group_outcomes, group_summary = self._download_group(paths, request, context, group, sizes, first)
+            outcomes.update(group_outcomes)
+            summary = summary or group_summary
+            if run.cancelled or not run.termination_confirmed:
+                break
+        # Items of groups that never started end as cancelled after a cancellation
+        if run is not None and (run.cancelled or context.cancellation_requested):
+            outcomes.update({item.workshop_id: ItemOutcome.CANCELLED for item in sent
+                             if item.workshop_id not in outcomes})
+        return run, outcomes, summary
+
+    def _download_group(self, paths, request: UpdateRequest, context: OperationContext, group: tuple,
+                        sizes: dict, first) -> tuple:
+        """Run SteamCMD for one group; run it again for an item it could not finish, while the budget lasts.
+
+        SteamCMD ends a Workshop download after its own fixed time, or loses its connection, and keeps the
+        files, so the next run continues the item. A large item repeats its download command within the
+        session, which continues the same download job. The budget is `download_budget` of the group sizes
+        from the first launch on. A failed sign-in, a missing entitlement or a content failure ends the group.
+        Returns the run, the outcome of every item of the group, and the summary of its failure.
+        """
+        deadline = time.monotonic() + download_budget(sizes.get(item.workshop_id) for item in group)
+        repeats = session_repeats(group, sizes)
+        finished: tuple = ()
+        remaining = group
+        while True:
+            # Build the SteamCMD update command for the items still to download
+            argv = build_update_argv(
+                paths.executable, request.authentication_mode, request.account_name, remaining,
+                repeats=repeats,
+            )
+            revalidate_paths(self._preflight, paths)
+            run = self._steamcmd.run_update(
+                paths,
+                argv,
+                lambda: context.cancellation_requested,
+                lambda evidence: record_child(context, evidence),
+                lambda: self._resolve_context(request),
+            )
+            evidence = (classify_output(run.lines, remaining) if repeats == 1
+                        else classify_repeated(run.lines, remaining[0]))
+            outcome = (run, _group_outcomes(run, group, finished, remaining, evidence, repeats),
+                       evidence.safe_summary)
+            if (run.cancelled or not run.termination_confirmed or time.monotonic() >= deadline
+                    or not _retryable(evidence)):
+                return outcome
+            # Every earlier item succeeded and the last one timed out or lost the connection
+            index = len(evidence.ordered) - 1
+            finished = (*finished, *evidence.ordered[:index])
+            remaining = remaining[index:]
+            if not self._pause(context):
+                return outcome
+            paths = self._fresh_paths(first)
+
+    def _pause(self, context: OperationContext) -> bool:
+        """Pause before the next SteamCMD session; return False when a cancellation arrived meanwhile."""
+        resume = time.monotonic() + RETRY_PAUSE_SECONDS
+        while time.monotonic() < resume:
+            if context.cancellation_requested:
+                return False
+            time.sleep(0.1)
+        return not context.cancellation_requested
+
+    def _fresh_paths(self, first):
+        """Fingerprint the folders again: a SteamCMD run changes the Workshop folder and Steam's download record.
+
+        The fresh check must still name the same folders as the first one.
+        """
+        paths = inspect_paths(self._preflight, self._settings.load())
+        if (paths.root, paths.executable, paths.workshop_root) != (first.root, first.executable,
+                                                                   first.workshop_root):
+            raise OperationFailure(
+                "STEAMCMD_PATH_CHANGED",
+                "SteamCMD or Workshop path identity changed. Reload settings and retry.",
+            )
+        return paths
 
     def _resolve_context(self, request: UpdateRequest):
         """Reload settings and profile, rejecting any drift from the request."""
@@ -217,3 +300,22 @@ class WorkshopUpdateService:
         if mode != request.authentication_mode or account != request.account_name:
             raise OperationFailure("REVISION_CONFLICT", "Steam authentication settings changed.")
         return settings, profile
+
+
+def _retryable(evidence: SessionEvidence) -> bool:
+    """Return whether every item but the last succeeded and the last one timed out or lost the connection."""
+    if evidence.invalid or not evidence.ordered or evidence.ordered[-1][1] != ItemOutcome.CONNECTION_FAILED:
+        return False
+    return all(outcome == ItemOutcome.VERIFIED_CURRENT for _item, outcome in evidence.ordered[:-1])
+
+
+def _group_outcomes(run, group: tuple, finished: tuple, remaining: tuple, evidence: SessionEvidence,
+                    repeats: int) -> dict[str, ItemOutcome]:
+    """Return the outcome of every item of one group from its earlier runs and its last run."""
+    # A failed process without classified evidence leaves every item of its last run unknown; a session with
+    # repeated commands can end with an error code after an earlier timeout, so there only no evidence counts
+    unclassified = evidence.safe_summary is None if repeats == 1 else not evidence.ordered
+    if run.exit_code != 0 and not run.cancelled and unclassified:
+        return {**dict(finished), **{item.workshop_id: ItemOutcome.UNKNOWN_FAILED for item in remaining}}
+    merged = SessionEvidence((*finished, *evidence.ordered), evidence.invalid, evidence.safe_summary)
+    return terminal_outcomes(group, merged, cancelled=run.cancelled)

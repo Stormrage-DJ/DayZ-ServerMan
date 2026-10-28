@@ -39,7 +39,7 @@ PROFILE_RESTORE_LABELS: dict[str, str] = {
 PROFILE_RESTORE_SENTENCE = "Restore creates the profile. Start it separately after checking readiness."
 EXECUTABLE_MISSING = "Server executable is missing. Install it before starting."
 REPLACE_WORLD_LEAD = "Replace the selected world used by:"
-REPLACE_WORLD_TAIL = "A verified recovery copy will be retained."
+REPLACE_WORLD_TAIL = "The current world is replaced, and its recovery copy is deleted when the restore succeeds."
 # The same file: the host status after a profile restore that succeeded
 PROFILE_RESTORED_CLEANUP = "Profile restored; recovery cleanup is pending."
 PROFILE_RESTORED = "Profile restored."
@@ -96,12 +96,6 @@ PROFILE_DELETE_LEAD = "Permanently delete "
 PROFILE_DELETE_BODY = (", including its generated configuration, runtime files, exclusive world storage, schedule, "
                        "and saved preferences. Existing backup archives will remain in the configured backup "
                        "destination.")
-# `frontend/tweaks_dialog.js`: the "Convert legacy starter loadout?" dialog; the line range and the item count
-# of the recognized block go between the parts of its first sentence
-STARTER_CONVERSION_TITLE = "Convert legacy starter loadout?"
-STARTER_CONVERSION_RANGE = ("The recognized block spans lines ", "-", " and contains ", " supported item(s).")
-STARTER_CONVERSION_BODY = ("Conversion adds DayZ-ServerMan ownership comments around that block. It does not "
-                           "replace its statements or reorder its items.")
 # `frontend/migration.js`: the legacy import's item titles and summaries, its source note and its dialog;
 # `{count}` and `{size}` stand where the window inserts the numbers
 MIGRATION_SETTINGS_TITLE = "DayZ installation settings"

@@ -74,17 +74,6 @@ def medical_review(feature: str, enabled: bool, state: Mapping[str, Any]) -> lis
             sentence(f"{field_label('medical', feature)}: {MEDICAL_STATES[enabled]}")]
 
 
-def conversion_review(loaded: Mapping[str, Any]) -> list[Block]:
-    """Return the window's "Convert legacy starter loadout?" dialog with the recognized block (criterion 30)."""
-    conversion = loaded.get("conversion") if isinstance(loaded.get("conversion"), Mapping) else {}
-    lead, dash, middle, tail = texts.STARTER_CONVERSION_RANGE
-    items = conversion.get("items") if isinstance(conversion.get("items"), list) else []
-    return [labelled("File", str(loaded.get("relative_path", ""))), sentence(texts.STARTER_CONVERSION_TITLE),
-            sentence(lead, Value(str(conversion.get("start_line"))), dash, Value(str(conversion.get("end_line"))),
-                     f"{middle}{len(items)}{tail}"),
-            sentence(texts.STARTER_CONVERSION_BODY)]
-
-
 def profile_delete_review(profile: Mapping[str, Any]) -> list[Block]:
     """Return the window's "Delete profile?" dialog with the profile's display name (8.2)."""
     return [sentence(texts.PROFILE_DELETE_TITLE),

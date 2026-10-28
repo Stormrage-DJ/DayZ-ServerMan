@@ -77,7 +77,6 @@ class HostApiTests(unittest.TestCase):
                 "load_mission_configuration",
                 "preview_mission_configuration",
                 "apply_mission_configuration",
-                "convert_starter_loadout",
                 "load_medical_features",
                 "preview_medical_feature",
                 "apply_medical_feature",
@@ -143,7 +142,6 @@ class HostApiTests(unittest.TestCase):
         api.load_mission_configuration("main", "economy")
         api.preview_mission_configuration("main", "economy", 3, 4, "a" * 64, {"ZombieMaxCount": 600})
         api.apply_mission_configuration("main", "economy", 3, 4, "a" * 64, {"ZombieMaxCount": 600})
-        api.convert_starter_loadout("main", 3, 4, "a" * 64)
         api.load_medical_features("main")
         api.preview_medical_feature("main", "medical_loot_zones", True, 3, 4, "a" * 64)
         api.apply_medical_feature("main", "medical_loot_zones", True, 3, 4, "a" * 64)
@@ -199,7 +197,6 @@ class HostApiTests(unittest.TestCase):
                 "load_mission_configuration",
                 "preview_mission_configuration",
                 "apply_mission_configuration",
-                "convert_starter_loadout",
                 "load_medical_features",
                 "preview_medical_feature",
                 "apply_medical_feature",

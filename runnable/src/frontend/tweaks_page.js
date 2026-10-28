@@ -72,6 +72,8 @@ function tweakOperationFinished(operation) {
     tweaksState.reviewed.delete(target);
     if (tweaksState.drafts.has(target)) tweakSettled.drafts.set(target, tweakCopy(tweaksState.drafts.get(target)));
     tweakSettled.failures.push(window.ServerManOperationBar?.pageResult(operation).text || "Tweak publication failed.");
+    // A failed gameplay file switch offers its button again
+    if (target === "server") tweaksState.enablingGameplay = false;
   }
   // Wait for the other applies of the page; one reload follows the last one.
   if (tweaksState.pending.size) { renderTweaksActions(); return true; }
@@ -81,7 +83,10 @@ function tweakOperationFinished(operation) {
     if (settled.failures.length) showTweakFeedback(settled.failures.join(" "), true);
     else if (settled.unchanged) showTweakFeedback(window.ServerManOperationMessages.medicalUnchanged);
   };
-  if (!settled.succeeded) { report(); renderTweaksActions(); return true; }
+  if (!settled.succeeded) {
+    if (target === "server") renderTweaks();
+    report(); renderTweaksActions(); return true;
+  }
   void loadTweaks().then(() => {
     settled.drafts.forEach((draft, key) => { if (tweaksState.drafts.has(key)) tweaksState.drafts.set(key, draft); });
     if (settled.drafts.size) { setTweakDirty(); renderTweaks(); }

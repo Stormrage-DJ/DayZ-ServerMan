@@ -221,79 +221,41 @@ class MissionWorkflowTests(unittest.TestCase):
         with self.assertRaises(Exception):
             self.service.load("main", "events")
 
-    def test_starter_preview_adopts_marker_once_and_apply_round_trips(self) -> None:
-        """Verify starter preview adopts the marker once and apply round-trips."""
+    def test_starter_items_and_mission_items_round_trip_through_preview_and_apply(self) -> None:
+        """Own items and the mission's own items off publish through the digest-bound apply and read back."""
         init = self.mission / "init.c"
         original = ('class CustomMission {\n\toverride void StartingEquipSetup(PlayerBase player, bool clothesChosen)\n'
-                    '\t{\n\t\tEntityAI itemEnt;\n\t\tCustomCall();\n\t}\n};\n')
+                    '\t{\n\t\tEntityAI itemEnt;\n'
+                    '\t\titemEnt = player.GetInventory().CreateInInventory( "WaterBottle" );\n'
+                    '\t\tCustomCall();\n\t}\n};\n')
         init.write_text(original, encoding="utf-8")
         loaded = self.service.load("main", "starter_loadout")
-        self.assertTrue(loaded["adoption_required"])
-        preview = self.service.preview("main", "starter_loadout", 3, 4, loaded["digest"],
-            {"items": ["WaterBottle", "TaloonBag_Green"]})
-        self.assertTrue(preview["adopts_marker_region"])
+        self.assertEqual(loaded["values"], {"items": [], "mission_items": True})
+        self.assertEqual(loaded["mission_starter"]["items"], [{"name": "WaterBottle", "count": 1}])
+        updates = {"items": ["Apple", "TaloonBag_Green"], "mission_items": False}
+        preview = self.service.preview("main", "starter_loadout", 3, 4, loaded["digest"], updates)
+        self.assertEqual(sorted(preview["changed_fields"]), ["items", "mission_items"])
         self.assertEqual(init.read_text(encoding="utf-8"), original)
-        # Apply the adopted loadout and verify the reload round trip
-        self.service.apply("main", "starter_loadout", 3, 4, loaded["digest"],
-            {"items": ["WaterBottle", "TaloonBag_Green"]}, lambda _phase, _progress: None)
+        self.service.apply("main", "starter_loadout", 3, 4, loaded["digest"], updates, lambda _phase, _progress: None)
         reloaded = self.service.load("main", "starter_loadout")
-        self.assertFalse(reloaded["adoption_required"])
-        self.assertEqual(reloaded["values"]["items"], ["WaterBottle", "TaloonBag_Green"])
+        self.assertEqual(reloaded["values"], {"items": ["Apple", "TaloonBag_Green"], "mission_items": False})
         self.assertIn("CustomCall();", init.read_text(encoding="utf-8"))
+        # Back to the mission alone gives the original file
+        self.service.apply("main", "starter_loadout", 3, 4, reloaded["digest"],
+                           {"items": [], "mission_items": True}, lambda _phase, _progress: None)
+        self.assertEqual(init.read_text(encoding="utf-8"), original)
 
-    def test_unmarked_legacy_starter_items_convert_through_digest_bound_operation(self) -> None:
-        """Verify unmarked legacy starter items convert through a digest-bound operation."""
+    def test_starter_apply_rejects_a_stale_digest(self) -> None:
+        """A file changed after the load is never overwritten."""
         init = self.mission / "init.c"
         init.write_text(
             'class CustomMission {\n\toverride void StartingEquipSetup(PlayerBase player, bool clothesChosen)\n'
-            '\t{\n\t\tEntityAI itemEnt;\n'
-            '\t\titemEnt = player.GetInventory().CreateInInventory( "WaterBottle" );\n'
-            '\t\titemEnt = player.GetInventory().CreateAttachment( "HipPack_Medical" );\n\t}\n};\n',
-            encoding="utf-8",
-        )
-        before = init.read_bytes()
-        operations = OperationManager(OperationStore(self.root / "legacy-error-operations"))
-        bridge = BridgeFacade(MissionConfigurationCoordinator(self.service, operations).handlers())
-        loaded_result = bridge.dispatch(_request("load_mission_configuration",
-            {"profile_id": "main", "target": "starter_loadout"}))
-        self.assertTrue(loaded_result["success"])
-        loaded = loaded_result["value"]
-        self.assertTrue(loaded["conversion_required"])
-        self.assertEqual(init.read_bytes(), before)
-        # Convert the legacy block through the queued bridge operation
-        result = bridge.dispatch(_request("convert_starter_loadout", {
-            "profile_id": "main", "expected_profile_revision": 3,
-            "expected_settings_revision": 4, "expected_digest": loaded["digest"],
-        }))
-        self.assertTrue(result["success"])
-        operation_id = result["value"]["operation_id"]
-        deadline = time.monotonic() + 2
-        while operations.get(operation_id).state not in {
-            OperationState.SUCCEEDED, OperationState.FAILED, OperationState.RECOVERY_REQUIRED,
-        } and time.monotonic() < deadline:
-            time.sleep(.01)
-        self.assertEqual(operations.get(operation_id).state, OperationState.SUCCEEDED)
-        converted = init.read_text(encoding="utf-8")
-        self.assertEqual(converted.count("WaterBottle"), 1)
-        self.assertEqual(converted.count("HipPack_Medical"), 1)
-        self.assertIn("DayZ-ServerMan starter loadout begin", converted)
-        operations.shutdown(2)
-
-    def test_legacy_starter_conversion_rejects_stale_digest(self) -> None:
-        """Verify legacy starter conversion rejects a stale digest."""
-        init = self.mission / "init.c"
-        init.write_text(
-            'class CustomMission {\n\toverride void StartingEquipSetup(PlayerBase player, bool clothesChosen)\n'
-            '\t{\n\t\tEntityAI itemEnt;\n'
-            '\t\titemEnt = player.GetInventory().CreateInInventory("Apple");\n\t}\n};\n',
-            encoding="utf-8",
-        )
+            '\t{\n\t\tEntityAI itemEnt;\n\t}\n};\n', encoding="utf-8")
         loaded = self.service.load("main", "starter_loadout")
-        # Change the file after load so conversion must refuse
         init.write_text(init.read_text(encoding="utf-8") + "// changed\n", encoding="utf-8")
         with self.assertRaises(ContentChangedError):
-            self.service.convert_starter("main", 3, 4, loaded["digest"],
-                                         lambda _phase, _progress: None)
+            self.service.apply("main", "starter_loadout", 3, 4, loaded["digest"], {"items": ["Apple"]},
+                               lambda _phase, _progress: None)
 
     def test_spawnable_preview_is_explicitly_lower_only(self) -> None:
         """Verify spawnable damage preview only lowers values."""

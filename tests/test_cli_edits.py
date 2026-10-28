@@ -126,17 +126,11 @@ class ReviewTests(unittest.TestCase):
         self.assertIn(edit_wording.MARKER_TAKEN_OVER, text)
 
     def test_dialog_copies_match_the_frontend(self) -> None:
-        """The delete and conversion dialog texts appear unchanged in their frontend files."""
+        """The delete dialog texts appear unchanged in their frontend file."""
         delete = (FRONTEND / "profile_delete.js").read_text(encoding="utf-8")
         self.assertIn(f'"{review_wording.PROFILE_DELETE_TITLE}"', delete)
         self.assertIn("`" + review_wording.PROFILE_DELETE_LEAD + "${profileState.selected.display_name}"
                       + review_wording.PROFILE_DELETE_BODY + "`", delete)
-        dialog = (FRONTEND / "tweaks_dialog.js").read_text(encoding="utf-8")
-        lead, dash, middle, tail = review_wording.STARTER_CONVERSION_RANGE
-        self.assertIn(f'"{review_wording.STARTER_CONVERSION_TITLE}"', dialog)
-        self.assertIn(f"`{lead}${{range.start_line}}{dash}${{range.end_line}}{middle}${{range.items.length}}{tail}`",
-                      dialog)
-        self.assertIn(f'"{review_wording.STARTER_CONVERSION_BODY}"', dialog)
 
     def test_sentences_and_reviews_follow_the_input_name_rules(self) -> None:
         """Criterion 18: keys only in the headed Key column, as text to type, or as an echo of the command line."""
@@ -147,15 +141,13 @@ class ReviewTests(unittest.TestCase):
         blocks: list = [edit_wording.invalid_value("maxPlayers", "many", edit_wording.EXPECTED_INTEGER),
                         edit_wording.no_changes(), edit_wording.profile_id_fixed(),
                         edit_wording.create_values_missing(["profile_id", "game_port"]),
-                        edit_wording.changes_validated(2), edit_wording.nothing_to_convert(),
+                        edit_wording.changes_validated(2),
                         edit_wording.delete_needs_stop(),
                         edit_wording.profile_created({"readiness": {"ready": True}}),
                         edit_wording.profile_created({"readiness": {"ready": True}, "reused_files": True}),
                         edit_wording.profile_created({"readiness": {"ready": False, "reasons": [
                             "Server executable is missing.", "bad_identifier here"]}}),
                         *edit_review.config_review("server", {"fields": FIELDS}, preview),
-                        *edit_review.conversion_review({"relative_path": "init.c", "conversion": {
-                            "start_line": 5, "end_line": 7, "items": ["A"]}}),
                         *edit_review.medical_review("medical_item_spawns", True, {"relative_path": "db"}),
                         *edit_review.profile_delete_review({"profile_id": "livonia-main", "display_name": "Livonia"})]
         checker.blocks(blocks)

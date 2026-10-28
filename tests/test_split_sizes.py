@@ -28,7 +28,7 @@ OWNER_METHODS_BEFORE_SPLIT = (
     "list_backups", "list_backup_catalog", "create_backup", "preview_restore", "apply_restore",
     "inspect_restore_recovery", "preview_profile_restore", "restore_profile_from_backup", "inspect_backup_archive",
     "load_configuration", "preview_configuration", "apply_configuration", "load_mission_configuration",
-    "preview_mission_configuration", "apply_mission_configuration", "convert_starter_loadout",
+    "preview_mission_configuration", "apply_mission_configuration",
     "load_medical_features", "preview_medical_feature", "apply_medical_feature", "select_legacy_root",
     "preview_legacy_import", "apply_legacy_import", "list_legacy_backup_references",
     "revalidate_legacy_backup_references", "get_server_status", "start_server", "stop_server", "restart_server",
@@ -47,8 +47,8 @@ MISSION_MAP_METHODS = ("load_mission_map", "save_mission_map_plan", "inspect_mis
 # The two layout methods of the map editor window follow the UI preference read in the preference handlers
 LAYOUT_METHODS = ("get_editor_layout", "save_editor_layout")
 OWNER_METHODS_WITH_MISSION_MAP = (
-    OWNER_METHODS_BEFORE_SPLIT[:15] + LAYOUT_METHODS + OWNER_METHODS_BEFORE_SPLIT[15:37] + MISSION_MAP_METHODS
-    + OWNER_METHODS_BEFORE_SPLIT[37:]
+    OWNER_METHODS_BEFORE_SPLIT[:15] + LAYOUT_METHODS + OWNER_METHODS_BEFORE_SPLIT[15:36] + MISSION_MAP_METHODS
+    + OWNER_METHODS_BEFORE_SPLIT[36:]
 )
 
 

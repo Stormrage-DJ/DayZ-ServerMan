@@ -1,8 +1,7 @@
-"""Task 6.1: `tweaks set`, `tweaks medical set` and `tweaks convert-loadout` (10.4; criteria 5, 6, 8, 27, 30).
+"""Task 6.1: `tweaks set` and `tweaks medical set` (10.4; criteria 5, 6, 8, 27).
 
 Real compositions over the edit fixture; each command run is its own session. The typing of
-`tweaks set` follows the JSON type of the current value (10.6). The conversion confirms like the
-window's dialog and refuses by state before the question (criterion 30).
+`tweaks set` follows the JSON type of the current value (10.6).
 """
 
 from __future__ import annotations
@@ -22,7 +21,7 @@ from dayz_serverman.application.medical_features import NO_ZONE_CHANGE  # noqa: 
 ECONOMY = ["tweaks", "set", *PROFILE, "--target", "economy"]
 SUPPLY = ["tweaks", "set", *PROFILE, "--target", "loot-supply"]
 ZONES = ["tweaks", "medical", "set", *PROFILE, "medical_loot_zones"]
-CONVERT = ["tweaks", "convert-loadout", *PROFILE]
+STARTER = ["tweaks", "set", *PROFILE, "--target", "starter-loadout"]
 
 
 class TweaksSetTests(EditRoot):
@@ -164,63 +163,22 @@ class MedicalSetTests(EditRoot):
         self.assertEqual(saved_state(self.manager, self.dayz), before)
 
 
-class ConvertLoadoutTests(EditRoot):
-    """`tweaks convert-loadout` confirms like the window's dialog (criterion 30)."""
+class StarterItemsTests(EditRoot):
+    """`tweaks set --target starter-loadout`: own items and the mission's own items, without touching its code."""
 
-    def test_convert_with_yes(self) -> None:
-        """--yes prints the dialog and converts the legacy block; the JSON review holds the request and the block."""
+    def test_mission_items_off_and_own_items(self) -> None:
+        """Turning the mission's items off keeps its code; on again restores the file."""
         self.add_legacy_starter()
-        code, stdout, stderr = self.cli(*CONVERT, "--yes", "--json")
-        value = json.loads(stdout)["value"]
+        init = self.mission / "init.c"
+        before = init.read_text(encoding="utf-8")
+        code, stdout, stderr = self.cli(*STARTER, "--set", "mission_items=off", "--yes", "--json")
         self.assertEqual(code, 0, stderr)
-        self.assertEqual(value["operations"][0]["kind"], "CONVERT_STARTER_LOADOUT")
-        self.assertEqual(len(value["review"]["conversion"]["items"]), 2)
-        self.assertIn("DayZ-ServerMan starter loadout begin", (self.mission / "init.c").read_text(encoding="utf-8"))
-
-    def test_review_question_and_refusals(self) -> None:
-        """Criterion 30: review text, decline, --json and no terminal without --yes exit 4 with nothing changed."""
-        self.add_legacy_starter()
-        before = saved_state(self.manager, self.dayz)
-        stdin = FakeTerminal("n\n")
-        code, stdout, stderr = self.cli(*CONVERT, stdin=stdin)
-        self.assertEqual((code, stdin.reads), (4, 1))
-        self.assertIn("Convert legacy starter loadout?", stdout)
-        self.assertIn("The recognized block spans lines 5-7 and contains 2 supported item(s).", stdout)
-        self.assertIn("Conversion adds DayZ-ServerMan ownership comments around that block.", stdout)
-        self.assertTrue(stderr.rstrip().endswith("Nothing was changed."))
-        code, stdout, _stderr = self.cli(*CONVERT, "--json")
-        error = json.loads(stdout)["error"]
-        self.assertEqual((code, error["code"], len(error["details"]["review"]["conversion"]["items"])),
-                         (4, "CONFIRMATION_REQUIRED", 2))
-        stdin = FakeTerminal("y\n", terminal=False)
-        code, _stdout, stderr = self.cli(*CONVERT, stdin=stdin)
-        self.assertEqual((code, stdin.reads), (4, 0))
-        self.assertIn("Run the command again with --yes.", stderr)
-        self.assertEqual(saved_state(self.manager, self.dayz), before)
-
-    def test_state_refusals_before_the_question(self) -> None:
-        """Nothing to convert exits 3 and a recovery block exits 6, with no question and nothing changed."""
-        # A converted starter loadout has no legacy block left
-        self.add_legacy_starter()
-        self.assertEqual(self.cli(*CONVERT, "--yes")[0], 0)
-        before = saved_state(self.manager, self.dayz)
-        for mode in ((), ("--json",), ("--yes",)):
-            with self.subTest(mode=mode):
-                stdin = FakeTerminal("y\n", terminal=False)
-                code, stdout, stderr = self.cli(*CONVERT, *mode, stdin=stdin)
-                self.assertEqual((code, stdin.reads), (3, 0), stderr)
-                self.assertNotIn("Convert legacy starter loadout?", stdout)
-                if mode == ("--json",):
-                    self.assertEqual(json.loads(stdout)["error"]["code"], "NOTHING_TO_CONVERT")
-                else:
-                    self.assertIn("init.c has no recognizable legacy starter loadout to convert.", stderr)
-        self.add_legacy_starter()
-        self.broken_journal()
-        before = saved_state(self.manager, self.dayz)
-        stdin = FakeTerminal("y\n", terminal=False)
-        code, stdout, _stderr = self.cli(*CONVERT, "--json", stdin=stdin)
-        self.assertEqual((code, json.loads(stdout)["error"]["code"], stdin.reads), (6, "RECOVERY_REQUIRED", 0))
-        self.assertEqual(saved_state(self.manager, self.dayz), before)
+        self.assertEqual(json.loads(stdout)["value"]["operations"][0]["kind"], "APPLY_MISSION_CONFIGURATION")
+        changed = init.read_text(encoding="utf-8")
+        self.assertIn("if ( false )", changed)
+        self.assertIn('CreateInInventory( "WaterBottle" )', changed)
+        self.assertEqual(self.cli(*STARTER, "--set", "mission_items=on", "--yes")[0], 0)
+        self.assertEqual(init.read_text(encoding="utf-8"), before)
 
 
 class StaleReviewTests(EditRoot):
@@ -254,12 +212,12 @@ class StaleReviewTests(EditRoot):
         self.stale([*SUPPLY, "--set", "supply_medical=200"], self.mission / "db" / "types.xml",
                    lambda text: text.replace("<nominal>40</nominal>", "<nominal>41</nominal>"))
 
-    def test_tweaks_convert_loadout(self) -> None:
-        """`tweaks convert-loadout` keeps the other editor's init.c and adds no ownership comments."""
+    def test_tweaks_set_starter_items(self) -> None:
+        """`tweaks set --target starter-loadout` keeps the other editor's init.c and adds no layer."""
         self.add_legacy_starter()
         init = self.mission / "init.c"
-        self.stale(CONVERT, init, lambda text: text + "// edited elsewhere\n")
-        self.assertNotIn("DayZ-ServerMan starter loadout begin", init.read_text(encoding="utf-8"))
+        self.stale([*STARTER, "--set", "mission_items=off"], init, lambda text: text + "// edited elsewhere\n")
+        self.assertNotIn("DayZ-ServerMan", init.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

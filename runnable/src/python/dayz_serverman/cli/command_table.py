@@ -151,9 +151,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
           confirm=Confirm.REVIEW, profile=NEEDS, prestep="presteps:tweak_keys",
           handler="commands.tweaks_write:tweaks_set"),
     # Criterion 30: the window's "Convert legacy starter loadout?" dialog
-    write("tweaks convert-loadout", 6, ("get_application_snapshot", "load_mission_configuration",
-                                        "convert_starter_loadout"), PROFILE,
-          confirm=Confirm.CONFIRM, profile=NEEDS, handler="commands.tweaks_write:convert_loadout"),
     read("tweaks medical show", 2, ("load_medical_features",), profile=DEFAULT,
          handler="commands.tweaks:medical_show"),
     write("tweaks medical set", 6, ("get_application_snapshot", "load_medical_features", "preview_medical_feature",
@@ -176,6 +173,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
           OptionSpec("steamcmd_root", Form.VALUE, "--steamcmd-root", metavar="PATH"),
           OptionSpec("backup_root", Form.VALUE, "--backup-root", group="backup", metavar="PATH"),
           OptionSpec("default_backup_root", Form.FLAG, "--default-backup-root", group="backup"),
+          OptionSpec("backups_to_keep", Form.INTEGER, "--backups-to-keep", minimum=1, maximum=100, metavar="N"),
           prestep="commands.settings_write:location_values", handler="commands.settings_write:settings_set"),
     read("migrate preview", 7, ("select_legacy_root", "preview_legacy_import"),
          OptionSpec("root", Form.POSITIONAL, metavar="ROOT"), handler="commands.migrate:preview"),

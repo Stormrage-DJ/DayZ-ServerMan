@@ -1,8 +1,8 @@
-"""`tweaks set`, `tweaks convert-loadout` and `tweaks medical set` (10.4; criteria 5, 6, 8, 19 and 30).
+"""`tweaks set` and `tweaks medical set` (10.4; criteria 5, 6, 8 and 19).
 
 Each command gates on the state it reads before any question (rule 5), shows the review that
-the Tweaks page shows (the preview, or the conversion dialog), asks or takes `--yes` (8.1), then
-submits exactly the reviewed request as one lane operation.
+the Tweaks page shows, asks or takes `--yes` (8.1), then submits exactly the reviewed request
+as one lane operation.
 """
 
 from __future__ import annotations
@@ -10,8 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from ..edit_review import conversion_review, medical_review, tweaks_review
-from ..edit_wording import nothing_to_convert
+from ..edit_review import medical_review, tweaks_review
 from ..exit_codes import REFUSED, USAGE
 from ..flow import run_operation, stop_if_interrupted
 from ..output import CliFailure, CommandResult
@@ -38,21 +37,6 @@ def tweaks_set(context: Any) -> CommandResult:
         preview)
     record = run_operation(context, "apply_mission_configuration", "APPLY_MISSION_CONFIGURATION", **request)
     return write_result(record, preview, written_lines(context, record))
-
-
-def convert_loadout(context: Any) -> CommandResult:
-    """Convert the legacy starter loadout after the window's "Convert legacy starter loadout?" dialog."""
-    loaded = _gate_and_load(context, STARTER)
-    # The window offers the conversion only for a legacy block: nothing to convert exits 3 (criterion 30)
-    if not loaded.get("conversion_required"):
-        raise CliFailure("NOTHING_TO_CONVERT", nothing_to_convert(), REFUSED)
-    request = {"profile_id": profile_id(context.profile), "expected_profile_revision": loaded.get("profile_revision"),
-               "expected_settings_revision": loaded.get("settings_revision"), "expected_digest": loaded.get("digest")}
-    # JSON review: the request that the dialog confirms, with the recognized block
-    review = {**request, "conversion": loaded.get("conversion")}
-    ask(context, [profile_line(context.profile), *conversion_review(loaded)], review)
-    record = run_operation(context, "convert_starter_loadout", "CONVERT_STARTER_LOADOUT", **request)
-    return write_result(record, review, written_lines(context, record))
 
 
 def medical_set(context: Any) -> CommandResult:
