@@ -18,7 +18,7 @@ EDITOR_STYLES = ("tokens.css", "controls.css", "styles.css", "map_editor.css", "
 EDITOR_SCRIPTS = (
     "operation_labels.js", "diagnostic_labels.js", "host_sentences.js", "operation_messages.js",
     "operation_results.js", "operation_failures.js", "busy_controls.js",
-    "map_editor_dom.js", "map_editor_icons.js", "map_editor_wording.js", "map_editor_bridge.js", "map_editor_layout.js",
+    "map_editor_dom.js", "map_editor_icons.js", "map_editor_load_words.js", "map_editor_wording.js", "map_editor_bridge.js", "map_editor_layout.js",
     "map_editor_toolbar.js", "map_editor_workspace_dom.js", "map_editor_workspace.js", "map_editor_workspace_resize.js", "map_editor_workspace_preferences.js", "map_editor_setup.js", "map_editor_report_rows.js", "map_editor_reports.js",
     "map_editor_coordinates.js", "map_editor_viewport.js", "map_editor_viewport_render.js",
     "map_editor_viewport_input.js", "map_editor_viewport_ui.js", "map_editor_bounds_plan.js",

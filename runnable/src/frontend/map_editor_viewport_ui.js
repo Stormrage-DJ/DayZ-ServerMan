@@ -62,10 +62,10 @@ function mapViewportUiInit() {
   mapViewportUiEnabled(false);
 }
 
-// Load only authoritative plan extents; missing plans do not borrow detected guesses.
+// Saved bounds take priority; validated mission dimensions also support viewing without a plan.
 function mapViewportUiLoad(value) {
   mapViewportUiState.cursor = null;
-  mapViewportUiState.view.setBounds(value?.plan?.terrain?.bounds);
+  mapViewportUiState.view.setBounds(value?.plan?.terrain?.bounds ?? value?.capabilities?.detected_bounds);
   mapViewportUiEnabled(Boolean(value));
   mapViewportUiDraw();
 }

@@ -50,7 +50,7 @@ class MissionMapEditorStaticTests(unittest.TestCase):
         self.assertEqual(EDITOR_SCRIPTS, ("operation_labels.js", "diagnostic_labels.js",
                          "host_sentences.js", "operation_messages.js", "operation_results.js",
                          "operation_failures.js", "busy_controls.js", "map_editor_dom.js", "map_editor_icons.js",
-                         "map_editor_wording.js", "map_editor_bridge.js", "map_editor_layout.js",
+                         "map_editor_load_words.js", "map_editor_wording.js", "map_editor_bridge.js", "map_editor_layout.js",
                          "map_editor_toolbar.js", "map_editor_workspace_dom.js", "map_editor_workspace.js", "map_editor_workspace_resize.js", "map_editor_workspace_preferences.js", "map_editor_setup.js", "map_editor_report_rows.js", "map_editor_reports.js",
                          "map_editor_coordinates.js", "map_editor_viewport.js", "map_editor_viewport_render.js",
                          "map_editor_viewport_input.js", "map_editor_viewport_ui.js", "map_editor_bounds_plan.js",
@@ -86,7 +86,8 @@ class MissionMapEditorStaticTests(unittest.TestCase):
 
     def test_editor_globals_and_top_level_names_are_unique_and_bounded(self) -> None:
         """Each editor file owns its accepted global and uses the map prefix."""
-        expected = {"map_editor_dom.js": "ServerManMapDom", "map_editor_wording.js": "ServerManMapWording",
+        expected = {"map_editor_dom.js": "ServerManMapDom", "map_editor_load_words.js": "ServerManMapLoadWords",
+                    "map_editor_wording.js": "ServerManMapWording",
                     "map_editor_bridge.js": "ServerManMapBridge", "map_editor_layout.js": "ServerManMapLayout",
                     "map_editor_coordinates.js": "ServerManMapCoordinates", "map_editor_viewport.js": "ServerManMapViewport",
                     "map_editor_viewport_render.js": "ServerManMapViewportRender",

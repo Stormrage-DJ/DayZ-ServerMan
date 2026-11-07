@@ -87,8 +87,10 @@ def _fill(content: bytearray, header: AreaFlagsHeader, first: int, end: int, mas
     In a 4-bit layer, an even cell index is the low nibble and an odd cell index is the high nibble (A69). The partner nibble of a partly covered byte keeps its baseline bits.
     """
     offset = header.value_offset
-    if header.value_bits == 8:
-        content[offset + first:offset + end] = bytes([mask]) * (end - first)
+    if header.value_bits >= 8:
+        # Whole-byte cells retain their native little-endian width.
+        width = header.value_bits // 8
+        content[offset + first * width:offset + end * width] = mask.to_bytes(width, "little") * (end - first)
         return
     if first % 2:
         position = offset + first // 2

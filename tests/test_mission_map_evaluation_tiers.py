@@ -9,7 +9,8 @@ import unittest
 from dayz_serverman.application.mission_map_evaluation import ObjectTierRead
 from dayz_serverman.domain.mission_map_evaluation_shapes import loot_shape
 from dayz_serverman.domain.mission_map_geometry import circle_covers, polygon_covers
-from dayz_serverman.domain.mission_map_terrain import tiers_of
+from dayz_serverman.domain.mission_map_terrain import TerrainCapabilities, ValueRows, tiers_of
+from tests.test_mission_map_terrain import areaflags_bytes, header_of
 from tests.mission_map_evaluation_support import finish, fixture
 from tests.test_mission_map_plan import circle, encounter, square
 
@@ -99,6 +100,21 @@ class SpanParityTests(unittest.TestCase):
         self.assertEqual(result["cell_count"], 42)
         self.assertEqual(result["cells"], "header")
         self.assertFalse(result["tier_writable"])
+
+    def test_word_sampling_preserves_high_tiers_after_lower_overrides(self) -> None:
+        """High inherited tiers stay in the union after a low-tier override claims earlier cells."""
+        plan, _, _ = fixture([{**square("higher", 0, 0, 400), "tier": "Tier1"},
+                              circle("target", 500, 500, 900)], bits=16)
+        cells = {(0, 0): 1, (7, 5): 256, (6, 5): 512}
+        data = areaflags_bytes(8, 6, 1000, 1000, 16, 16, cells)
+        header = header_of(data)
+        values = ValueRows(header, 0, 6, data[header.value_offset:])
+        flags = tuple(f"Tier{index}" for index in range(1, 10)) + ("Unique",)
+        capabilities = TerrainCapabilities("deerisle", header, flags)
+        result = finish(plan, capabilities, values, "target")["result"]
+        self.assertEqual(result["original_tiers"], ["Tier1", "Tier9", "Unique"])
+        self.assertEqual(result["effective_tiers"], result["original_tiers"])
+        self.assertEqual(result["cell_count"], 48)
 
     def test_empty_coverage_and_zero_original_flags(self) -> None:
         """Tiny valid zones with no covered centre return empty sets without failure."""

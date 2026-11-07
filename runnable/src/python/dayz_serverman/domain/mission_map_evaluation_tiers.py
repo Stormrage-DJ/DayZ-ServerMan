@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from copy import deepcopy
 from typing import Any
 
@@ -88,7 +88,7 @@ class TierSampling:
                 "tier_writable": self.writable, "plan_source": self.plan_source}
 
 
-def span_mask(row: bytes, spans: list[tuple[int, int]]) -> int:
+def span_mask(row: Sequence[int], spans: list[tuple[int, int]]) -> int:
     """Union set bits across exclusive-ended column spans without visiting duplicates."""
     mask = 0
     for start, end in spans:
@@ -104,6 +104,11 @@ def _boxes_meet(first: tuple[float, ...], second: tuple[float, ...]) -> bool:
 
 def layer_mask(values: ValueRows) -> int:
     """Bound inherited bits by the union of every original cell in the immutable layer."""
+    if values.header.value_bits == 16:
+        # Union each byte position separately to preserve high tier bits.
+        low = span_mask(values.data[0::2], [(0, len(values.data) // 2)])
+        high = span_mask(values.data[1::2], [(0, len(values.data) // 2)])
+        return low | high << 8
     raw = 0
     for value in set(values.data):
         raw |= value

@@ -27,8 +27,9 @@ def areaflags_bytes(columns: int, rows: int, width: int, height: int, usage_bits
     layer = bytearray(-(-columns * rows * value_bits // 8))
     for (column, row), value in (cells or {}).items():
         index = row * columns + column
-        if value_bits == 8:
-            layer[index] = value
+        if value_bits >= 8:
+            cell_width = value_bits // 8
+            layer[index * cell_width:(index + 1) * cell_width] = value.to_bytes(cell_width, "little")
         else:
             layer[index // 2] |= value << 4 * (index % 2)
     return struct.pack("<5I", columns, rows, width, height, usage_bits) + usage + struct.pack("<I", value_bits) + layer
@@ -46,7 +47,7 @@ class HeaderTests(unittest.TestCase):
 
     def test_four_and_eight_value_bits_pass_the_size_formula(self) -> None:
         """24 + C·R·(usage + value bits) / 8 holds for both installed widths."""
-        for usage_bits, value_bits in ((16, 4), (32, 8), (32, 4)):
+        for usage_bits, value_bits in ((16, 4), (32, 8), (32, 4), (16, 16)):
             with self.subTest(value_bits=value_bits, usage_bits=usage_bits):
                 data = areaflags_bytes(8, 4, 40, 20, usage_bits, value_bits)
                 header = header_of(data)
@@ -67,7 +68,7 @@ class HeaderTests(unittest.TestCase):
         """Other value-bit widths, empty grids, odd usage widths and short files give tier_header_invalid."""
         cases = {
             "two value bits": areaflags_bytes(8, 4, 40, 20, 16, 2),
-            "sixteen value bits": areaflags_bytes(8, 4, 40, 20, 16, 16),
+            "thirty-two value bits": areaflags_bytes(8, 4, 40, 20, 16, 32),
             "no columns": struct.pack("<5I", 0, 4, 40, 20, 16) + struct.pack("<I", 4),
             "no world": areaflags_bytes(8, 4, 0, 20, 16, 4),
             "usage not in bytes": struct.pack("<5I", 3, 1, 40, 20, 4) + b"\0\0" + struct.pack("<I", 4) + b"\0\0",
@@ -140,6 +141,17 @@ class ValueRowsTests(unittest.TestCase):
                         expected = bytes(cells[(i, j)] for i in range(columns))
                         self.assertEqual(part.row(j), expected)
                         self.assertEqual([part.value(i, j) for i in range(columns)], list(expected))
+
+    def test_word_cells_preserve_high_bits_and_partial_odd_rows(self) -> None:
+        """Word cells keep byte order and high bits when a read starts after an odd-width row."""
+        selected = (0, 1, 256, 513, 32768, 65535)
+        cells = {(i, j): selected[(i + j) % len(selected)] for i in range(5) for j in range(4)}
+        part = self.rows(5, 4, 16, cells, 1, 2)
+        for row in (1, 2):
+            expected = [cells[(column, row)] for column in range(5)]
+            self.assertEqual(list(part.row(row)), expected)
+            self.assertEqual([part.value(column, row) for column in range(5)], expected)
+        self.assertEqual(part.data[:4], b"\x01\x00\x00\x01")
 
     def test_reads_outside_the_rows_are_refused(self) -> None:
         """A row outside the read range, a column outside the grid and an empty range raise IndexError."""

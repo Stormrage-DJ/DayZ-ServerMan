@@ -540,10 +540,15 @@ The editor shows coordinates as X and Z in metres. A switch selects Grid,
 Native or Both. On a map of 20,480 m, grid (5,5) is native (10,240, 10,240).
 Zoom and pan never change a stored shape.
 
-The editor shows the detected terrain bounds for you to confirm. If detection
-fails, enter the bounds by hand. An unconfirmed state stays visible, and Apply
-refuses it. If you change confirmed bounds while shapes exist, the editor asks
-for a review of the placements first.
+The editor automatically uses detected terrain bounds to show the map grid
+and original loot tiers, even before you create a plan. DeerIsle's 16-bit tier
+map is supported, including Tier9 and Unique. Opening or closing this view
+does not save a plan or change mission files.
+
+Map setup prefills detected bounds. Confirm them when you want to create an
+editing plan. If detection fails, enter the bounds by hand. Saved plan bounds
+take priority over detection. Apply refuses unconfirmed bounds. If you change
+confirmed bounds while shapes exist, the editor asks for a placement review.
 
 ### Map image
 

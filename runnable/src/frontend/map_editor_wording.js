@@ -83,8 +83,7 @@ const mapToolNames = Object.freeze({select: "Select", circle: "Circle", polygon:
 window.ServerManMapWording = Object.freeze({
   // Status of the case copy with an editable plan (Product Owner 2026-10-17 13:41:00 in evidence 10.31)
   adoptCopy: "Adoption is needed: this mission is a copy of another mission path. Adopt the mission to continue.",
-  loading: "Loading map plan", loaded: "Map plan loaded", unsaved: "Not saved yet",
-  boundsRequired: "No map plan yet. Enter and confirm the mission bounds before editing.",
+  ...window.ServerManMapLoadWords,
   failed: "The map plan could not be loaded.", closing: "Closing", unknownTerrain: "Unknown terrain", invalidAnswer: mapInvalidAnswer,
   unavailable: "Not available", noTool: "No tool active", yes: "Yes", no: "No",
   propertiesUnavailable: "Property editing is not available yet.",

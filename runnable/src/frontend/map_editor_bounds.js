@@ -79,7 +79,7 @@ async function mapBoundsSubmit(bounds, source, previous) {
 // savable: valid values that a manual bounds save can still submit; review: valid values that need the placement review.
 function mapBoundsTyped() {
   const state = mapBoundsState, helpers = window.ServerManMapBoundsPlan, current = state.current?.();
-  const saved = current?.plan?.terrain?.bounds ?? null, fields = {};
+  const saved = current?.plan?.terrain?.bounds ?? current?.capabilities?.detected_bounds ?? null, fields = {};
   for (const name of helpers.fields) {
     // The check reads the text only; it never marks a field invalid
     fields[name] = {value: document.getElementById(`map-bounds-${name}`).value, setAttribute: () => {}};
@@ -136,7 +136,7 @@ async function mapBoundsReviewHistory(before, after) {
   return choice === "accept";
 }
 
-// Display exact loaded/detected values; no confirmation or save occurs during load.
+// Prefill exact saved or detected values; loading never confirms bounds or saves a plan.
 function mapBoundsLoad(value) {
   const state = mapBoundsState, words = window.ServerManMapWording;
   state.value = value;
@@ -144,7 +144,7 @@ function mapBoundsLoad(value) {
   // A load replaces the state that a held or recorded failure described
   state.held = null;
   state.failure = null;
-  const bounds = value?.plan?.terrain?.bounds;
+  const bounds = value?.plan?.terrain?.bounds ?? value?.capabilities?.detected_bounds;
   for (const name of window.ServerManMapBoundsPlan.fields) {
     const field = document.getElementById(`map-bounds-${name}`);
     field.value = bounds && Number.isFinite(bounds[name]) ? String(bounds[name]) : "";
@@ -157,7 +157,8 @@ function mapBoundsLoad(value) {
   document.getElementById("map-bounds-detection").textContent = detected ?
     `${words.boundsDetected}: ${measurements}` : words.boundsNoDetection;
   document.getElementById("map-bounds-confirmation").textContent =
-    value?.plan?.terrain?.bounds_confirmed ? words.boundsConfirmed : words.boundsUnconfirmed;
+    value?.plan?.terrain?.bounds_confirmed ? words.boundsConfirmed :
+      (!value?.plan && detected ? words.boundsViewing : words.boundsUnconfirmed);
   document.getElementById("map-bounds-error").textContent = "";
   if (value && value.capabilities?.terrain_id === null &&
       (!value.plan || value.plan.terrain.terrain_id === window.ServerManMapBoundsPlan.terrainId(value))) {

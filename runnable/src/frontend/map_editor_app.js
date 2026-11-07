@@ -73,7 +73,9 @@ function mapLoadStatus(value) {
   // Backend details include stale-record reload guidance that must stay visible.
   // ADOPT-6: the plan stays editable after a restore, and the status still names adoption
   const status = value.read_only || value.read_only_reason === "adoption_required" ? words.readOnly(value.read_only_reason) :
-    value.adoption?.case === "copy" ? words.adoptCopy : (!value.plan ? words.boundsRequired : (value.state === "MISSING" ? words.unsaved : words.loaded));
+    value.adoption?.case === "copy" ? words.adoptCopy : (!value.plan ?
+      (value.capabilities?.detected_bounds ? words.viewingDetected : words.boundsRequired) :
+      (value.state === "MISSING" ? words.unsaved : words.loaded));
   const detail = words.detail(value);
   return detail ? `${status} ${detail}` : status;
 }

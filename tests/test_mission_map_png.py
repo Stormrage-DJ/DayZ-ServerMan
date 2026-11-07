@@ -95,6 +95,18 @@ class TierPngTests(unittest.TestCase):
             raw = zlib.decompress(dict(chunks(encoded))[b"IDAT"])
             self.assertEqual([raw[1] & 7, raw[3] & 7], [0, 0])
 
+    def test_word_tiers_and_unassigned_keep_both_bytes(self) -> None:
+        """High tier flags and unnamed bits remain assigned; odd scan-line padding stays transparent."""
+        cells = {(0, 0): 256, (1, 0): 513, (2, 0): 1, (4, 1): 32768}
+        rows = rows_of(5, 2, 16, cells)
+        self.assertEqual(pixels(tier_png(rows, 256)), [[0, 0, 0, 0, 0], [1, 0, 0, 0, 0]])
+        self.assertEqual(pixels(tier_png(rows, 512)), [[0, 0, 0, 0, 0], [0, 1, 0, 0, 0]])
+        self.assertEqual(pixels(tier_png(rows, 257)), [[0, 0, 0, 0, 0], [1, 1, 1, 0, 0]])
+        encoded = tier_png(rows, None)
+        self.assertEqual(pixels(encoded), [[1, 1, 1, 1, 0], [0, 0, 0, 1, 1]])
+        raw = zlib.decompress(dict(chunks(encoded))[b"IDAT"])
+        self.assertEqual([raw[1] & 7, raw[3] & 7], [0, 0])
+
     def test_partial_rows_are_refused(self) -> None:
         """A tier image always covers the whole value layer."""
         data = areaflags_bytes(2, 3, 10, 10, 8, 8)

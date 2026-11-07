@@ -102,6 +102,20 @@ class CellBindingTests(unittest.TestCase):
         self.assertEqual(changed, [offset + 3])
         self.assertEqual(candidate.content[offset + 3], 0x1B)
 
+    def test_word_write_preserves_neighbours_and_usage(self) -> None:
+        """A high-tier write changes one little-endian word and keeps every other byte."""
+        data = baseline(16, fill=65535)
+        before = rows_of(data)
+        x, z = before.header.cell_grid().centre(0, 1)
+        flags = tuple(f"Tier{index}" for index in range(1, 17))
+        plan = plan_of([tiered(circle("c", x, z, 1.0), "Tier9")])
+        candidate = build_areaflags_candidate(data, plan, flags)
+        position = before.header.value_offset + 7 * 2
+        self.assertEqual(candidate.content[position:position + 2], b"\x00\x01")
+        self.assertEqual(candidate.content[:position], data[:position])
+        self.assertEqual(candidate.content[position + 2:], data[position + 2:])
+        self.assertEqual(rows_of(candidate.content).value(0, 1), 256)
+
     def test_lowest_z_cell_is_the_first_value_byte(self) -> None:
         """An 8-bit write at the cell of the lowest X and Z changes the first value byte only (row j = 0 first)."""
         data = baseline(8, columns=8, fill=0)
@@ -200,7 +214,7 @@ class RefusalTests(unittest.TestCase):
         zone = [tiered(circle("c"), "Tier2")]
         data = baseline(4)
         self.assertEqual(self.reason(data + b"\0", plan_of(zone)), TIER_HEADER_INVALID)
-        self.assertEqual(self.reason(areaflags_bytes(7, 6, 1000, 1000, 16, 16), plan_of(zone)), TIER_HEADER_INVALID)
+        self.assertEqual(self.reason(areaflags_bytes(7, 6, 1000, 1000, 16, 32), plan_of(zone)), TIER_HEADER_INVALID)
         self.assertEqual(self.reason(data, plan_of(zone, bounds_confirmed=False)), BOUNDS_NOT_CONFIRMED)
         wide = {"x_min": 0.0, "z_min": 0.0, "width": 2000.0, "height": 1000.0}
         self.assertEqual(self.reason(data, plan_of(zone, bounds=wide)), BOUNDS_DIFFER_FROM_HEADER)

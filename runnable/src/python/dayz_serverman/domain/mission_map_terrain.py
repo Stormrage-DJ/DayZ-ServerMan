@@ -15,7 +15,7 @@ FIXED_HEADER = struct.Struct("<5I")
 # One little-endian uint32 value-bit count between the usage layer and the value layer
 VALUE_BITS_FIELD = struct.Struct("<I")
 # Value-bit widths that the installed missions use and that the cell reader decodes
-SUPPORTED_VALUE_BITS = frozenset((4, 8))
+SUPPORTED_VALUE_BITS = frozenset((4, 8, 16))
 # Widest usage layer cell; the editor never writes the usage layer, it only skips it
 MAX_USAGE_BITS = 32
 
@@ -112,7 +112,7 @@ def build_header(fields: tuple[int, int, int, int, int], value_bits_field: bytes
         raise TerrainDataError(TIER_HEADER_INVALID, "areaflags.map ends before its value-bit count")
     (value_bits,) = VALUE_BITS_FIELD.unpack_from(value_bits_field)
     if value_bits not in SUPPORTED_VALUE_BITS:
-        raise TerrainDataError(TIER_HEADER_INVALID, f"areaflags.map has {value_bits} value bits; 4 or 8 are supported")
+        raise TerrainDataError(TIER_HEADER_INVALID, f"areaflags.map has {value_bits} value bits; 4, 8 or 16 are supported")
     header = AreaFlagsHeader(*fields, value_bits)
     # The value layer must also fill whole bytes, else no size can match
     if header.columns * header.rows * value_bits % 8 or header.expected_size != file_size:
@@ -166,10 +166,13 @@ class ValueRows:
     # File bytes from row_byte_span; a 4-bit row of an odd column count starts in the middle of a byte
     data: bytes
 
-    def row(self, row: int) -> bytes:
-        """Return one row as one byte per cell, for columns i = 0 to C − 1."""
+    def row(self, row: int) -> Sequence[int]:
+        """Return one row of cell values, for columns i = 0 to C − 1."""
         start = self._cell_offset(0, row)
         columns = self.header.columns
+        # Wider cells use little-endian words and retain all tier bits.
+        if self.header.value_bits == 16:
+            return struct.unpack_from(f"<{columns}H", self.data, start * 2)
         if self.header.value_bits == 8:
             return self.data[start:start + columns]
         # Split the covering bytes into nibbles, low nibble first, then cut the row out
@@ -184,6 +187,9 @@ class ValueRows:
         if not 0 <= column < self.header.columns:
             raise IndexError("the column is outside the cell grid")
         index = self._cell_offset(column, row)
+        # Wider cells use little-endian words and retain all tier bits.
+        if self.header.value_bits == 16:
+            return struct.unpack_from("<H", self.data, index * 2)[0]
         if self.header.value_bits == 8:
             return self.data[index]
         return self.data[index // 2] >> 4 * (index % 2) & 0x0F
