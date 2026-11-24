@@ -12,6 +12,9 @@ from .adapters.windows.graceful_stop import WindowsGracefulStop
 from .adapters.windows.launcher import WindowsProcessLauncher
 from .adapters.windows.mutex import WindowsInstallationMutex
 from .adapters.windows.processes import WindowsProcessInventory
+from .application.crash_restart import CrashRestartMonitor
+from .application.crash_restart_flow import CrashRestartFlow
+from .application.crash_restart_lane import CrashRestartLane
 from .application.external_players import ExternalServerMatch
 from .application.online_players import OnlinePlayersCoordinator
 from .application.preferences import PreferenceCoordinator
@@ -19,8 +22,11 @@ from .application.operations.manager import OperationManager
 from .application.profiles import ProfileService
 from .application.server_readiness import ReadinessLifecycleService
 from .application.settings import SettingsService
+from .application.shutdown import ShutdownCoordinator
 from .application.lifecycle import ServerLifecycleService
+from .application.lifecycle_coordinator import LifecycleCoordinator
 from .application.lifecycle_ownership import LaunchOwnership
+from .observability.structured_log import StructuredLogger
 from .repositories.json_store import VersionedJsonRepository
 from .repositories.lifecycle_state import LifecycleStateRepository
 
@@ -73,6 +79,18 @@ def build_lifecycle(
         ownership=ownership,
     )
     return lifecycle, mutex
+
+
+def build_crash_restart(
+    lifecycle: ReadinessLifecycleService, ownership: LaunchOwnership, profiles: ProfileService,
+    settings: SettingsService, lifecycle_coordinator: LifecycleCoordinator,
+    operations: OperationManager, shutdown: ShutdownCoordinator, logger: StructuredLogger,
+) -> CrashRestartMonitor:
+    """Build the crash restart monitor; the window starts it and the shutdown drain stops it."""
+    lane = CrashRestartLane(profiles, settings, lifecycle_coordinator, operations)
+    monitor = CrashRestartMonitor(CrashRestartFlow(lifecycle, ownership, lane, logger))
+    shutdown.add_drain_listener(monitor.stop)
+    return monitor
 
 
 def _selected_profile(preferences: PreferenceCoordinator | None) -> Callable[[], str | None]:

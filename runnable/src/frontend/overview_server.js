@@ -64,7 +64,8 @@ function overviewControlStates(context) {
   return {
     start: first(blocked, context.configured ? "" : overviewBlockReasons.setup, noProfile,
       state === "STOPPED" ? "" : stateReason),
-    stop: first(blocked, running, lock),
+    // A pending crash restart is cancelled with Stop, so the button is on during the wait
+    stop: first(blocked, window.ServerManOverviewCrashNotice.pending(context.status) ? "" : running, lock),
     restart: first(blocked, noProfile, running, lock),
   };
 }
@@ -148,6 +149,8 @@ function renderOverviewServer(context) {
   // A problem of the process is always visible, in warning colour, beside the detail sentence.
   const metas = overviewNode("div", "overview-metas");
   metas.append(overviewNode("p", "overview-meta overview-state-detail", stateDetail));
+  const crash = window.ServerManOverviewCrashNotice.notice(status);
+  if (crash) metas.append(crash);
   if (status.diagnostic_code) {
     metas.append(overviewNode("p", "overview-meta overview-process-note",
       window.ServerManDiagnosticLabels.process(status.diagnostic_code)));

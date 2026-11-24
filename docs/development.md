@@ -276,17 +276,19 @@ steps above. When you add a method, change these pins in the same change.
 Every method of the allowlist has exactly one disposition in
 `cli/registry.py`. `tests/test_cli_parity_matrix.py` checks this:
 
-- 71 methods are used by a command.
+- 70 methods are used by a command.
 - 4 methods are in `INTERNAL_METHODS`: `get_operation`,
   `read_operation_events`, `request_operation_cancellation` and
   `request_shutdown`. Only the command-line machinery calls them.
-- 5 methods are in `EXCLUSION_REASONS`, each with a reason in words:
+- 8 methods are in `EXCLUSION_REASONS`, each with a reason in words:
   - `save_selected_profile`: window selection memory;
+  - the two layout methods of the map editor window: window layout memory;
   - the two legacy backup reference methods: never called by the window, so
     not parity;
   - the two display reads of the map editor. They carry only display-only
     rendering data. Inspect and the capability read give the same facts as
-    text.
+    text;
+  - `cancel_crash_restart`: owner window only. The crash restart monitor runs in the window, so a command has nothing to cancel.
 - 0 methods are pending. `PENDING_TASK_10` is empty, and the test pins
   `EXPECTED_PENDING_TASK_10` as empty too. `test_parity_gap_list_is_closed`
   also requires that no command is pending and that each of the 12 `map`

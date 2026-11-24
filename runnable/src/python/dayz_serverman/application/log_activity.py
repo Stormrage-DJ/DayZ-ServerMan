@@ -46,7 +46,26 @@ EVENT_TEXTS: dict[str, str] = {
     "server_build.scheduler_failed": f"The automatic server build check failed. {DETAIL_HINT}",
     "operation_lane.recovery_block_bypass": (
         "Saving the DayZ server folder was allowed while changes are blocked. Other changes stay blocked."),
+    "server_crash.restart_pending": (
+        "The server stopped unexpectedly. DayZ-ServerMan will start it again in about 10 seconds."),
+    "server_crash.restarted": "The server stopped unexpectedly. DayZ-ServerMan started it again.",
+    "server_crash.tick_failed": (
+        f"The check for a stopped server failed, so DayZ-ServerMan may not restart it. {DETAIL_HINT}"),
 }
+# Sentence for each reason with which the crash restart gives up; an unknown or missing reason gets the fallback
+CRASH_GIVE_UP_TEXTS: dict[str, str] = {
+    "guard_reached": (
+        "The server stopped again after 3 automatic restarts in 10 minutes. "
+        "DayZ-ServerMan leaves it stopped."),
+    "ended_before_ready": (
+        "The restarted server stopped before it was ready. DayZ-ServerMan does not try again. "
+        "The server stays stopped."),
+    "start_failed": (
+        f"DayZ-ServerMan could not start the server again. The server stays stopped. {DETAIL_HINT}"),
+}
+CRASH_GIVE_UP_FALLBACK = (
+    "DayZ-ServerMan did not start the server again after it stopped unexpectedly. "
+    f"The server stays stopped. {DETAIL_HINT}")
 # Wording of a scheduled action inside a sentence
 SCHEDULE_ACTIONS: dict[str, str] = {"stop": "save and stop", "restart": "save and restart"}
 # What each bridge request does, as the subject of "… failed: <reason>"
@@ -78,6 +97,7 @@ METHOD_TEXTS: dict[str, str] = {
     "save_backup_after_stop": "Saving the backup-after-stop setting",
     "get_lifecycle_schedule": "Reading the daily schedule", "save_lifecycle_schedule": "Saving the daily schedule",
     "start_server": "Starting the server", "stop_server": "Stopping the server", "restart_server": "Restarting the server",
+    "cancel_crash_restart": "Stopping the automatic restart",
     "get_server_status": "Reading the server state", "get_online_players": "Reading the players online",
     "open_map_editor": "Opening the map editor",
     "get_application_snapshot": "Loading the workspace",
@@ -141,6 +161,8 @@ def _event_sentence(event: str, fields: Mapping[str, Any], level: str) -> str | 
     if event == "server_build.check_completed":
         return ("The server build check finished." if fields.get("outcome") == "OK"
                 else f"The server build check could not finish. {DETAIL_HINT}")
+    if event == "server_crash.gave_up":
+        return CRASH_GIVE_UP_TEXTS.get(str(fields.get("reason")), CRASH_GIVE_UP_FALLBACK)
     if event in EVENT_TEXTS:
         return EVENT_TEXTS[event]
     # An event that this view does not know is named only when it is a warning or an error

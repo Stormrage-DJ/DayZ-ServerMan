@@ -55,6 +55,10 @@ class OperationalHostMethods:
             "backup_after_stop": backup_after_stop,
         })
 
+    def cancel_crash_restart(self) -> dict[str, Any]:
+        """Cancel a pending automatic restart of the server; the answer tells whether one was pending."""
+        return self._invoke("cancel_crash_restart", {})
+
     def read_log(self, source: object, maximum_lines: object = 300) -> dict[str, Any]:
         """Read the tail of a server or manager log."""
         return self._invoke("read_log", {

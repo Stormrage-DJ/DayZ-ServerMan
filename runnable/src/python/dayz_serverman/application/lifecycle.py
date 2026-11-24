@@ -100,6 +100,11 @@ class ServerLifecycleService:
         # Fall back to a full reconciling status check
         return self.status().state == ServerState.STOPPED
 
+    def release_handle(self, handle_token: str | None) -> None:
+        """Release the retained process handle of a dead launch; an adopted launch has none."""
+        if handle_token is not None:
+            self._launcher.release_handle(handle_token)
+
     def start(
         self,
         profile_id: str,
@@ -243,6 +248,8 @@ class ServerLifecycleService:
         # Every check passed: the stop request is the first change (6.5 marker)
         if before_change is not None:
             before_change()
+        # Record the manager stop intent before the request, so a crash check never sees this stop as a crash
+        self._ownership.mark_stop_intent(evidence.launch_token)
         self._ownership.set_phase(ServerState.STOPPING)
         try:
             self._stopper.request_stop(evidence)

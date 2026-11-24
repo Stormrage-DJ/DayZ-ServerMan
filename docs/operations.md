@@ -174,6 +174,7 @@ the action to run. A command starts no scheduler. The manager does not create
 a Windows service or Task Scheduler entry. For an unattended restart without
 the window, a Task Scheduler entry can run
 `DayZ-ServerMan.py --cli server restart --profile <id> --yes`.
+The same is true for the [automatic restart after a crash](#automatic-restart-after-a-crash).
 
 The scheduler follows these rules:
 
@@ -187,6 +188,125 @@ The scheduler follows these rules:
 
 Schedule state is stored in `data/schedules.json`. The Overview page shows the
 next local run time and the latest result.
+
+## Automatic restart after a crash
+
+DayZ-ServerMan starts a server again when it ends without a stop from the
+manager. It needs no setting. It works the same for every profile.
+
+### What counts as a crash
+
+A crash has three parts:
+
+- The manager started the server, or the open window adopted it with proven
+  ownership (see [Server ownership record](#server-ownership-record)).
+- The server reached **Ready** in this run.
+- The server then ended without a stop that the manager recorded.
+
+An exit outside the manager counts the same. Examples are Task Manager, an
+in-game `#shutdown`, and a clean exit.
+
+### The wait and the restart
+
+The window reads the server state every 5 seconds. After it sees the end, it
+waits about 10 seconds, so that DayZ can release its ports and files. The
+restart begins 10 to 15 seconds after the server ended.
+
+During the wait, the Overview shows **Stopped** with a note. **Start server**
+and **Save & Stop** work. Either one cancels the pending restart.
+**Save & Stop** keeps the server stopped. **Save & Restart** is not offered
+while the server is stopped, as always.
+
+The restart is a normal start on the operation lane. The log field
+`trigger=crash_restart` marks it. A recovery block refuses it, as it refuses
+**Start server**. The restart uses the profile and the settings at that moment,
+not those of the ended launch.
+
+### What is never restarted
+
+- A stop by the operator: **Save & Stop** and **Save & Restart**.
+- A scheduled stop or restart.
+- An update or other maintenance by the manager, such as **Update & restart**
+  and a backup after a stop.
+- Closing the manager.
+- A server that ends before its first **Ready**, also a server that crashes
+  while it starts.
+- A server that hangs but keeps running.
+- A server that is already stopped when the manager opens.
+
+### Only the open window restarts
+
+Only the open DayZ-ServerMan window restarts a server. A command never does.
+With no manager window open, nothing restarts a server. When the window opens,
+it restarts a running server that it adopts, if that server crashes later.
+
+A second window on the same manager folder is refused by the instance lock.
+So one crash gives one restart.
+
+### The loop guard
+
+After 3 automatic restarts within 10 minutes, the next crash is not restarted.
+The server stays stopped. Manager activity and the Overview say so and say why.
+
+A restarted server that ends before **Ready** is not tried again. The guard
+counts live in memory. They start again at zero when the manager closes.
+
+### What you see
+
+Manager activity has one fixed sentence for each event:
+
+- Restart pending: "The server stopped unexpectedly. DayZ-ServerMan will start
+  it again in about 10 seconds."
+- Restarted: "The server stopped unexpectedly. DayZ-ServerMan started it
+  again."
+- Guard reached: "The server stopped again after 3 automatic restarts in 10
+  minutes. DayZ-ServerMan leaves it stopped."
+- Ended before ready: "The restarted server stopped before it was ready.
+  DayZ-ServerMan does not try again. The server stays stopped."
+- Start failed: "DayZ-ServerMan could not start the server again. The server
+  stays stopped. Details are in Manager diagnostics."
+- Any other reason: "DayZ-ServerMan did not start the server again after it
+  stopped unexpectedly. The server stays stopped. Details are in Manager
+  diagnostics."
+- The check failed: "The check for a stopped server failed, so DayZ-ServerMan
+  may not restart it. Details are in Manager diagnostics."
+
+The Overview shows a note, with no popup and no sound:
+
+- While the restart waits: "The server stopped unexpectedly. DayZ-ServerMan
+  will start it again in about 10 seconds. Press Save & Stop to cancel."
+- After the restart, while the restarted server runs: "The server stopped
+  unexpectedly and DayZ-ServerMan started it again."
+- After the guard, while the server is stopped: "The server stopped again after
+  3 automatic restarts in 10 minutes. DayZ-ServerMan leaves it stopped."
+- After a restart that ended before **Ready**: "The restarted server stopped
+  before it was ready. DayZ-ServerMan does not try again."
+- After a start that failed: "DayZ-ServerMan could not start the server again."
+- Any other reason: "DayZ-ServerMan did not start the server again after it
+  stopped unexpectedly."
+
+A later start or stop hides an old note.
+
+### The status field
+
+The bridge method `get_server_status` has the new field `auto_restart`. It is
+`null`, or an object with `kind`, `reason` and `at`.
+
+- `kind` is `pending`, `restarted` or `gave_up`.
+- `reason` is `null`, or for `gave_up` one of `guard_reached`,
+  `ended_before_ready` and `start_failed`.
+- `at` is the UTC time of the event, in ISO 8601 with milliseconds.
+
+The contract version stays 1. A reader that does not know the field ignores
+it. A read-only session reads `null`. The window cancels a pending restart with
+the owner method `cancel_crash_restart`. A command cannot cancel a restart.
+
+### Known limits
+
+- A READY state that no status read sees does not arm the restart. The window
+  reads the state every 5 seconds.
+- A restarted server that ends before **Ready** is not tried again.
+- The guard counts are not saved.
 
 ## Update checks
 
@@ -1042,7 +1162,7 @@ Each run opens one session:
 - **Owner session**: the window, and each command that changes something. It
   takes the instance lock first. Then it builds the application and runs the
   startup recoveries, as the window always did. Only an owner session writes
-  files.
+  files. Only the window restarts a crashed server (see [Automatic restart after a crash](#automatic-restart-after-a-crash)).
 - **Observer session**: each command that only reads. It takes no instance
   lock and runs no recovery. It writes nothing in the manager folder, also no
   log line, and it does not create missing folders. It reports an unfinished
@@ -1186,7 +1306,7 @@ finished or undone, then exits.
 - `data/operations/` contains durable operation state and recovery journals.
 
 The Logs page opens on **Manager activity**, which summarizes completed
-operations, warnings, errors, and scheduled actions. **Manager diagnostics**
+operations, warnings, errors, scheduled actions, and automatic restarts. **Manager diagnostics**
 exposes raw structured records when troubleshooting requires them. The page
 checks periodically, replaces content only after the selected log changes, and
 preserves the reader's scroll position unless the view already follows the end.

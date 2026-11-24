@@ -84,8 +84,14 @@ class SplitSizeTests(unittest.TestCase):
         composition = build_composition(Path(temporary.name) / "Manager")
         self.addCleanup(composition.operations.shutdown, 2)
         # Compare the set, then the order of the handler table that the facade copied
-        self.assertEqual(composition.bridge.allowed_methods, frozenset(OWNER_METHODS_WITH_MISSION_MAP))
-        self.assertEqual(tuple(composition.bridge._handlers), OWNER_METHODS_WITH_MISSION_MAP)
+        self.assertEqual(
+            composition.bridge.allowed_methods, frozenset(OWNER_METHODS_WITH_MISSION_MAP) | {"cancel_crash_restart"},
+        )
+        # The crash restart cancel method sits directly after restart_server; the rest keeps its order
+        handlers = tuple(composition.bridge._handlers)
+        position = handlers.index("restart_server") + 1
+        self.assertEqual(handlers[position], "cancel_crash_restart")
+        self.assertEqual(handlers[:position] + handlers[position + 1:], OWNER_METHODS_WITH_MISSION_MAP)
         # "Update & restart" is still wrapped by the running-profile check of the composition root
         handler = composition.bridge._handlers["apply_mods_and_restart"]
         self.assertEqual(handler.__qualname__, "for_running_profile.<locals>.checked")

@@ -111,6 +111,7 @@ class BridgeContractTests(unittest.TestCase):
                 "start_server",
                 "stop_server",
                 "restart_server",
+                "cancel_crash_restart",
                 "load_configuration",
                 "preview_configuration",
                 "apply_configuration",

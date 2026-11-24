@@ -40,6 +40,8 @@ OWNER_ONLY_METHODS = frozenset((
     "apply_mission_configuration", "preview_medical_feature",
     "apply_medical_feature", "apply_legacy_import", "list_legacy_backup_references",
     "revalidate_legacy_backup_references", "start_server", "stop_server", "restart_server",
+    # Cancels a pending crash restart; the monitor runs in the owner window only
+    "cancel_crash_restart",
     "save_lifecycle_schedule", "save_steam_settings", "authenticate_steamcmd", "update_workshop_items",
     "preview_mod_publication", "publish_mods_and_keys", "apply_mods_and_restart", "verify_mod_files",
     "request_update_check", "save_mission_map_plan",

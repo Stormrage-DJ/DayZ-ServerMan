@@ -3,7 +3,7 @@
 Choose the guide that matches your task:
 
 - [Operator guide](../runnable/README.md) — install, configure, and use the movable application
-- [Operations guide](./operations.md) — lifecycle, update checks, mods, server build, backups, restores, portability, and recovery behavior
+- [Operations guide](./operations.md) — lifecycle, automatic restart after a crash, update checks, mods, server build, backups, restores, portability, and recovery behavior
 - [Development guide](./development.md) — repository layout, local setup, source boundaries, frontend rules, tests, and CI
 - [Release notes](./release-notes.md) — what each release adds, and its known limitations
 
@@ -16,6 +16,7 @@ Frequent topics:
   **Update & restart**
 - [Online players](./operations.md#online-players) and the privacy rule for
   player names
+- [Automatic restart after a crash](./operations.md#automatic-restart-after-a-crash) and what it never restarts
 - [Recovery blocks](./operations.md#recovery-blocks) and what to do for each
 - [Existing-profile restoration](./operations.md#restore-an-existing-profile)
   or [deleted-profile reconstruction](./operations.md#recreate-a-deleted-profile)

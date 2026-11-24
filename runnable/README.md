@@ -15,6 +15,7 @@ Do not copy only the starter or `src` directory.
   - [Players online](#players-online)
 - [Stop, restart, and automatic backup](#stop-restart-and-automatic-backup)
 - [Daily schedule](#daily-schedule)
+- [Automatic restart after a crash](#automatic-restart-after-a-crash)
 - [Mods and updates](#mods-and-updates)
   - [Steam sign-in](#steam-sign-in)
   - [Mod states](#mod-states)
@@ -337,6 +338,40 @@ DayZ-ServerMan window is open. Commands do not run schedules (see
 [Restart without the window](#restart-without-the-window)). If the manager starts after today's scheduled time, it
 waits until the next day. If the selected server is not running under this
 manager at the scheduled time, the manager records a skipped run.
+
+## Automatic restart after a crash
+
+DayZ-ServerMan starts a server again when it ends without a stop from the
+manager. It needs no setting and works for every profile.
+
+- The server must have reached **Ready** in this run.
+- An exit outside the manager counts too. Examples are Task Manager and an
+  in-game `#shutdown`.
+- The restart begins about 10 to 15 seconds after the server ended.
+- During the wait, the Overview shows **Stopped** and a note. Select
+  **Save & Stop** to cancel the restart. The server stays stopped.
+- **Start server** also cancels the pending restart. **Save & Restart** is not
+  offered while the server is stopped, as always.
+- Only the open window restarts a server. A command never does. With no window
+  open, nothing restarts a server.
+
+The manager never restarts these:
+
+- a server that you stopped, restarted or scheduled to stop;
+- a server that the manager stopped for an update or other maintenance;
+- a server that ends before its first **Ready**, or that hangs but keeps
+  running;
+- a server that is already stopped when the window opens.
+
+After 3 automatic restarts within 10 minutes, the next crash is not restarted.
+The server stays stopped. **Manager activity** on the Logs page and the
+Overview say so. The count is not saved. It starts again when you close the
+window. A restarted server that ends before **Ready** is not tried again.
+
+An automatic restart uses the profile and the settings at that moment, not
+those of the ended launch. The operations guide (`docs/operations.md`,
+**Automatic restart after a crash**) has the exact sentences and the
+`auto_restart` field of the server status.
 
 ## Mods and updates
 
@@ -1402,6 +1437,7 @@ changes. Try the step again.
   true for a server that the window started.
 - After a crash of the window, the next DayZ-ServerMan finds the running server
   and can control it.
+- Only the window restarts a server after a crash. With no window open, nothing restarts it.
 - The window can close while a server runs that it did not start itself.
 - A server that you started by hand stays **Running outside the manager**.
   `server stop` and `server restart` refuse it with exit code 3.
@@ -1435,7 +1471,8 @@ DayZ-ServerMan finishes or undoes the interrupted work.
 ### Restart without the window
 
 Daily schedules run only while the window is open. The command line has no
-background mode. For a restart without the window, let Windows Task Scheduler
+background mode. The same is true for the automatic restart after a crash.
+For a restart without the window, let Windows Task Scheduler
 run:
 
 ```text

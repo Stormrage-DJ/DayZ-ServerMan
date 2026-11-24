@@ -98,6 +98,7 @@ class HostApiTests(unittest.TestCase):
                 "start_server",
                 "stop_server",
                 "restart_server",
+                "cancel_crash_restart",
                 "read_log",
             },
         )
@@ -135,6 +136,7 @@ class HostApiTests(unittest.TestCase):
         api.start_server("main", 3, 4)
         api.stop_server("main", 3, 4, True)
         api.restart_server("main", 3, 4, False)
+        api.cancel_crash_restart()
         api.read_log("manager", 250)
         api.load_configuration("main", "server")
         api.preview_configuration("main", "server", 3, 4, "a" * 64, None, {"maxPlayers": 80})
@@ -190,6 +192,7 @@ class HostApiTests(unittest.TestCase):
                 "start_server",
                 "stop_server",
                 "restart_server",
+                "cancel_crash_restart",
                 "read_log",
                 "load_configuration",
                 "preview_configuration",

@@ -89,6 +89,10 @@ class ReadinessLifecycleService:
         """Delegate shutdown safety to the authoritative lifecycle service."""
         return self._lifecycle.shutdown_safe()
 
+    def release_handle(self, handle_token: str | None) -> None:
+        """Delegate the release of a dead launch's handle to the lifecycle service."""
+        self._lifecycle.release_handle(handle_token)
+
     def start(
         self, profile_id: str, expected_profile_revision: int,
         expected_settings_revision: int, *, before_change: Callable[[], None] | None = None,
@@ -164,6 +168,9 @@ class ReadinessLifecycleService:
         # A query response proves discovery only; players also need a loaded mission
         if query_ready and mission_ready:
             readiness = ServerReadiness.READY
+            launch = self._ownership.current() if self._ownership is not None else None
+            if launch is not None and launch.pid == snapshot.process_id:
+                self._ownership.mark_ready(launch.launch_token)
         elif self._clock() - target.started_at < STARTUP_GRACE_SECONDS:
             readiness = ServerReadiness.STARTING
         else:

@@ -105,6 +105,8 @@ def compose_shell_html(frontend_root: Path) -> str:
     overview_dialog_script = (root / "overview_lifecycle_dialog.js").read_text(encoding="utf-8")
     overview_script = (root / "overview.js").read_text(encoding="utf-8")
     overview_script += "\n" + (root / "overview_server.js").read_text(encoding="utf-8")
+    # The crash restart notice of the server strip and the cancel of a pending restart
+    overview_script += "\n" + (root / "overview_crash_notice.js").read_text(encoding="utf-8")
     # The player count of the server strip and the content of its names panel (D18)
     overview_script += "\n" + (root / "overview_players.js").read_text(encoding="utf-8")
     overview_script += "\n" + (root / "overview_players_panel.js").read_text(encoding="utf-8")

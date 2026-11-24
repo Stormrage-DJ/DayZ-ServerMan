@@ -12,6 +12,7 @@ from .application.backup_coordinator import BackupCoordinator
 from .application.backups import BackupService
 from .application.configuration import ConfigurationService
 from .application.configuration_coordinator import ConfigurationCoordinator
+from .application.crash_restart import CrashRestartMonitor
 from .application.lifecycle_coordinator import LifecycleCoordinator
 from .application.server_readiness import ReadinessLifecycleService
 from .application.logs import LogQueryService
@@ -107,4 +108,5 @@ class ApplicationComposition:
     coordinator: ApplicationCoordinator
     bridge: BridgeFacade
     host_bridge: BridgeFacade
+    crash_restart: CrashRestartMonitor
     mode: SessionMode = SessionMode.OWNER

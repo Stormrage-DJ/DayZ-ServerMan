@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import threading
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ..domain.lifecycle import LaunchEvidence, ServerState, canonical_process_path
@@ -15,6 +16,15 @@ from ..repositories.server_ownership import (
     ServerOwnershipRepository,
 )
 from .lifecycle_ports import ProcessInventoryPort
+
+
+@dataclass(frozen=True)
+class LaunchFacts:
+    """Facts of one launch, keyed by its launch token."""
+
+    stop_intent: bool
+    ready: bool
+    end_claimed: bool
 
 
 class LaunchOwnership:
@@ -46,6 +56,8 @@ class LaunchOwnership:
         # Readiness hint of the next launch: (profile id, query port, RPT folder)
         self._staged: tuple[str, int | None, str | None] | None = None
         self._unreadable_logged = False
+        # Facts per launch token; kept in memory only and never pruned
+        self._facts: dict[str, LaunchFacts] = {}
 
     def current(self) -> LaunchEvidence | None:
         """Return the current launch evidence under the lock."""
@@ -72,6 +84,34 @@ class LaunchOwnership:
         """Return the transition phase and the launch evidence read together under one lock."""
         with self._lock:
             return self._phase, self._evidence
+
+    def mark_stop_intent(self, launch_token: str) -> None:
+        """Record that the manager stops this launch on purpose."""
+        with self._lock:
+            self._facts[launch_token] = replace(self._facts_of(launch_token), stop_intent=True)
+
+    def mark_ready(self, launch_token: str) -> None:
+        """Record that a status read showed this launch as READY."""
+        with self._lock:
+            self._facts[launch_token] = replace(self._facts_of(launch_token), ready=True)
+
+    def claim_end(self, launch_token: str) -> bool:
+        """Claim the end of a READY launch without stop intent; True only once per token."""
+        with self._lock:
+            facts = self._facts_of(launch_token)
+            if not facts.ready or facts.stop_intent or facts.end_claimed:
+                return False
+            self._facts[launch_token] = replace(facts, end_claimed=True)
+            return True
+
+    def launch_facts(self, launch_token: str) -> LaunchFacts:
+        """Return the facts of one launch; an unknown token has none set."""
+        with self._lock:
+            return self._facts_of(launch_token)
+
+    def _facts_of(self, launch_token: str) -> LaunchFacts:
+        """Return the stored facts of a token, or clean facts. The caller holds the lock."""
+        return self._facts.get(launch_token, LaunchFacts(False, False, False))
 
     def adopted_launch(self) -> OwnedServer | None:
         """Return the record fields of an adopted server, or None for an own launch or no evidence."""

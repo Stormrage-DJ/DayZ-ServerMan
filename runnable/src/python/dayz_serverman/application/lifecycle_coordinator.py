@@ -69,6 +69,26 @@ class LifecycleCoordinator:
             {"profile_id": profile_id, "target_role": "dayz_server"},
         )
 
+    def start_after_crash(
+        self, profile_id: str, profile_revision: int, settings_revision: int,
+        still_wanted: Callable[[], bool],
+    ) -> dict[str, str]:
+        """Queue the start that follows a crash; it does nothing when the start is no longer wanted."""
+        def action(context: OperationContext) -> Mapping[str, Any]:
+            """Skip the start when nobody wants it, else start the server."""
+            if not still_wanted():
+                return {"skipped": "not_wanted"}
+            return self._lifecycle.start(
+                profile_id, profile_revision, settings_revision,
+                before_change=lambda: context.checkpoint("preflight", 11),
+            ).to_dict()
+
+        return self._submit(
+            "START_SERVER",
+            action,
+            {"profile_id": profile_id, "target_role": "dayz_server", "trigger": "crash_restart"},
+        )
+
     def stop_server(self, parameters: Mapping[str, Any]) -> dict[str, str]:
         """Queue a stop and optionally chain a verified backup afterwards."""
         # Parse the stop parameters including the backup flag

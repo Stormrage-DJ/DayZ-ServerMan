@@ -5,16 +5,17 @@
 const SERVER_STATE_SCOPE = "One DayZ server runs in this installation, whichever profile is selected.";
 // Status fields whose change is announced to the listening pages.
 const serverStateFields = Object.freeze([
-  "state", "readiness", "process_id", "query_port", "diagnostic_code", "started_at", "profile_id",
+  "state", "readiness", "process_id", "query_port", "diagnostic_code", "started_at", "profile_id", "auto_restart",
 ]);
 // Last status read from the host, whether the last read confirmed it, the read in flight, and the label
 // that was spoken last.
 const serverStateStore = { status: null, confirmed: false, reading: null, label: null };
 
-// Report whether two status values differ in a field that the shell shows.
+// Report whether two status values differ in a field that the shell shows; an object field is compared by value.
 function serverStateChanged(before, after) {
   if (!before || !after) return before !== after;
-  return serverStateFields.some((field) => before[field] !== after[field]);
+  return serverStateFields.some((field) => (typeof before[field] === "object" && before[field] !== null
+    ? JSON.stringify(before[field]) !== JSON.stringify(after[field]) : before[field] !== after[field]));
 }
 
 // Return the profile that the running server was started with when it is not the selected one, else null.

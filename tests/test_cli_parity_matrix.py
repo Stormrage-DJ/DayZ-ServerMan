@@ -101,14 +101,14 @@ class ParityMatrixTests(unittest.TestCase):
                 composition.shutdown.wait_for_close(5)
 
     def test_every_owner_method_is_used_internal_excluded_or_pending(self) -> None:
-        """Each of the 81 methods is in a command, internal or excluded (70 + 4 + 7); none is pending (10.36)."""
-        self.assertEqual(len(self.allowlist), 81)
+        """Each of the 82 methods is in a command, internal or excluded (70 + 4 + 8); none is pending (10.36)."""
+        self.assertEqual(len(self.allowlist), 82)
         used = set().union(*(command.bridge_methods for command in COMMANDS))
         pending = set(PENDING_TASK_10)
         self.assertEqual(self.allowlist - used - INTERNAL_METHODS - EXCLUDED_METHODS - pending, set())
         self.assertEqual(len(self.allowlist - INTERNAL_METHODS - EXCLUDED_METHODS - pending), 70)
         # A pending method never counts as an exclusion
-        self.assertEqual((len(INTERNAL_METHODS), len(EXCLUDED_METHODS)), (4, 7))
+        self.assertEqual((len(INTERNAL_METHODS), len(EXCLUDED_METHODS)), (4, 8))
         # Internal, excluded and pending methods are never named by a command, and every named method exists
         self.assertEqual(used & (INTERNAL_METHODS | EXCLUDED_METHODS | pending), set())
         self.assertEqual(used - self.allowlist, set())

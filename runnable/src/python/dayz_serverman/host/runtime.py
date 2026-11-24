@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from ..composition import ApplicationComposition
+from ..composition_model import SessionMode
 from .api import HostApi
 from .assets import compose_shell_html, resolve_frontend_root
 from .shutdown import SafeCloseController
@@ -177,6 +178,9 @@ def launch_application(
             _smoke_probe(window, close_controller, version, hold_seconds)
     # Keep scheduled lifecycle actions running while the window lives
     composition.schedules.start()
+    # Restart a crashed server while the owner window lives
+    if composition.mode is SessionMode.OWNER:
+        composition.crash_restart.start()
     # Check Steam for mod updates and for the server build at start and on their intervals
     composition.update_check_scheduler.start()
     composition.server_build.scheduler.start()
@@ -191,6 +195,7 @@ def launch_application(
             storage_path=str(composition.paths.webview2),
         )
     finally:
+        composition.crash_restart.stop()
         # Stop scheduling after the window closes; a running build check gets 30 s to end
         composition.server_build.scheduler.stop()
         composition.server_build.service.stop(30.0)

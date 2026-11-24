@@ -12,6 +12,7 @@ from .application.backups import BackupService
 from .application.configuration import ConfigurationService
 from .application.configuration_coordinator import ConfigurationCoordinator
 from .application.configuration_recovery import configure_recovery
+from .application.crash_restart_bridge import CrashRestartHandlers
 from .application.installation_guard import InstallationGuard
 from .application.lifecycle_ownership import LaunchOwnership
 from .application.lifecycle_ports import ServerFolderWriterPort
@@ -48,7 +49,7 @@ from .repositories.workshop_recovery import inspect_workshop_recovery
 from .bridge_composition import build_handler_table, observer_handlers
 from .composition_model import ApplicationComposition, SessionMode
 from .profile_provisioning_composition import build_profile_provisioning
-from .lifecycle_composition import build_lifecycle
+from .lifecycle_composition import build_crash_restart, build_lifecycle
 from .migration_composition import build_migration
 from .mission_map_composition import build_mission_map
 from .mission_map_publication_composition import build_mission_map_commit, build_mission_map_publication
@@ -173,6 +174,10 @@ def build_composition(
         ScheduleRepository(VersionedJsonRepository(paths.schedules, staging=staging)),
         profiles, settings, preferences, lifecycle, lifecycle_coordinator, logger,
     )
+    # The crash restart monitor is built here; only an owner window starts it
+    crash_restart = build_crash_restart(
+        lifecycle, ownership, profiles, settings, lifecycle_coordinator, operations, shutdown, logger,
+    )
     # Build the remote update check; it never runs on the operation lane
     update_check = build_update_check(paths, profiles, profile_repository, preferences, logger)
     update_check_scheduler = build_update_check_scheduler(update_check, preferences, logger)
@@ -215,7 +220,8 @@ def build_composition(
         mission_map_transfer=build_mission_map_transfer(mission_map, mission_map_commit, operations),
         migration_coordinator=migration.migration_coordinator,
         legacy_backup_coordinator=migration.legacy_backup_coordinator,
-        lifecycle_coordinator=lifecycle_coordinator,
+        # An operator start or restart cancels a pending crash restart; the cancel method joins the table
+        lifecycle_coordinator=CrashRestartHandlers(lifecycle_coordinator, crash_restart),
         lifecycle=lifecycle,
         schedules=schedules,
         workshop_coordinator=workshop.workshop_coordinator,
@@ -275,5 +281,6 @@ def build_composition(
         coordinator=coordinator,
         bridge=bridge,
         host_bridge=bridge,
+        crash_restart=crash_restart,
         mode=mode,
     )

@@ -102,6 +102,7 @@ EXCLUSION_REASONS = MappingProxyType({
     # The panel sizes of the map editor window: window memory, not a server or mission fact
     "get_editor_layout": "map editor window layout memory; no fact for a command",
     "save_editor_layout": "map editor window layout memory; a script must not change the window's layout",
+    "cancel_crash_restart": "owner window only; the crash restart monitor runs in the window, so a command has nothing to cancel",
     "list_legacy_backup_references": _NOT_PARITY,
     "revalidate_legacy_backup_references": _NOT_PARITY,
     "read_mission_map_tier_layer": _DISPLAY_ONLY,

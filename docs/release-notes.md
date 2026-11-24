@@ -1,6 +1,35 @@
 # Release notes
 
-Each release has one section. The newest release is first.
+Each release has one section. The newest release is first. Changes that are not released yet are under **Unreleased**.
+
+## Unreleased
+
+This release restarts a server after a crash.
+
+### Restart after a crash
+
+- A server that reached **Ready** and then ended without a stop from
+  DayZ-ServerMan starts again about 10 to 15 seconds later. It needs no
+  setting. It works for every profile. An exit outside the manager counts too.
+  Examples are Task Manager and an in-game `#shutdown`.
+- During the wait, the Overview shows **Stopped** and a note. **Save & Stop**
+  cancels the restart.
+- A server is not restarted after a stop, a restart or a scheduled action. It is
+  not restarted after an update or other maintenance. It is not restarted after
+  it ends before its first **Ready**, or when it hangs but keeps running.
+- After 3 automatic restarts within 10 minutes, the next crash is not
+  restarted. The server stays stopped, and **Manager activity** and the
+  Overview say so.
+- The status of the server has the new field `auto_restart`. It is `null`, or it
+  names the kind, the reason and the time. The contract version stays 1.
+
+### Known limitations
+
+- Only the open window restarts a server. A command and a closed window do not.
+- An automatic restart uses the profile and the settings at that moment.
+- A restarted server that ends before **Ready** is not tried again.
+- The count of automatic restarts is not saved. It starts again when you close
+  the window.
 
 ## 1.2.0 (2026-10-28)
 

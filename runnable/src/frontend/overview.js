@@ -128,6 +128,8 @@ function renderOverview() {
 
 // Confirm and submit the requested lifecycle action for the selected profile.
 async function confirmLifecycleAction(action) {
+  // While a crash restart waits, Stop cancels it and asks no confirmation.
+  if (action === "stop" && window.ServerManOverviewCrashNotice.pending(overviewState.status)) return window.ServerManOverviewCrashNotice.cancel();
   const profile = selectedOverviewProfile();
   // The lock is checked again at the press: the running profile may have changed since the page was drawn.
   if (action !== "start" && window.ServerManServerState.lockReason()) return;
