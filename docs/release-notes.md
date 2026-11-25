@@ -2,9 +2,21 @@
 
 Each release has one section. The newest release is first. Changes that are not released yet are under **Unreleased**.
 
-## Unreleased
+## 1.3.0 (2026-11-25)
 
-This release restarts a server after a crash.
+This release restarts a server after a crash, and the map editor shows the
+terrain grid and the original loot tiers without a setup step.
+
+### Map editor
+
+- The editor uses the detected terrain bounds to show the map grid and the
+  original loot tiers, even before you create a plan. Opening or closing this
+  view does not save a plan or change mission files.
+- 16-bit tier maps work, such as the DeerIsle map with Tier9 and Unique. 4-bit
+  and 8-bit maps work as before.
+- Map setup prefills the detected bounds. Confirm them when you want to create
+  an editing plan. Saved plan bounds take priority over detection, and Apply
+  still refuses unconfirmed bounds.
 
 ### Restart after a crash
 
